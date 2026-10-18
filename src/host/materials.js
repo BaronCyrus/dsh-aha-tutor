@@ -4,7 +4,7 @@
 // (images are kept for vision-capable models; they produce no text here).
 
 import { createRequire } from 'node:module'
-import { dirname, join, sep } from 'node:path'
+import { dirname, join } from 'node:path'
 
 export const MAX_UPLOAD_BYTES = 60 * 1024 * 1024
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
@@ -131,10 +131,15 @@ async function loadPdfjs() {
   return pdfjsModule
 }
 
+// pdf.js insists both factory URLs end in "/" on every system and reads them
+// with fs, which on Windows accepts the mixed separators that gives.
+export function pdfjsAssetUrls(root, { join: joinPath = join } = {}) {
+  return { cMapUrl: `${joinPath(root, 'cmaps')}/`, standardFontDataUrl: `${joinPath(root, 'standard_fonts')}/` }
+}
+
 function pdfjsAssets() {
   const require = createRequire(import.meta.url)
-  const root = dirname(require.resolve('pdfjs-dist/package.json'))
-  return { cMapUrl: join(root, 'cmaps') + sep, standardFontDataUrl: join(root, 'standard_fonts') + sep }
+  return pdfjsAssetUrls(dirname(require.resolve('pdfjs-dist/package.json')))
 }
 
 export async function extractPdf(bytes, { signal } = {}) {

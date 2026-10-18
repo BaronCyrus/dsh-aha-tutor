@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { posix, win32 } from 'node:path'
 import { test } from 'node:test'
 
 import JSZip from 'jszip'
 
 import { formatPassages, search, buildIndex, selectPassages, tokenize } from '../src/core/retrieval.js'
-import { checkPublicUrl, chunkText, decodeText, detectKind, ingestFile, ingestUrl, MaterialError } from '../src/host/materials.js'
+import { checkPublicUrl, chunkText, decodeText, detectKind, ingestFile, ingestUrl, MaterialError, pdfjsAssetUrls } from '../src/host/materials.js'
 
 const fixture = name => readFile(new URL(`./fixtures/${name}`, import.meta.url))
 
@@ -27,6 +28,15 @@ async function makePptx(slides) {
   zip.file('ppt/notesSlides/notesSlide2.xml', '<p:notes xmlns:p="p" xmlns:a="a"><a:p><a:r><a:t>讲者备注 &amp; 提示</a:t></a:r></a:p></p:notes>')
   return zip.generateAsync({ type: 'nodebuffer' })
 }
+
+test('pdf.js asset folders end in a slash on Windows and POSIX', () => {
+  // pdf.js rejects a factory URL without a trailing "/", even on Windows.
+  assert.deepEqual(pdfjsAssetUrls('D:\\a\\node_modules\\pdfjs-dist', win32), {
+    cMapUrl: 'D:\\a\\node_modules\\pdfjs-dist\\cmaps/',
+    standardFontDataUrl: 'D:\\a\\node_modules\\pdfjs-dist\\standard_fonts/',
+  })
+  assert.deepEqual(pdfjsAssetUrls('/opt/pdfjs-dist', posix), { cMapUrl: '/opt/pdfjs-dist/cmaps/', standardFontDataUrl: '/opt/pdfjs-dist/standard_fonts/' })
+})
 
 test('PDF text keeps page numbers and CJK characters', async () => {
   const result = await ingestFile({ name: 'lecture.pdf', bytes: await fixture('sample-zh.pdf') })

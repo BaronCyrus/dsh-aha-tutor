@@ -1,0 +1,396 @@
+// Course structure: normalizers turn model output (or edited client data)
+// into the stored shape, and helpers answer questions about a course and its
+// progress. Every limit here protects the UI and the token budget.
+
+import { newId } from './ids.js'
+
+export const COURSE_SCHEMA_VERSION = 1
+export const LIMITS = Object.freeze({
+  questions: 6,
+  options: 5,
+  units: 12,
+  lecturesPerUnit: 8,
+  lessonsPerLecture: 8,
+  lessons: 120,
+  objectives: 5,
+  concepts: 6,
+  projects: 3,
+  milestones: 6,
+  rubric: 8,
+  starterFiles: 12,
+  starterFileBytes: 64 * 1024,
+  practiceItems: 12,
+  options4: 6,
+  cards: 60,
+  sheetSections: 24,
+  sheetItems: 16,
+})
+
+export function text(value, max = 400) {
+  if (value === null || value === undefined) return ''
+  return String(value).replace(/\u0000/gu, '').trim().slice(0, max)
+}
+
+function list(value, max, mapper) {
+  return (Array.isArray(value) ? value : []).slice(0, max).map(mapper).filter(Boolean)
+}
+
+function strings(value, max, length = 200) {
+  return list(value, max, item => text(typeof item === 'object' ? item?.text ?? item?.name ?? item?.title : item, length) || null)
+}
+
+function minutes(value, fallback = 15) {
+  const number = Math.round(Number(value))
+  return Number.isFinite(number) ? Math.min(90, Math.max(5, number)) : fallback
+}
+
+const EMOJI = /\p{Extended_Pictographic}/u
+
+function emoji(value) {
+  const match = EMOJI.exec(String(value ?? ''))
+  return match ? match[0] : '📘'
+}
+
+// ── intake questionnaire ────────────────────────────────────────────────────
+
+export function normalizeQuestionnaire(raw) {
+  const source = Array.isArray(raw) ? raw : raw?.questions
+  const questions = list(source, LIMITS.questions, (question, index) => {
+    const prompt = text(question?.prompt ?? question?.question ?? question?.title, 200)
+    if (!prompt) return null
+    const options = list(question?.options, LIMITS.options, (option, optionIndex) => {
+      const label = text(typeof option === 'string' ? option : option?.label ?? option?.title, 80)
+      if (!label) return null
+      return { id: String.fromCharCode(97 + optionIndex), label, detail: text(option?.detail ?? option?.description, 160) }
+    })
+    if (options.length < 2) return null
+    return {
+      id: `q${index + 1}`,
+      prompt,
+      topic: text(question?.topic ?? question?.key, 40),
+      multi: question?.multi === true || question?.multiple === true,
+      options,
+    }
+  })
+  return { questions: questions.map((question, index) => ({ ...question, id: `q${index + 1}` })) }
+}
+
+export function intakeSummary(questionnaire, answers) {
+  const lines = []
+  for (const question of questionnaire?.questions ?? []) {
+    const answer = answers?.[question.id]
+    if (!answer) continue
+    const picked = (answer.choice ?? [])
+      .map(id => question.options.find(option => option.id === id))
+      .filter(Boolean)
+      .map(option => (option.detail ? `${option.label}（${option.detail}）` : option.label))
+    const other = text(answer.other, 300)
+    if (other) picked.push(other)
+    if (picked.length) lines.push(`- ${question.prompt}：${picked.join('；')}`)
+  }
+  return lines.join('\n')
+}
+
+// ── blueprint ───────────────────────────────────────────────────────────────
+
+function normalizeConcepts(raw, fallbackName) {
+  const concepts = list(raw, LIMITS.concepts, item => {
+    const name = text(typeof item === 'string' ? item : item?.name ?? item?.title, 80)
+    if (!name) return null
+    return { id: typeof item?.id === 'string' && /^cpt_[a-z0-9]+$/u.test(item.id) ? item.id : newId('cpt'), name }
+  })
+  if (!concepts.length && fallbackName) concepts.push({ id: newId('cpt'), name: text(fallbackName, 80) })
+  return concepts
+}
+
+function keepId(value, prefix) {
+  return typeof value === 'string' && new RegExp(`^${prefix}_[a-z0-9]{6,40}$`, 'u').test(value) ? value : newId(prefix)
+}
+
+export function normalizeLesson(raw) {
+  const title = text(raw?.title, 120)
+  if (!title) return null
+  return {
+    id: keepId(raw?.id, 'les'),
+    title,
+    summary: text(raw?.summary ?? raw?.description, 300),
+    objectives: strings(raw?.objectives ?? raw?.goals, LIMITS.objectives),
+    concepts: normalizeConcepts(raw?.concepts, title),
+    estMinutes: minutes(raw?.estMinutes ?? raw?.minutes),
+    kind: ['lesson', 'remedial', 'review', 'challenge'].includes(raw?.kind) ? raw.kind : 'lesson',
+  }
+}
+
+export function normalizeUnits(rawUnits) {
+  let lessonBudget = LIMITS.lessons
+  return list(rawUnits, LIMITS.units, unit => {
+    const title = text(unit?.title, 120)
+    if (!title) return null
+    const lectures = list(unit?.lectures, LIMITS.lecturesPerUnit, lecture => {
+      const lectureTitle = text(lecture?.title, 120)
+      if (!lectureTitle) return null
+      const lessons = list(lecture?.lessons, LIMITS.lessonsPerLecture, lesson => {
+        if (lessonBudget <= 0) return null
+        const normalized = normalizeLesson(lesson)
+        if (normalized) lessonBudget -= 1
+        return normalized
+      })
+      if (!lessons.length) return null
+      return { id: keepId(lecture?.id, 'lec'), title: lectureTitle, summary: text(lecture?.summary, 300), lessons }
+    })
+    if (!lectures.length) return null
+    return {
+      id: keepId(unit?.id, 'unt'),
+      title,
+      summary: text(unit?.summary, 400),
+      objectives: strings(unit?.objectives, LIMITS.objectives),
+      lectures,
+    }
+  })
+}
+
+export function normalizeProject(raw) {
+  const title = text(raw?.title, 120)
+  if (!title) return null
+  const kind = ['code', 'writing', 'analysis', 'design', 'practice', 'other'].includes(raw?.kind) ? raw.kind : 'other'
+  const starterFiles = list(raw?.starterFiles ?? raw?.files, LIMITS.starterFiles, file => {
+    const path = safeRelativePath(file?.path ?? file?.name)
+    if (!path) return null
+    const content = String(file?.content ?? '').slice(0, LIMITS.starterFileBytes)
+    return { path, content }
+  })
+  return {
+    id: keepId(raw?.id, 'prj'),
+    title,
+    kind,
+    brief: text(raw?.brief ?? raw?.description, 2000),
+    skills: strings(raw?.skills, 8, 80),
+    milestones: list(raw?.milestones, LIMITS.milestones, (item, index) => {
+      const milestone = text(typeof item === 'string' ? item : item?.title, 160)
+      return milestone ? { id: `m${index + 1}`, title: milestone, detail: text(item?.detail, 600) } : null
+    }),
+    rubric: list(raw?.rubric, LIMITS.rubric, (item, index) => {
+      const criterion = text(typeof item === 'string' ? item : item?.criterion ?? item?.title, 160)
+      if (!criterion) return null
+      const points = Math.round(Number(item?.points))
+      return { id: `r${index + 1}`, criterion, points: Number.isFinite(points) && points > 0 ? Math.min(100, points) : 10, detail: text(item?.detail, 400) }
+    }),
+    starterFiles,
+    unitId: typeof raw?.unitId === 'string' ? raw.unitId : null,
+  }
+}
+
+// Relative POSIX path that stays inside the project directory and is a valid
+// file name on Windows and macOS alike.
+export function safeRelativePath(value) {
+  const raw = String(value ?? '').replace(/\\/gu, '/').trim()
+  if (!raw || raw.startsWith('/') || /^[a-z]:/iu.test(raw)) return null
+  const parts = raw.split('/').filter(part => part && part !== '.')
+  if (!parts.length || parts.length > 6) return null
+  for (const part of parts) {
+    if (part === '..' || /[<>:"|?*\u0000-\u001f]/u.test(part) || /[. ]$/u.test(part)) return null
+    if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/iu.test(part)) return null
+    if (part.length > 80) return null
+  }
+  return parts.join('/')
+}
+
+export function normalizeBlueprint(raw, { language } = {}) {
+  const units = normalizeUnits(raw?.units)
+  if (!units.length) throw new Error('blueprint has no usable units')
+  return {
+    title: text(raw?.title, 120) || units[0].title,
+    subtitle: text(raw?.subtitle ?? raw?.tagline, 200),
+    emoji: emoji(raw?.emoji),
+    summary: text(raw?.summary ?? raw?.description, 1200),
+    level: text(raw?.level, 40),
+    language: text(raw?.language ?? language, 20) || 'zh-CN',
+    units,
+    projects: list(raw?.projects, LIMITS.projects, normalizeProject),
+  }
+}
+
+// ── practice, checks, cards, sheets ─────────────────────────────────────────
+
+const ITEM_KINDS = ['choice', 'multi', 'blank', 'number', 'short', 'order']
+
+export function normalizeItem(raw, index = 0, conceptIds = []) {
+  const kind = ITEM_KINDS.includes(raw?.kind) ? raw.kind : raw?.options ? 'choice' : 'short'
+  const prompt = text(raw?.prompt ?? raw?.question, 2000)
+  if (!prompt) return null
+  const item = {
+    id: typeof raw?.id === 'string' && /^[a-z0-9_-]{1,24}$/iu.test(raw.id) ? raw.id : `i${index + 1}`,
+    kind,
+    prompt,
+    explanation: text(raw?.explanation, 2000),
+    hints: strings(raw?.hints, 3, 400),
+    difficulty: Math.min(3, Math.max(1, Math.round(Number(raw?.difficulty) || 2))),
+    conceptIds: (Array.isArray(raw?.conceptIds) ? raw.conceptIds : []).filter(id => conceptIds.includes(id)).slice(0, 4),
+  }
+  if (kind === 'choice' || kind === 'multi' || kind === 'order') {
+    item.options = list(raw?.options, LIMITS.options4, (option, optionIndex) => {
+      const label = text(typeof option === 'string' ? option : option?.text ?? option?.label, 400)
+      return label ? { id: String.fromCharCode(97 + optionIndex), text: label } : null
+    })
+    if (item.options.length < 2) return null
+    const ids = item.options.map(option => option.id)
+    const toId = value => {
+      if (typeof value === 'number') return ids[value] ?? null
+      const raw = String(value ?? '').trim().toLowerCase()
+      if (ids.includes(raw)) return raw
+      const byText = item.options.find(option => option.text.toLowerCase() === raw)
+      return byText ? byText.id : null
+    }
+    if (kind === 'choice') {
+      item.answer = toId(Array.isArray(raw?.answer) ? raw.answer[0] : raw?.answer)
+      if (!item.answer) return null
+    } else {
+      item.answer = (Array.isArray(raw?.answer) ? raw.answer : [raw?.answer]).map(toId).filter(Boolean)
+      if (!item.answer.length) return null
+    }
+  } else if (kind === 'number') {
+    item.answer = Number(raw?.answer)
+    if (!Number.isFinite(item.answer)) return null
+    const tolerance = Number(raw?.tolerance)
+    if (Number.isFinite(tolerance) && tolerance >= 0) item.tolerance = tolerance
+    item.unit = text(raw?.unit, 20)
+  } else if (kind === 'blank') {
+    item.answer = strings(Array.isArray(raw?.answer) ? raw.answer : [raw?.answer], 6, 200)
+    if (!item.answer.length) return null
+  } else {
+    item.answer = text(raw?.answer ?? raw?.reference, 3000)
+    item.rubric = strings(raw?.rubric, 6, 300)
+  }
+  return item
+}
+
+export function normalizePractice(raw, conceptIds = []) {
+  const items = list(raw?.items ?? raw, LIMITS.practiceItems, (item, index) => normalizeItem(item, index, conceptIds))
+  return { items: items.map((item, index) => ({ ...item, id: `i${index + 1}` })) }
+}
+
+export function normalizeCards(raw) {
+  return list(raw?.cards ?? raw, LIMITS.cards, (card, index) => {
+    const front = text(card?.front ?? card?.q ?? card?.question, 600)
+    const back = text(card?.back ?? card?.a ?? card?.answer, 1500)
+    if (!front || !back) return null
+    return { id: `c${index + 1}`, front, back, tag: text(card?.tag ?? card?.topic, 60) }
+  }).map((card, index) => ({ ...card, id: `c${index + 1}` }))
+}
+
+const SHEET_KINDS = ['definition', 'formula', 'fact', 'tip', 'pitfall', 'example', 'compare']
+
+export function normalizeCheatsheet(raw) {
+  const sections = list(raw?.sections, LIMITS.sheetSections, (section, index) => {
+    const title = text(section?.title, 120)
+    if (!title) return null
+    const items = list(section?.items, LIMITS.sheetItems, item => {
+      const body = text(typeof item === 'string' ? item : item?.text ?? item?.body, 800)
+      const tex = text(item?.tex ?? item?.latex, 400)
+      if (!body && !tex) return null
+      const page = Math.round(Number(item?.cite?.page ?? item?.page))
+      return {
+        kind: SHEET_KINDS.includes(item?.kind) ? item.kind : 'fact',
+        title: text(item?.title ?? item?.term, 120),
+        text: body,
+        tex,
+        cite: Number.isFinite(page) && page > 0 ? { page, source: text(item?.cite?.source ?? item?.source, 120) } : null,
+      }
+    })
+    if (!items.length) return null
+    return { id: `sec${index + 1}`, title, items, related: strings(section?.related, 4, 120) }
+  })
+  if (!sections.length) throw new Error('cheatsheet has no sections')
+  return {
+    title: text(raw?.title, 160),
+    sections: sections.map((section, index) => ({ ...section, id: `sec${index + 1}` })),
+    layout: { columns: 3, fontSize: 12, highlight: true, order: sections.map((_, index) => `sec${index + 1}`) },
+  }
+}
+
+// ── queries ─────────────────────────────────────────────────────────────────
+
+export function flattenLessons(course) {
+  const rows = []
+  for (const unit of course?.units ?? []) {
+    for (const lecture of unit.lectures ?? []) {
+      for (const lesson of lecture.lessons ?? []) rows.push({ unit, lecture, lesson, index: rows.length })
+    }
+  }
+  return rows
+}
+
+export function findLesson(course, lessonId) {
+  return flattenLessons(course).find(row => row.lesson.id === lessonId) ?? null
+}
+
+export function conceptIndex(course) {
+  const index = new Map()
+  for (const { lesson } of flattenLessons(course)) {
+    for (const concept of lesson.concepts ?? []) index.set(concept.id, { ...concept, lessonId: lesson.id })
+  }
+  return index
+}
+
+export function lessonStatus(progress, lessonId) {
+  return progress?.lessons?.[lessonId]?.status ?? 'new'
+}
+
+export function courseProgress(course, progress) {
+  const rows = flattenLessons(course)
+  const done = rows.filter(row => lessonStatus(progress, row.lesson.id) === 'done')
+  const minutesLeft = rows
+    .filter(row => lessonStatus(progress, row.lesson.id) !== 'done')
+    .reduce((sum, row) => sum + (row.lesson.estMinutes || 15), 0)
+  return {
+    total: rows.length,
+    done: done.length,
+    percent: rows.length ? Math.round((done.length / rows.length) * 100) : 0,
+    minutesLeft,
+  }
+}
+
+export function nextLesson(course, progress) {
+  const rows = flattenLessons(course)
+  return rows.find(row => lessonStatus(progress, row.lesson.id) === 'learning')
+    ?? rows.find(row => lessonStatus(progress, row.lesson.id) === 'new')
+    ?? null
+}
+
+export function lessonAfter(course, lessonId) {
+  const rows = flattenLessons(course)
+  const index = rows.findIndex(row => row.lesson.id === lessonId)
+  return index >= 0 ? rows[index + 1] ?? null : null
+}
+
+// Insert a remedial lesson right after `afterLessonId` in the same lecture.
+export function insertLesson(course, afterLessonId, lesson) {
+  const normalized = normalizeLesson(lesson)
+  if (!normalized) throw new Error('invalid lesson')
+  for (const unit of course.units) {
+    for (const lecture of unit.lectures) {
+      const index = lecture.lessons.findIndex(item => item.id === afterLessonId)
+      if (index >= 0) {
+        lecture.lessons.splice(index + 1, 0, normalized)
+        return normalized
+      }
+    }
+  }
+  throw new Error('lesson not found')
+}
+
+// Compact outline for prompts.
+export function outlineForPrompt(course, { withIds = false, maxChars = 6000 } = {}) {
+  const lines = []
+  course?.units?.forEach((unit, unitIndex) => {
+    lines.push(`Unit ${unitIndex + 1}: ${unit.title}${withIds ? ` [${unit.id}]` : ''}`)
+    unit.lectures.forEach((lecture, lectureIndex) => {
+      lines.push(`  Lecture ${unitIndex + 1}.${lectureIndex + 1}: ${lecture.title}`)
+      lecture.lessons.forEach(lesson => {
+        lines.push(`    - ${lesson.title}${withIds ? ` [${lesson.id}]` : ''}`)
+      })
+    })
+  })
+  const outline = lines.join('\n')
+  return outline.length > maxChars ? `${outline.slice(0, maxChars)}\n…` : outline
+}

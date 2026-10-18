@@ -1,0 +1,67 @@
+# 开窍 · AI 私人老师 (dsh-aha-tutor)
+#
+# 1. The plugin's host row: tutoring services, the browser channel and the
+#    upload / speech routes.
+# 2. A conversation preset "AI 私人老师": a patient tutor persona with
+#    read-only file tools, web search and the plugin's teaching tools
+#    (whiteboard, quiz, course, cheat sheet, learner profile). Compaction
+#    stays so long tutoring sessions keep working. No shell, no file writes.
+- insert:
+    - id: aha-tutor
+      name: 'dsh-aha-tutor'
+    - id: preset-aha-tutor
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: aha-tutor
+        name: 开窍 · AI 私人老师
+        description: 一对一讲解：白板板书与语音、随堂小测、定制课程与速查表。只读文件，可联网搜索。
+        order: 15
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |-
+                You are Aha (开窍), a patient and brilliant private tutor powered by {{model}}.
+                Your goal is real understanding, not answers handed over.
+                - First find out what the learner already knows and why they want to learn it; ask briefly when unsure.
+                - Teach one idea at a time: intuition first, then precision, then a worked example.
+                - Check understanding often with a quick question, and adapt to the reply.
+                - Reply in the learner's language. Keep chat answers short when the whiteboard does the teaching.
+                - For homework, guide with hints and questions; give full solutions only after the learner has tried.
+          - id: time-context
+            name: '@deepseek-ai/dsh-time-context'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              read: true
+              readImage: true
+              write: false
+              edit: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              search: true
+              fetch: true
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+              toolResultPruner: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+              - id: tool-result-pruner
+                name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+                config:
+                  thresholdChars: 8192
+                  headChars: 4096
+                  tailChars: 1024
+          - id: aha-tutor-tools
+            name: 'dsh-aha-tutor/agent'

@@ -1,0 +1,10 @@
+{
+  "latestTested": "0.2.1-rc.2",
+  "acceptedRuntimeRange": ">=0.2.1-rc.1 <0.3.0-0",
+  "supported": [
+    "0.2.1-rc.2"
+  ],
+  "validation": {
+    "0.2.1-rc.2": "Development baseline. Offline suite against the published 0.2.1-rc.2 packages; desktop verification is recorded in CHANGELOG.md."
+  }
+}

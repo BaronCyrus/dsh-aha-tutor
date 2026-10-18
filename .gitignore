@@ -1,0 +1,7 @@
+node_modules/
+.artifacts/
+*.tgz
+.DS_Store
+Thumbs.db
+lib/client.js.map
+.claude/

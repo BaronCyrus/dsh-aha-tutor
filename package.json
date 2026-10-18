@@ -1,0 +1,111 @@
+{
+  "name": "dsh-aha-tutor",
+  "version": "1.0.0",
+  "packageManager": "pnpm@10.32.1",
+  "description": "开窍 Aha Tutor: a personal AI tutor for DeepSeek Harness that builds a course around you and teaches it on a narrated handwriting whiteboard",
+  "type": "module",
+  "main": "./lib/index.js",
+  "icon": "./icon.png",
+  "exports": {
+    ".": "./lib/index.js",
+    "./agent": "./lib/agent.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "icon.png",
+    "lib/*.js",
+    "locale/*.json",
+    "samples/*.aha-course.json",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "docs/guide.zh-CN.md",
+    "docs/assets/*.png",
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "compatibility.json",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-client-ui-workspace",
+        "@deepseek-ai/dsh-api-workspace-controller",
+        "@deepseek-ai/dsh-client-ui-tool"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "tsdown --config tsdown.config.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "check": "pnpm run test && pnpm run build && pnpm pack --pack-destination .artifacts"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "ai-tutor",
+    "education",
+    "whiteboard",
+    "course",
+    "learning",
+    "flashcards",
+    "spaced-repetition",
+    "tts"
+  ],
+  "author": "BaronCyrus",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BaronCyrus/dsh-aha-tutor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/BaronCyrus/dsh-aha-tutor/issues"
+  },
+  "homepage": "https://github.com/BaronCyrus/dsh-aha-tutor#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.1-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-credentials": ">=0.2.1-rc.1 <0.3.0-0",
+    "@deepseek-ai/dsh-tools": ">=0.2.1-rc.1 <0.3.0-0",
+    "react": "^18.2.0"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.6.0",
+    "jszip": "^3.10.2",
+    "linkedom": "^0.18.13",
+    "mammoth": "^1.13.0",
+    "pdfjs-dist": "^6.4.299"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-credentials": "0.2.1-rc.2",
+    "@deepseek-ai/dsh-tools": "0.2.1-rc.2",
+    "katex": "0.16.47",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-test-renderer": "18.3.1",
+    "tsdown": "0.22.2",
+    "yaml": "2.9.1"
+  }
+}

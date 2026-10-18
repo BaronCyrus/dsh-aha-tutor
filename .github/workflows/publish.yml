@@ -1,0 +1,215 @@
+name: Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.20.0
+          cache: pnpm
+      - name: Require an npm CLI that can use trusted publishing
+        run: |
+          node <<'EOF'
+          const { execSync } = require('node:child_process')
+          const version = () => execSync('npm --version', { encoding: 'utf8' }).trim()
+          const supports = value => {
+            const [major, minor, patch] = value.split('.').map(Number)
+            return major > 11 || (major === 11 && (minor > 5 || (minor === 5 && patch >= 1)))
+          }
+          if (!supports(version())) {
+            execSync('npm install -g npm@11', { stdio: 'inherit' })
+          }
+          const current = version()
+          if (!supports(current)) {
+            console.error(`npm ${current} cannot publish with a trusted publisher`)
+            process.exit(1)
+          }
+          console.log(`npm ${current}`)
+          EOF
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Refuse a tag that does not match package.json
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          node <<'EOF'
+          const version = require('./package.json').version
+          const tag = process.env.GITHUB_REF_NAME.replace(/^v/, '')
+          if (version !== tag) {
+            console.error(`tag v${tag} does not match package.json ${version}`)
+            process.exit(1)
+          }
+          EOF
+      # Checked before npm publishes, so a version never reaches npm without
+      # the notes its GitHub Release is created from.
+      - name: Refuse a tag without its GitHub Release notes
+        if: github.event_name != 'workflow_dispatch'
+        run: node scripts/release-notes.mjs "${GITHUB_REF_NAME#v}" > /dev/null
+      - name: Test
+        if: github.event_name != 'workflow_dispatch'
+        run: pnpm run test
+      - name: Verify committed lib/ matches a fresh build of src/
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          pnpm run build
+          git diff --exit-code -- lib
+      - name: Package the verified release artifact
+        if: github.event_name != 'workflow_dispatch'
+        run: pnpm pack --pack-destination .artifacts
+      - name: Show the OIDC identity npm will match
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          node <<'EOF'
+          async function main() {
+          const audience = 'npm:registry.npmjs.org'
+          const url = new URL(process.env.ACTIONS_ID_TOKEN_REQUEST_URL)
+          url.searchParams.set('audience', audience)
+          const response = await fetch(url, {
+            headers: { Authorization: `Bearer ${process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN}` },
+          })
+          const body = await response.json()
+          if (!response.ok || !body.value) {
+            console.error('GitHub did not return an OIDC token', response.status)
+            process.exit(1)
+          }
+          const payload = JSON.parse(Buffer.from(body.value.split('.')[1], 'base64url').toString())
+          const claims = ['repository','repository_owner','workflow','workflow_ref','job_workflow_ref','ref','environment','repository_visibility','aud','iss']
+          for (const key of claims) console.log(`${key}=${payload[key] ?? ''}`)
+          const exchange = await fetch('https://registry.npmjs.org/-/npm/v1/oidc/token/exchange/package/dsh-aha-tutor', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${body.value}` },
+          })
+          // Never print the exchange body: truncation can cut off a token's
+          // closing quote before a redaction regex sees it.
+          await exchange.arrayBuffer()
+          console.log(`exchange_status=${exchange.status}`)
+          if (!exchange.ok) {
+            console.error('npm rejected the trusted publisher; verify repository, workflow filename and environment before tagging')
+            process.exit(1)
+          }
+          }
+          main()
+          EOF
+      # npm configures a trusted publisher only for a package that exists, so
+      # the first version is published by the maintainer (AGENTS.md, First
+      # release). Its tag then releases the tarball npm already serves; a
+      # re-run after a later step failed does the same.
+      - name: Find out whether npm already serves this version
+        id: registry
+        if: github.event_name != 'workflow_dispatch'
+        run: |
+          node <<'EOF'
+          const { appendFileSync } = require('node:fs')
+          const { name, version } = require('./package.json')
+          async function main() {
+            const response = await fetch(`https://registry.npmjs.org/${name}?t=${Date.now()}`, {
+              headers: { accept: 'application/json' },
+              signal: AbortSignal.timeout(30000),
+            })
+            if (!response.ok && response.status !== 404) {
+              console.error(`the registry answered ${response.status}`)
+              process.exit(1)
+            }
+            const published = response.ok && Boolean((await response.json()).versions?.[version])
+            console.log(`${name}@${version} ${published ? 'is already on npm' : 'is not on npm yet'}`)
+            appendFileSync(process.env.GITHUB_OUTPUT, `published=${published}\n`)
+          }
+          main()
+          EOF
+      - name: Publish
+        if: github.event_name != 'workflow_dispatch' && steps.registry.outputs.published != 'true'
+        run: |
+          if [ -z "$ACTIONS_ID_TOKEN_REQUEST_URL" ]; then
+            echo "GitHub did not provide an OIDC token request URL"
+            exit 1
+          fi
+          # Do not set NODE_AUTH_TOKEN at all, even to an empty string.
+          # npm treats a present token variable as token auth and skips OIDC.
+          unset NODE_AUTH_TOKEN
+          version="$(node -p "require('./package.json').version")"
+          artifact=".artifacts/dsh-aha-tutor-${version:?}.tgz"
+          if [ ! -f "$artifact" ]; then
+            echo "The verified release artifact is missing"
+            exit 1
+          fi
+          # Straight to `latest`: DSH's pnpm holds a version back for 24 hours
+          # anyway, and the in-plugin update reports it as pending until then.
+          npm publish "${artifact:?}" --access public
+      - name: Use the tarball npm already serves
+        if: github.event_name != 'workflow_dispatch' && steps.registry.outputs.published == 'true'
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          rm -f ".artifacts/dsh-aha-tutor-${version:?}.tgz"
+          # npm checks the download against the registry's dist.integrity.
+          npm pack "dsh-aha-tutor@${version:?}" --pack-destination .artifacts
+      - name: Hand the published tarball to the release job
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-tarball
+          path: .artifacts/dsh-aha-tutor-*.tgz
+          # upload-artifact@v4 skips anything under a dot directory unless
+          # told otherwise; the glob matches only the published tarball.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Create the GitHub Release
+    needs: publish
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The only job that may write to the repository. It runs no dependency
+    # code: checkout, Node's built-ins, the published tarball and the
+    # runner's gh.
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.20.0
+      - uses: actions/download-artifact@v4
+        with:
+          name: published-tarball
+          path: .artifacts
+      - name: Create the release with the tarball npm published
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          artifact=".artifacts/dsh-aha-tutor-${version:?}.tgz"
+          if [ ! -f "$artifact" ]; then
+            echo "The published tarball is missing"
+            exit 1
+          fi
+          echo "integrity sha512-$(openssl dgst -sha512 -binary "$artifact" | base64 -w0)"
+          # A release made by hand is left as it is; a re-run must not fail on it.
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; leaving it unchanged"
+            exit 0
+          fi
+          notes="$RUNNER_TEMP/release-notes.md"
+          title="$(node scripts/release-notes.mjs "$version" --body-file "$notes")"
+          # npm's `latest` names this version from now on, and so does Latest here.
+          gh release create "$GITHUB_REF_NAME" "$artifact" --verify-tag --latest --title "$title" --notes-file "$notes"

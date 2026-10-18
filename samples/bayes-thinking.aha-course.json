@@ -1,0 +1,1074 @@
+{
+ "format": "aha-tutor.coursepack",
+ "version": 1,
+ "exportedAt": "2026-10-18T14:31:18.235Z",
+ "app": {
+  "name": "dsh-aha-tutor",
+  "version": "sample"
+ },
+ "course": {
+  "title": "贝叶斯思维：一次阳性，你真的病了吗？",
+  "subtitle": "学会在不确定的世界里，用证据一点点更新判断",
+  "emoji": "🎲",
+  "summary": "不需要高深数学，从掷骰子和人数表格出发，理解条件概率、基础比率和贝叶斯公式，最后亲手写一个会“学习”的垃圾短信过滤器。",
+  "level": "beginner",
+  "language": "zh-CN",
+  "goal": "不需要高深数学，从掷骰子和人数表格出发，理解条件概率、基础比率和贝叶斯公式，最后亲手写一个会“学习”的垃圾短信过滤器。",
+  "units": [
+   {
+    "id": "unt_mvdxbbh690s900",
+    "title": "条件概率的直觉",
+    "summary": "新信息会把世界变小，概率要在小世界里重新计算。",
+    "objectives": [
+     "计算条件概率",
+     "区分 P(A|B) 与 P(B|A)"
+    ],
+    "lectures": [
+     {
+      "id": "lec_mvdxbbh6smcou2",
+      "title": "条件概率",
+      "summary": "",
+      "lessons": [
+       {
+        "id": "les_mvdxbbh620t7ly",
+        "title": "条件概率：知道一点之后",
+        "summary": "在信息划定的小世界里重新数一遍。",
+        "objectives": [
+         "用缩小样本空间的方法求条件概率",
+         "使用条件概率公式"
+        ],
+        "concepts": [
+         {
+          "id": "cpt_mvdxbbh60774lz",
+          "name": "条件概率"
+         },
+         {
+          "id": "cpt_mvdxbbh6onehpm",
+          "name": "P(A|B) 与 P(B|A)"
+         }
+        ],
+        "estMinutes": 12,
+        "kind": "lesson"
+       },
+       {
+        "id": "les_mvdxbbh629kqxj",
+        "title": "独立与不独立",
+        "summary": "什么时候一个信息完全不改变另一个事件的概率。",
+        "objectives": [
+         "判断两个事件是否独立",
+         "计算独立事件同时发生的概率"
+        ],
+        "concepts": [
+         {
+          "id": "cpt_mvdxbbh6eaqmze",
+          "name": "独立事件"
+         }
+        ],
+        "estMinutes": 12,
+        "kind": "lesson"
+       }
+      ]
+     },
+     {
+      "id": "lec_mvdxbbh6x0qf9i",
+      "title": "全概率",
+      "summary": "",
+      "lessons": [
+       {
+        "id": "les_mvdxbbh6uj7vv8",
+        "title": "把世界切成几块：全概率公式",
+        "summary": "分情况讨论，再把各部分加起来。",
+        "objectives": [
+         "用树状图分情况计算",
+         "使用全概率公式"
+        ],
+        "concepts": [
+         {
+          "id": "cpt_mvdxbbh6zlxjif",
+          "name": "全概率公式"
+         }
+        ],
+        "estMinutes": 15,
+        "kind": "lesson"
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "id": "unt_mvdxbbh6o9j389",
+    "title": "贝叶斯公式",
+    "summary": "从结果反推原因，用证据更新信念。",
+    "objectives": [
+     "理解基础比率的作用",
+     "用贝叶斯公式计算后验概率"
+    ],
+    "lectures": [
+     {
+      "id": "lec_mvdxbbh6m1g5km",
+      "title": "贝叶斯",
+      "summary": "",
+      "lessons": [
+       {
+        "id": "les_mvdxbbh6z276z9",
+        "title": "医学检测悖论：基础比率的力量",
+        "summary": "准确率 99% 的检测，阳性也未必意味着得病。",
+        "objectives": [
+         "用人数表格计算阳性者的患病概率",
+         "解释基础比率被忽略时会发生什么"
+        ],
+        "concepts": [
+         {
+          "id": "cpt_mvdxbbh6fx86ag",
+          "name": "基础比率"
+         },
+         {
+          "id": "cpt_mvdxbbh6diki3n",
+          "name": "贝叶斯公式"
+         }
+        ],
+        "estMinutes": 15,
+        "kind": "lesson"
+       },
+       {
+        "id": "les_mvdxbbh6e65iqm",
+        "title": "先验、似然与后验",
+        "summary": "贝叶斯公式里每一项的含义。",
+        "objectives": [
+         "说出先验、似然、后验的含义",
+         "用公式完成一次更新"
+        ],
+        "concepts": [
+         {
+          "id": "cpt_mvdxbbh6xw1l7r",
+          "name": "先验与后验"
+         },
+         {
+          "id": "cpt_mvdxbbh6h4x0wt",
+          "name": "似然"
+         }
+        ],
+        "estMinutes": 12,
+        "kind": "lesson"
+       }
+      ]
+     },
+     {
+      "id": "lec_mvdxbbh6c9yilz",
+      "title": "用起来",
+      "summary": "",
+      "lessons": [
+       {
+        "id": "les_mvdxbbh6a9irby",
+        "title": "一次次更新你的判断",
+        "summary": "每一个新证据，都让昨天的后验变成今天的先验。",
+        "objectives": [
+         "连续多次应用贝叶斯更新",
+         "用贝叶斯思维分析生活中的判断"
+        ],
+        "concepts": [
+         {
+          "id": "cpt_mvdxbbh6vytbdc",
+          "name": "贝叶斯更新"
+         }
+        ],
+        "estMinutes": 12,
+        "kind": "lesson"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "projects": [
+   {
+    "id": "prj_mvdxbbh6cllv6y",
+    "title": "写一个会学习的垃圾短信过滤器",
+    "kind": "code",
+    "brief": "用朴素贝叶斯的思路，统计正常短信和垃圾短信里各个词出现的频率，对一条新短信计算它是垃圾短信的后验概率。完成后，试着输入几条你自己的短信，看看过滤器的判断是否合理。",
+    "skills": [
+     "条件概率",
+     "贝叶斯公式",
+     "拉普拉斯平滑"
+    ],
+    "milestones": [
+     {
+      "id": "m1",
+      "title": "统计词频",
+      "detail": "分别统计垃圾短信和正常短信中每个词出现的次数。"
+     },
+     {
+      "id": "m2",
+      "title": "计算先验",
+      "detail": "训练集中垃圾短信所占的比例就是先验 P(垃圾)。"
+     },
+     {
+      "id": "m3",
+      "title": "计算后验并分类",
+      "detail": "对新短信的每个词连乘似然（取对数相加），比较两类的后验。"
+     },
+     {
+      "id": "m4",
+      "title": "测试与反思",
+      "detail": "用几条新短信测试，讨论“朴素”的独立性假设有什么问题。"
+     }
+    ],
+    "rubric": [
+     {
+      "id": "r1",
+      "criterion": "词频与先验",
+      "points": 25,
+      "detail": "正确统计并计算先验概率。"
+     },
+     {
+      "id": "r2",
+      "criterion": "后验计算",
+      "points": 35,
+      "detail": "正确使用贝叶斯公式，使用平滑避免零概率。"
+     },
+     {
+      "id": "r3",
+      "criterion": "测试",
+      "points": 20,
+      "detail": "用新样本测试并记录结果。"
+     },
+     {
+      "id": "r4",
+      "criterion": "反思",
+      "points": 20,
+      "detail": "能说清独立性假设的含义与局限。"
+     }
+    ],
+    "starterFiles": [
+     {
+      "path": "README.md",
+      "content": "# 朴素贝叶斯短信过滤器\n\n`messages.csv` 里有带标签的短信（spam = 垃圾，ham = 正常）。完成 `filter.py` 中的 TODO，然后运行 `python filter.py`。\n"
+     },
+     {
+      "path": "messages.csv",
+      "content": "label,text\nspam,恭喜 您 中奖 了 点击 领取\nspam,免费 领取 话费 点击 链接\nspam,限时 优惠 贷款 秒 到账\nspam,中奖 通知 请 回复 领取\nham,今晚 一起 吃饭 吗\nham,明天 的 会议 改到 下午\nham,记得 带 伞 要 下雨\nham,作业 写完 了 吗\nham,周末 一起 去 爬山\nspam,点击 链接 领取 优惠\n"
+     },
+     {
+      "path": "filter.py",
+      "content": "import csv\nimport math\nfrom collections import Counter\n\nrows = list(csv.DictReader(open(\"messages.csv\", encoding=\"utf-8\")))\n\n# TODO 1：分别统计 spam 和 ham 中每个词出现的次数\nspam_words, ham_words = Counter(), Counter()\n\n# TODO 2：计算先验 P(spam) 和 P(ham)\np_spam = None\np_ham = None\n\ndef score(text):\n    \"\"\"返回 log P(spam|text) - log P(ham|text)。大于 0 判为垃圾短信。\"\"\"\n    # TODO 3：对每个词累加 log 似然，记得做拉普拉斯平滑（每个词的计数 +1）\n    return 0.0\n\nfor text in [\"恭喜 中奖 点击 领取\", \"明天 一起 吃饭\"]:\n    print(text, \"->\", \"垃圾\" if score(text) > 0 else \"正常\")\n"
+     }
+    ],
+    "unitId": "unt_mvdxbbh6o9j389"
+   }
+  ]
+ },
+ "boards": {
+  "les_mvdxbbh620t7ly": {
+   "title": "条件概率：知道一点之后",
+   "steps": [
+    {
+     "id": "s1",
+     "say": "你掷了一颗骰子，朋友偷看了一眼，告诉你：是偶数。现在，它是 6 的概率是多少？",
+     "ops": [
+      {
+       "id": "o1",
+       "t": "title",
+       "text": "条件概率：知道一点之后"
+      },
+      {
+       "id": "o2",
+       "t": "h",
+       "text": "一个小谜题"
+      },
+      {
+       "id": "o3",
+       "t": "p",
+       "text": "掷骰子 → 朋友说“是偶数” → 是 6 的概率？"
+      }
+     ]
+    },
+    {
+     "id": "s2",
+     "say": "没有任何信息时，6 的概率是六分之一。但“偶数”这个信息，把可能的结果缩小到了 2、4、6 三种。",
+     "ops": [
+      {
+       "id": "o4",
+       "t": "table",
+       "head": [
+        "点数",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6"
+       ],
+       "rows": [
+        [
+         "偶数？",
+         "✗",
+         "✓",
+         "✗",
+         "✓",
+         "✗",
+         "✓"
+        ]
+       ]
+      },
+      {
+       "id": "o5",
+       "t": "p",
+       "text": "新的“世界”只剩下 ==\\{2, 4, 6\\}=="
+      }
+     ]
+    },
+    {
+     "id": "s3",
+     "say": "在这个新世界里，6 只是三种可能之一，所以答案是三分之一。条件概率的本质就是：在新信息划定的小世界里，重新数一遍。",
+     "ops": [
+      {
+       "id": "o6",
+       "t": "math",
+       "tex": "P(6\\mid \\text{偶数})=\\frac{1}{3}",
+       "text": "P(6 | 偶数) = 1/3"
+      },
+      {
+       "id": "o7",
+       "t": "note",
+       "text": "条件概率 = 在缩小后的世界里重新计算",
+       "tone": "key"
+      }
+     ],
+     "check": {
+      "id": "k3",
+      "kind": "choice",
+      "prompt": "掷一颗骰子，已知点数大于 3，点数是 5 的概率是？",
+      "explanation": "大于 3 的结果是 {4, 5, 6}，其中 5 占一种，概率为 1/3。",
+      "hints": [],
+      "difficulty": 2,
+      "conceptIds": [
+       "cpt_mvdxbbh60774lz"
+      ],
+      "options": [
+       {
+        "id": "a",
+        "text": "1/3"
+       },
+       {
+        "id": "b",
+        "text": "1/6"
+       },
+       {
+        "id": "c",
+        "text": "1/2"
+       },
+       {
+        "id": "d",
+        "text": "2/3"
+       }
+      ],
+      "answer": "a"
+     }
+    },
+    {
+     "id": "s4",
+     "say": "把它写成公式：在 B 发生的条件下 A 的概率，等于 A 和 B 同时发生的概率，除以 B 的概率。分母是新世界的大小，分子是新世界里我们关心的那部分。",
+     "ops": [
+      {
+       "id": "o8",
+       "t": "col"
+      },
+      {
+       "id": "o9",
+       "t": "h",
+       "text": "条件概率公式"
+      },
+      {
+       "id": "o10",
+       "t": "math",
+       "tex": "P(A\\mid B)=\\frac{P(A\\cap B)}{P(B)}",
+       "text": "P(A|B) = P(A∩B) / P(B)"
+      },
+      {
+       "id": "o11",
+       "t": "list",
+       "items": [
+        "分母：新世界有多大",
+        "分子：新世界里我们关心的部分"
+       ],
+       "ordered": false
+      }
+     ]
+    },
+    {
+     "id": "s5",
+     "say": "用一个班级的人数表来感受一下。一个班 100 人，40 人戴眼镜。戴眼镜的人里有 10 个左撇子，不戴眼镜的 60 人里有 6 个左撇子。",
+     "ops": [
+      {
+       "id": "o12",
+       "t": "page",
+       "title": "用人数来想"
+      },
+      {
+       "id": "o13",
+       "t": "table",
+       "head": [
+        "",
+        "左撇子",
+        "右撇子",
+        "合计"
+       ],
+       "rows": [
+        [
+         "戴眼镜",
+         "10",
+         "30",
+         "40"
+        ],
+        [
+         "不戴眼镜",
+         "6",
+         "54",
+         "60"
+        ],
+        [
+         "合计",
+         "16",
+         "84",
+         "100"
+        ]
+       ]
+      }
+     ]
+    },
+    {
+     "id": "s6",
+     "say": "随机挑一个左撇子，他戴眼镜的概率是多少？新世界是 16 个左撇子，其中 10 个戴眼镜，所以是 16 分之 10，也就是 62.5%。",
+     "ops": [
+      {
+       "id": "o14",
+       "t": "math",
+       "tex": "P(\\text{戴眼镜}\\mid\\text{左撇子})=\\frac{10}{16}=62.5\\%",
+       "text": "P(戴眼镜 | 左撇子) = 10/16 = 62.5%"
+      }
+     ],
+     "check": {
+      "id": "k6",
+      "kind": "number",
+      "prompt": "从这个班随机挑一个**戴眼镜**的人，他是左撇子的概率是多少？（填小数）",
+      "explanation": "新世界是 40 个戴眼镜的人，其中 10 个是左撇子：10/40 = 0.25。",
+      "hints": [],
+      "difficulty": 2,
+      "conceptIds": [
+       "cpt_mvdxbbh60774lz"
+      ],
+      "answer": 0.25,
+      "tolerance": 0.005,
+      "unit": ""
+     }
+    },
+    {
+     "id": "s7",
+     "say": "注意：戴眼镜的人里左撇子的比例只有 25%，而左撇子里戴眼镜的比例却有 62.5%。这两个方向完全不是一回事。把它们搞混，是生活中最常见的概率错误之一。",
+     "ops": [
+      {
+       "id": "o15",
+       "t": "col"
+      },
+      {
+       "id": "o16",
+       "t": "note",
+       "text": "$P(A\\mid B) \\neq P(B\\mid A)$！",
+       "tone": "warn"
+      },
+      {
+       "id": "o17",
+       "t": "chart",
+       "kind": "bar",
+       "title": "方向不同，结果不同",
+       "xLabel": "",
+       "yLabel": "%",
+       "series": [],
+       "data": [
+        {
+         "label": "P(左撇子|戴眼镜)",
+         "value": 25
+        },
+        {
+         "label": "P(戴眼镜|左撇子)",
+         "value": 62.5
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "s8",
+     "say": "总结一下：条件概率就是在新信息划出的小世界里重新计算；公式是交集除以条件；而两个方向的条件概率，千万不要混为一谈。下一讲，我们看看什么时候一个信息完全不影响另一个事件。",
+     "ops": [
+      {
+       "id": "o18",
+       "t": "note",
+       "text": "① 新信息 → 世界变小 → 重新数\n② $P(A\\mid B)=P(A\\cap B)/P(B)$\n③ 分清方向：$P(A\\mid B)$ 与 $P(B\\mid A)$",
+       "tone": "key"
+      }
+     ],
+     "check": {
+      "id": "k8",
+      "kind": "choice",
+      "prompt": "“大多数小偷都是男性”，能推出“大多数男性都是小偷”吗？",
+      "explanation": "前者在“小偷”的世界里看男性比例，后者在“男性”的世界里看小偷比例，分母完全不同。",
+      "hints": [],
+      "difficulty": 2,
+      "conceptIds": [
+       "cpt_mvdxbbh6onehpm"
+      ],
+      "options": [
+       {
+        "id": "a",
+        "text": "不能，P(男 | 小偷) 和 P(小偷 | 男) 是两回事"
+       },
+       {
+        "id": "b",
+        "text": "能，两个说法是等价的"
+       },
+       {
+        "id": "c",
+        "text": "只有在人口足够多时才能"
+       },
+       {
+        "id": "d",
+        "text": "取决于调查的样本量"
+       }
+      ],
+      "answer": "a"
+     }
+    }
+   ],
+   "lessonId": "les_mvdxbbh620t7ly"
+  },
+  "les_mvdxbbh6z276z9": {
+   "title": "医学检测悖论：基础比率的力量",
+   "steps": [
+    {
+     "id": "s1",
+     "say": "某种病的发病率是千分之一。有一种检测，病人去测，99% 会显示阳性；健康人去测，只有 1% 会被误报成阳性。现在你测出了阳性。你真正得病的概率有多大？先凭直觉猜一猜。",
+     "ops": [
+      {
+       "id": "o1",
+       "t": "title",
+       "text": "医学检测悖论"
+      },
+      {
+       "id": "o2",
+       "t": "h",
+       "text": "你会怎么猜？"
+      },
+      {
+       "id": "o3",
+       "t": "list",
+       "items": [
+        "发病率：1/1000",
+        "病人测出阳性：99%",
+        "健康人被误报阳性：1%"
+       ],
+       "ordered": false
+      }
+     ],
+     "check": {
+      "id": "k1",
+      "kind": "choice",
+      "prompt": "凭直觉猜：测出阳性后，真正患病的概率大约是？",
+      "explanation": "正确答案约 9%。猜错很正常，接下来我们一起算出来。",
+      "hints": [],
+      "difficulty": 2,
+      "conceptIds": [
+       "cpt_mvdxbbh6fx86ag"
+      ],
+      "options": [
+       {
+        "id": "a",
+        "text": "约 99%"
+       },
+       {
+        "id": "b",
+        "text": "约 50%"
+       },
+       {
+        "id": "c",
+        "text": "约 9%"
+       },
+       {
+        "id": "d",
+        "text": "约 1%"
+       }
+      ],
+      "answer": "c"
+     }
+    },
+    {
+     "id": "s2",
+     "say": "别急着套公式，我们把概率变成人数。想象有 10 万人来做这个检测。按千分之一的发病率，其中有 100 个病人，99900 个健康人。",
+     "ops": [
+      {
+       "id": "o4",
+       "t": "h",
+       "text": "用 10 万人来想"
+      },
+      {
+       "id": "o5",
+       "t": "p",
+       "text": "患病：**100** 人　　健康：**99,900** 人"
+      }
+     ]
+    },
+    {
+     "id": "s3",
+     "say": "100 个病人里，99 个会测出阳性。99900 个健康人里，有 1%，也就是 999 人被误报成阳性。",
+     "ops": [
+      {
+       "id": "o6",
+       "t": "table",
+       "head": [
+        "",
+        "阳性",
+        "阴性",
+        "合计"
+       ],
+       "rows": [
+        [
+         "患病",
+         "99",
+         "1",
+         "100"
+        ],
+        [
+         "健康",
+         "999",
+         "98,901",
+         "99,900"
+        ],
+        [
+         "合计",
+         "1,098",
+         "98,902",
+         "100,000"
+        ]
+       ]
+      }
+     ]
+    },
+    {
+     "id": "s4",
+     "say": "现在，你是这 1098 个阳性中的一员。其中真正患病的只有 99 人，大约只占 9%。剩下的九成多，都是虚惊一场。",
+     "ops": [
+      {
+       "id": "o7",
+       "t": "col"
+      },
+      {
+       "id": "o8",
+       "t": "math",
+       "tex": "P(\\text{患病}\\mid\\text{阳性})=\\frac{99}{1098}\\approx 9\\%",
+       "text": "P(患病 | 阳性) = 99/1098 ≈ 9%"
+      },
+      {
+       "id": "o9",
+       "t": "chart",
+       "kind": "pie",
+       "title": "阳性的 1098 人",
+       "xLabel": "",
+       "yLabel": "",
+       "series": [],
+       "data": [
+        {
+         "label": "真阳性",
+         "value": 99
+        },
+        {
+         "label": "假阳性",
+         "value": 999
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "s5",
+     "say": "为什么直觉会错得这么离谱？因为健康人实在太多了。即使只有 1% 的误报，人数也远远超过了真正的病人。这叫基础比率，也是我们最容易忽略的东西。",
+     "ops": [
+      {
+       "id": "o10",
+       "t": "h",
+       "text": "基础比率"
+      },
+      {
+       "id": "o11",
+       "t": "note",
+       "text": "忽略发病率 → 被大量的误报淹没",
+       "tone": "warn"
+      }
+     ]
+    },
+    {
+     "id": "s6",
+     "say": "把刚才的推理写成公式，就是著名的贝叶斯公式。分子是“真阳性”的那部分，分母是所有阳性的人。",
+     "ops": [
+      {
+       "id": "o12",
+       "t": "page",
+       "title": "贝叶斯公式"
+      },
+      {
+       "id": "o13",
+       "t": "math",
+       "tex": "P(D\\mid +)=\\frac{P(+\\mid D)\\,P(D)}{P(+\\mid D)\\,P(D)+P(+\\mid \\bar D)\\,P(\\bar D)}",
+       "text": "P(D|+) = P(+|D)P(D) / [P(+|D)P(D) + P(+|¬D)P(¬D)]"
+      },
+      {
+       "id": "o14",
+       "t": "list",
+       "items": [
+        "$P(D)$：先验，检测之前的患病概率",
+        "$P(+\\mid D)$：似然，病人测出阳性的概率",
+        "$P(D\\mid +)$：后验，看到阳性之后的患病概率"
+       ],
+       "ordered": false
+      }
+     ],
+     "check": {
+      "id": "k6",
+      "kind": "number",
+      "prompt": "如果发病率提高到 1/100（其他条件不变），阳性者真正患病的概率约是百分之多少？（填数字，例如 50）",
+      "explanation": "$0.01\\times0.99 \\div (0.01\\times0.99+0.99\\times0.01) = 50\\%$。基础比率一变，结论就大不相同。",
+      "hints": [],
+      "difficulty": 2,
+      "conceptIds": [
+       "cpt_mvdxbbh6diki3n",
+       "cpt_mvdxbbh6fx86ag"
+      ],
+      "answer": 50,
+      "tolerance": 1,
+      "unit": ""
+     }
+    },
+    {
+     "id": "s7",
+     "say": "这也是医生常常让你复查的原因。第一次阳性后，你的患病概率已经从千分之一升到了 9%。把 9% 当成新的先验再测一次，如果还是阳性，患病概率就会跳到九成以上。",
+     "ops": [
+      {
+       "id": "o15",
+       "t": "col"
+      },
+      {
+       "id": "o16",
+       "t": "h",
+       "text": "复查的力量"
+      },
+      {
+       "id": "o17",
+       "t": "chart",
+       "kind": "bar",
+       "title": "每一次证据都在更新判断",
+       "xLabel": "",
+       "yLabel": "患病概率 %",
+       "series": [],
+       "data": [
+        {
+         "label": "检测前",
+         "value": 0.1
+        },
+        {
+         "label": "一次阳性",
+         "value": 9
+        },
+        {
+         "label": "两次阳性",
+         "value": 90.7
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "s8",
+     "say": "总结一下：判断一个结果意味着什么，先问它的基础比率；贝叶斯公式就是“真阳性除以所有阳性”；而每一次新的证据，都会让后验变成下一次的先验。",
+     "ops": [
+      {
+       "id": "o18",
+       "t": "note",
+       "text": "① 先问基础比率\n② 后验 = 真阳性 ÷ 所有阳性\n③ 今天的后验 = 明天的先验",
+       "tone": "key"
+      }
+     ],
+     "check": {
+      "id": "k8",
+      "kind": "choice",
+      "prompt": "在贝叶斯公式里，“后验概率”指的是？",
+      "explanation": "后验是结合了新证据之后的判断。",
+      "hints": [],
+      "difficulty": 2,
+      "conceptIds": [
+       "cpt_mvdxbbh6diki3n"
+      ],
+      "options": [
+       {
+        "id": "a",
+        "text": "看到证据之后，对假设成立的概率"
+       },
+       {
+        "id": "b",
+        "text": "看到证据之前的概率"
+       },
+       {
+        "id": "c",
+        "text": "证据本身出现的概率"
+       },
+       {
+        "id": "d",
+        "text": "检测的准确率"
+       }
+      ],
+      "answer": "a"
+     }
+    }
+   ],
+   "lessonId": "les_mvdxbbh6z276z9"
+  }
+ },
+ "practice": {
+  "les_mvdxbbh620t7ly": {
+   "lessonId": "les_mvdxbbh620t7ly",
+   "items": [
+    {
+     "id": "i1",
+     "kind": "choice",
+     "prompt": "掷一颗骰子，已知点数是奇数，点数小于 3 的概率是？",
+     "explanation": "奇数为 {1, 3, 5}，其中小于 3 的只有 1，概率 1/3。",
+     "hints": [
+      "奇数的世界里有哪几个点数？"
+     ],
+     "difficulty": 1,
+     "conceptIds": [
+      "cpt_mvdxbbh60774lz"
+     ],
+     "options": [
+      {
+       "id": "a",
+       "text": "1/3"
+      },
+      {
+       "id": "b",
+       "text": "1/2"
+      },
+      {
+       "id": "c",
+       "text": "1/6"
+      },
+      {
+       "id": "d",
+       "text": "2/3"
+      }
+     ],
+     "answer": "a"
+    },
+    {
+     "id": "i2",
+     "kind": "number",
+     "prompt": "已知 $P(A\\cap B) = 0.12$，$P(B) = 0.4$，求 $P(A\\mid B)$。（填小数）",
+     "explanation": "$0.12 / 0.4 = 0.3$。",
+     "hints": [
+      "直接用条件概率公式"
+     ],
+     "difficulty": 1,
+     "conceptIds": [
+      "cpt_mvdxbbh60774lz"
+     ],
+     "answer": 0.3,
+     "tolerance": 0.001,
+     "unit": ""
+    },
+    {
+     "id": "i3",
+     "kind": "choice",
+     "prompt": "下面哪个推理把 $P(A\\mid B)$ 和 $P(B\\mid A)$ 搞混了？",
+     "explanation": "“车祸里离家近的比例高”不等于“离家近时发生车祸的概率高”，因为大部分驾驶本来就发生在家附近。",
+     "hints": [
+      "人们大部分时间就在家附近开车"
+     ],
+     "difficulty": 2,
+     "conceptIds": [
+      "cpt_mvdxbbh6onehpm"
+     ],
+     "options": [
+      {
+       "id": "a",
+       "text": "“大部分车祸发生在离家 5 公里内，所以家附近的路最危险”"
+      },
+      {
+       "id": "b",
+       "text": "“骰子是偶数时，是 6 的概率为 1/3”"
+      },
+      {
+       "id": "c",
+       "text": "“袋子里红球多，摸到红球的可能更大”"
+      },
+      {
+       "id": "d",
+       "text": "“连续两次掷硬币都是正面的概率是 1/4”"
+      }
+     ],
+     "answer": "a"
+    },
+    {
+     "id": "i4",
+     "kind": "blank",
+     "prompt": "条件概率公式：$P(A\\mid B) = P(A\\cap B)\\,/$ ____",
+     "explanation": "分母是条件 $B$ 的概率，也就是“新世界”的大小。",
+     "hints": [],
+     "difficulty": 1,
+     "conceptIds": [
+      "cpt_mvdxbbh60774lz"
+     ],
+     "answer": [
+      "P(B)",
+      "p(b)",
+      "P（B）"
+     ]
+    },
+    {
+     "id": "i5",
+     "kind": "short",
+     "prompt": "举一个生活中的例子，说明 $P(A\\mid B)$ 和 $P(B\\mid A)$ 可以相差很大。",
+     "explanation": "两个方向的条件概率，所在的“世界”不同。",
+     "hints": [],
+     "difficulty": 2,
+     "conceptIds": [
+      "cpt_mvdxbbh6onehpm"
+     ],
+     "answer": "例如：P(会游泳 | 是游泳运动员) 接近 100%，但 P(是游泳运动员 | 会游泳) 很小，因为会游泳的人里只有极少数是运动员。",
+     "rubric": [
+      "给出具体例子",
+      "正确写出两个方向的条件概率",
+      "解释差别来自“新世界”（分母）不同"
+     ]
+    }
+   ]
+  },
+  "les_mvdxbbh6z276z9": {
+   "lessonId": "les_mvdxbbh6z276z9",
+   "items": [
+    {
+     "id": "i1",
+     "kind": "number",
+     "prompt": "发病率 1/1000，病人测阳性率 99%，健康人误报率 1%。10 万人中，假阳性大约有多少人？",
+     "explanation": "健康人 99,900，乘以 1% 约 999 人。",
+     "hints": [
+      "先算健康人有多少"
+     ],
+     "difficulty": 1,
+     "conceptIds": [
+      "cpt_mvdxbbh6fx86ag"
+     ],
+     "answer": 999,
+     "tolerance": 1,
+     "unit": ""
+    },
+    {
+     "id": "i2",
+     "kind": "choice",
+     "prompt": "对于发病率很低的病，改进检测的哪一项，最能让“阳性就是患病”更可信？",
+     "explanation": "低发病率时，阳性大多来自健康人的误报，降低误报率最关键。",
+     "hints": [
+      "阳性里大部分是谁？"
+     ],
+     "difficulty": 2,
+     "conceptIds": [
+      "cpt_mvdxbbh6fx86ag"
+     ],
+     "options": [
+      {
+       "id": "a",
+       "text": "降低健康人的误报率"
+      },
+      {
+       "id": "b",
+       "text": "提高病人的检出率"
+      },
+      {
+       "id": "c",
+       "text": "增加参与检测的人数"
+      },
+      {
+       "id": "d",
+       "text": "延长每次检测的时间"
+      }
+     ],
+     "answer": "a"
+    },
+    {
+     "id": "i3",
+     "kind": "number",
+     "prompt": "发病率 2%，检出率 90%，误报率 5%。阳性者真正患病的概率约是多少？（填小数，保留两位）",
+     "explanation": "$0.018 \\div (0.018 + 0.049) \\approx 0.27$。",
+     "hints": [
+      "分子：0.02 × 0.9；分母：再加上 0.98 × 0.05"
+     ],
+     "difficulty": 2,
+     "conceptIds": [
+      "cpt_mvdxbbh6diki3n"
+     ],
+     "answer": 0.2687,
+     "tolerance": 0.01,
+     "unit": ""
+    },
+    {
+     "id": "i4",
+     "kind": "choice",
+     "prompt": "贝叶斯公式中，$P(D)$ 叫做？",
+     "explanation": "$P(D)$ 是看到证据之前的概率，即先验。",
+     "hints": [],
+     "difficulty": 1,
+     "conceptIds": [
+      "cpt_mvdxbbh6diki3n"
+     ],
+     "options": [
+      {
+       "id": "a",
+       "text": "先验概率"
+      },
+      {
+       "id": "b",
+       "text": "后验概率"
+      },
+      {
+       "id": "c",
+       "text": "似然"
+      },
+      {
+       "id": "d",
+       "text": "误报率"
+      }
+     ],
+     "answer": "a"
+    },
+    {
+     "id": "i5",
+     "kind": "short",
+     "prompt": "为什么医生在一次阳性之后常会安排复查？请用“先验”和“后验”来解释。",
+     "explanation": "证据会不断累积：昨天的后验就是今天的先验。",
+     "hints": [],
+     "difficulty": 3,
+     "conceptIds": [
+      "cpt_mvdxbbh6diki3n",
+      "cpt_mvdxbbh6fx86ag"
+     ],
+     "answer": "一次阳性后，患病的后验概率从很低升到较高（如从 0.1% 到约 9%）；复查时这个后验成为新的先验，若再次阳性，患病概率会大幅提高（约 91%），判断更可靠。",
+     "rubric": [
+      "指出第一次阳性后概率上升（后验）",
+      "指出这个后验成为复查时的先验",
+      "说明两次阳性后结论更可信"
+     ]
+    }
+   ]
+  }
+ },
+ "sheets": {},
+ "cards": [],
+ "progress": null
+}

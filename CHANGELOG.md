@@ -2,6 +2,16 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## Unreleased
+
+### Added
+
+- **About the author** page at the bottom of the navigation: author, a short note, links to the GitHub repository and issues, and the WeChat and Alipay tip codes (bundled as data URLs, so the page works offline).
+
+### Changed
+
+- The English label of 「我的画像」 is now "My profile", so it no longer reads like the new About page.
+
 ## 1.0.0 - 2026-10-18
 
 First release.

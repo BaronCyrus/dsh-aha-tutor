@@ -52,6 +52,8 @@ export default defineConfig([
     clean: false,
     deps: { neverBundle: clientExternal, onlyBundle: false },
     define: { 'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production') },
+    // The tip codes on the About page are bundled, so they need no host route.
+    loader: { '.png': 'dataurl' },
     outputOptions: {
       entryFileNames: 'client.js',
       banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(id)}, factory: (require) => {`,

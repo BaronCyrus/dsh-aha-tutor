@@ -53,3 +53,15 @@ test('the client bundle loads through DSH\'s module loader and registers its sur
   assert.deepEqual(JSON.parse(JSON.stringify(injected.map(entry => entry.names))), [['sidebarRightTabs']])
   assert.ok(effects.some(effect => effect.label === 'aha-tutor: style'))
 })
+
+test('the About page carries the author links and both tip codes inside the bundle', { skip: existsSync(bundlePath) ? false : 'lib/client.js is not built yet' }, () => {
+  const bundle = readFileSync(bundlePath, 'utf8')
+  // The codes are data URLs, so the page needs neither a host route nor the network.
+  for (const name of ['sponsor-wechat.png', 'sponsor-alipay.png']) {
+    const png = readFileSync(join(root, 'src', 'ui', 'assets', name))
+    assert.ok(png.length < 100 * 1024, `${name} stays small (${png.length} bytes)`)
+    assert.ok(bundle.includes(`data:image/png;base64,${png.toString('base64').slice(0, 120)}`), `${name} is bundled as a data URL`)
+  }
+  assert.ok(bundle.includes('https://github.com/BaronCyrus/dsh-aha-tutor'))
+  assert.ok(bundle.includes('BaronCyrus'))
+})

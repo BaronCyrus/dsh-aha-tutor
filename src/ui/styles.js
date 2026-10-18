@@ -30,6 +30,14 @@ export const STYLE = `
 .aha-card[data-click=true]{cursor:pointer;transition:border-color .15s,transform .15s}.aha-card[data-click=true]:hover{border-color:var(--aha-brand)}
 .aha-cardTitle{font-weight:600;font-size:15px;line-height:22px}
 .aha-hint{color:var(--aha-muted);font-size:12.5px;line-height:19px}
+.aha-aboutHead{display:flex;align-items:center;gap:12px}
+.aha-aboutLogo{width:48px;height:48px;flex:0 0 auto;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--aha-soft)}
+.aha-aboutIntro{margin:2px 0 4px;line-height:22px}
+a.aha-btn{text-decoration:none}
+.aha-sponsors{display:flex;flex-wrap:wrap;justify-content:center;gap:24px;padding:8px 0 2px}
+.aha-sponsors figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:8px}
+.aha-sponsors img{width:180px;height:180px;padding:8px;border-radius:14px;background:#fff;box-sizing:content-box}
+.aha-sponsors figcaption{font-weight:600;font-size:13px}
 .aha-error{color:var(--aha-bad);font-size:13px}
 .aha-ok{color:var(--aha-ok)}
 .aha-tag{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:var(--aha-soft);color:var(--aha-muted);font-size:12px;line-height:20px;white-space:nowrap}

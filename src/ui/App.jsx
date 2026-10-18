@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import { ROUTE_EVENT, useAppValue } from './context.js'
 import { AppContext, usePersistentState } from './hooks.js'
 import { Icon } from './icons.jsx'
+import { AboutScreen } from './screens/About.jsx'
 import { AssistScreen } from './screens/Assist.jsx'
 import { CourseScreen } from './screens/Course.jsx'
 import { CoursesScreen } from './screens/Courses.jsx'
@@ -28,6 +29,7 @@ const NAV = [
   ['plan', 'navPlan', 'plan'],
   ['profile', 'navProfile', 'profile'],
   ['settings', 'navSettings', 'settings'],
+  ['about', 'navAbout', 'heart'],
 ]
 
 const SCREENS = {
@@ -48,6 +50,7 @@ const SCREENS = {
   plan: PlanScreen,
   profile: ProfileScreen,
   settings: SettingsScreen,
+  about: AboutScreen,
 }
 
 const ROOT_OF = { craft: 'courses', course: 'courses', lesson: 'courses', practice: 'courses', project: 'courses', cards: 'studio', sheet: 'studio', item: 'studio' }

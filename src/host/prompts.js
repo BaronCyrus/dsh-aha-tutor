@@ -110,15 +110,15 @@ Return {"questions":[{"prompt":"…","topic":"purpose|level|timeline|style|focus
   }
 }
 
+// The pace bounds a broad subject; a narrow goal or a stated time budget sets
+// the size itself, so a twenty-minute question never becomes a semester.
 function sizeGuidance(timeline) {
-  switch (timeline) {
-    case 'intensive':
-      return 'Intensive pace: 4–6 units, 18–30 lessons in total, focused on what matters most for the goal.'
-    case 'relaxed':
-      return 'No fixed deadline: 6–10 units, 35–70 lessons, room for depth, connections and enrichment.'
-    default:
-      return 'Balanced pace: 5–8 units, 26–45 lessons, foundations, practice and an applied project.'
-  }
+  const broad = timeline === 'intensive'
+    ? 'Intensive pace: for a broad subject, up to 4–6 units and 18–30 lessons, focused on what matters most for the goal.'
+    : timeline === 'relaxed'
+      ? 'No fixed deadline: for a broad subject, up to 6–10 units and 35–70 lessons, with room for depth, connections and enrichment.'
+      : 'Balanced pace: for a broad subject, up to 5–8 units and 26–45 lessons, covering foundations, practice and an applied project.'
+  return `Size the course to the goal first. When the goal is a single idea or names a time budget ("in 20 minutes", "one evening", "this weekend"), fit it: one unit with a single lecture of 1–4 lessons can be the whole course. Never pad with filler lessons. ${broad}`
 }
 
 export function blueprintPrompt({ goal, language, intake, materialsSummary, profile, timeline, weeklyMinutes }) {
@@ -131,11 +131,11 @@ export function blueprintPrompt({ goal, language, intake, materialsSummary, prof
       learnerBlock({ profile }),
       `Design the course blueprint.
 - ${sizeGuidance(timeline)}${weeklyMinutes ? ` The learner can study about ${weeklyMinutes} minutes per week.` : ''}
-- Structure: units → lectures (2–5 per unit) → lessons (2–5 per lecture). Each lesson takes 10–25 minutes and teaches one coherent idea.
+- Structure: units → lectures (1–5 per unit) → lessons (1–5 per lecture). Each lesson takes 10–25 minutes and teaches one coherent idea.
 - Order lessons so every prerequisite comes first. Start from where the learner is, not from zero if they already know the basics.
 - If materials were provided, follow their scope and order where sensible.
 - Each lesson lists 1–3 learning objectives (observable: "compute…", "explain why…") and 1–4 key concepts (short names).
-- Add 1–3 projects that apply the course to something real for this learner, placed after the units they depend on. Use "kind":"code" only when the project is mainly programming or data work.
+- Add 1–3 projects (one is enough for a short course) that apply the course to something real for this learner, placed after the units they depend on. Use "kind":"code" only when the project is mainly programming or data work.
 - Pick one emoji that fits the subject.
 
 Return {"title":"…","subtitle":"one line promise of the course","emoji":"…","summary":"2–3 sentences: who it is for, what they will be able to do","level":"beginner|intermediate|advanced","units":[{"title":"…","summary":"…","objectives":["…"],"lectures":[{"title":"…","summary":"…","lessons":[{"title":"…","summary":"…","objectives":["…"],"concepts":["…"],"estMinutes":15}]}]}],"projects":[{"title":"…","kind":"code|writing|analysis|design|practice|other","brief":"…","skills":["…"],"unitIndex":<0-based unit after which it fits>,"milestones":["…"],"rubric":[{"criterion":"…","points":10}]}]}`,

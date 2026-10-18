@@ -7,6 +7,7 @@ import { chartSvg, escapeXml, niceTicks } from '../src/ui/charts.js'
 import { animationDocument, sanitizeSvg } from '../src/ui/sanitize.js'
 import { splitSentences } from '../src/ui/speech.js'
 import { themedSvg, wrap } from '../src/ui/video.js'
+import { inlinePlain, parseInline, sliceInline } from '../src/ui/board/inline.js'
 
 test('svg sanitizer keeps drawing markup and strips anything active or external', () => {
   const dirty = `<svg viewBox="0 0 100 100" onload="alert(1)">
@@ -81,4 +82,21 @@ test('SVGs drawn into a video carry the board ink, recolored for the dark theme'
   assert.ok(new DOMParser().parseFromString(dark, 'image/svg+xml').querySelector('style'))
   assert.equal(themedSvg('<svg/>', palette, 'dark'), '<svg/>')
   assert.equal(themedSvg(null, palette, 'dark'), null)
+})
+
+test('formulas inside a highlight or bold keep rendering as math', () => {
+  // Seen on a generated board: the highlight swallowed the formula as text.
+  assert.deepEqual(parseInline('就想象一块==以 $a$ 为边的正方形==。'), [
+    { kind: 'text', text: '就想象一块' },
+    { kind: 'mark', text: '以 ' },
+    { kind: 'math', tex: 'a', style: 'mark' },
+    { kind: 'mark', text: ' 为边的正方形' },
+    { kind: 'text', text: '。' },
+  ])
+  assert.deepEqual(parseInline('**$c^2$ 最大**'), [{ kind: 'math', tex: 'c^2', style: 'bold' }, { kind: 'bold', text: ' 最大' }])
+  // "==" or "**" inside a formula never opens a style.
+  assert.deepEqual(parseInline('$a == b$ 且 ==c=='), [{ kind: 'math', tex: 'a == b' }, { kind: 'text', text: ' 且 ' }, { kind: 'mark', text: 'c' }])
+  assert.deepEqual(parseInline('==价格 $5=='), [{ kind: 'mark', text: '价格 $5' }])
+  assert.equal(inlinePlain('==以 $a$ 为边=='), '以 a 为边')
+  assert.deepEqual(sliceInline(parseInline('==以 $a$ 为边=='), 2), [{ kind: 'mark', text: '以 ' }])
 })

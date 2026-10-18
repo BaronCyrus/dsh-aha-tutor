@@ -1,7 +1,22 @@
 // Inline board text: **bold**, ==highlight==, $math$ and plain runs, with a
 // visible length so text can be "written" a character at a time.
 
-const TOKEN = /(\$[^$\n]+\$|\*\*[^*\n]+\*\*|==[^=\n]+==)/gu
+// A formula is one token wherever it stands, so "==" or "**" inside it never
+// opens a style, and a bold or highlighted run may contain formulas.
+const MATH = /\$[^$\n]+\$/gu
+const TOKEN = /(\$[^$\n]+\$|\*\*(?:\$[^$\n]+\$|[^*\n])+?\*\*|==(?:\$[^$\n]+\$|[^=\n])+?==)/gu
+
+// Formulas inside a styled run keep its style: "==以 $a$ 为边==" highlights a
+// rendered a instead of the raw "$a$".
+function pushStyled(segments, text, kind) {
+  let last = 0
+  for (const match of text.matchAll(MATH)) {
+    if (match.index > last) segments.push({ kind, text: text.slice(last, match.index) })
+    segments.push({ kind: 'math', tex: match[0].slice(1, -1), style: kind })
+    last = match.index + match[0].length
+  }
+  if (last < text.length) segments.push({ kind, text: text.slice(last) })
+}
 
 export function parseInline(value) {
   const segments = []
@@ -11,8 +26,7 @@ export function parseInline(value) {
     if (match.index > last) segments.push({ kind: 'text', text: source.slice(last, match.index) })
     const token = match[0]
     if (token.startsWith('$')) segments.push({ kind: 'math', tex: token.slice(1, -1) })
-    else if (token.startsWith('**')) segments.push({ kind: 'bold', text: token.slice(2, -2) })
-    else segments.push({ kind: 'mark', text: token.slice(2, -2) })
+    else pushStyled(segments, token.slice(2, -2), token.startsWith('**') ? 'bold' : 'mark')
     last = match.index + token.length
   }
   if (last < source.length) segments.push({ kind: 'text', text: source.slice(last) })

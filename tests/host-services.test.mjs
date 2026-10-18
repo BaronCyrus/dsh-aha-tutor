@@ -116,7 +116,9 @@ test('end-to-end tutoring flow on the host', async () => {
     assert.equal(drafted.course.projects[0].unitId, drafted.course.units[1].id)
     const intakePrompt = llm.calls.find(call => call.user.includes('Design the course blueprint')).user
     assert.match(intakePrompt, /学过高中物理/)
-    assert.match(intakePrompt, /Intensive pace/)
+    assert.match(intakePrompt, /Intensive pace: for a broad subject, up to/)
+    // A narrow goal or a time budget sizes the course; the pace is only a ceiling.
+    assert.match(intakePrompt, /Size the course to the goal first[\s\S]*Never pad/)
     assert.match(intakePrompt, /一份讲义/)
 
     const revised = await finish(jobs, courses.revise({ courseId, instruction: '标题加上修订' }))

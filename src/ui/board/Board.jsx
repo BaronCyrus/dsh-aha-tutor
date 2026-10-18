@@ -21,7 +21,12 @@ function Inline({ text, reveal = 1 }) {
   const total = useMemo(() => inlineLength(segments), [segments])
   const shown = reveal >= 1 ? segments : sliceInline(segments, total * reveal)
   return shown.map((segment, index) => {
-    if (segment.kind === 'math') return <TeX key={index} tex={segment.tex} />
+    if (segment.kind === 'math') {
+      const formula = <TeX key={index} tex={segment.tex} />
+      if (segment.style === 'mark') return <mark key={index}>{formula}</mark>
+      if (segment.style === 'bold') return <strong key={index}>{formula}</strong>
+      return formula
+    }
     if (segment.kind === 'bold') return <strong key={index}>{segment.text}</strong>
     if (segment.kind === 'mark') return <mark key={index}>{segment.text}</mark>
     return <span key={index}>{segment.text}</span>

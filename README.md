@@ -10,6 +10,7 @@
 
 [![CI](https://github.com/BaronCyrus/dsh-aha-tutor/actions/workflows/ci.yml/badge.svg)](https://github.com/BaronCyrus/dsh-aha-tutor/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/dsh-aha-tutor?logo=npm&label=npm)](https://www.npmjs.com/package/dsh-aha-tutor)
+[![npm 总下载量](https://img.shields.io/npm/d18m/dsh-aha-tutor?logo=npm&label=%E6%80%BB%E4%B8%8B%E8%BD%BD%E9%87%8F)](https://www.npmjs.com/package/dsh-aha-tutor)
 [![MIT](https://img.shields.io/badge/license-MIT-111111.svg)](LICENSE)
 
 [能做什么](#能做什么) · [安装](#安装) · [三分钟上手](#三分钟上手) · [界面预览](#界面预览) · [使用指南](docs/guide.zh-CN.md) · [隐私](#隐私与数据) · [常见问题](#常见问题) · [支持作者](#支持作者)

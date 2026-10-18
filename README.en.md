@@ -12,7 +12,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-aha-tutor?logo=npm&label=npm)](https://www.npmjs.com/package/dsh-aha-tutor)
 [![MIT](https://img.shields.io/badge/license-MIT-111111.svg)](LICENSE)
 
-[What it does](#what-it-does) · [Install](#install) · [Quick start](#quick-start) · [Voices](#voices) · [Privacy](#privacy-and-data) · [FAQ](#faq)
+[What it does](#what-it-does) · [Install](#install) · [Quick start](#quick-start) · [Voices](#voices) · [Privacy](#privacy-and-data) · [FAQ](#faq) · [Support](#support-the-author)
 
 </div>
 
@@ -101,3 +101,14 @@ Runs every test, builds the host and browser bundles and packs a tarball into `.
 [MIT](LICENSE) © BaronCyrus. Third-party licenses: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Aha Tutor (开窍) is an independent open-source project, not affiliated with DeepSeek or any other learning product.
+
+## Support the author
+
+Aha Tutor is free and open source, and tips are entirely optional. If it helped something finally click for you, a tip keeps Qiao growing.
+
+<table align="center">
+  <tr>
+    <td align="center"><img src="docs/assets/sponsor-wechat.png" width="200" alt="WeChat tip code"><br><b>WeChat</b></td>
+    <td align="center"><img src="docs/assets/sponsor-alipay.png" width="200" alt="Alipay payment code"><br><b>Alipay</b></td>
+  </tr>
+</table>

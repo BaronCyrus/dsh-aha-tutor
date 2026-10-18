@@ -12,7 +12,7 @@
 [![npm](https://img.shields.io/npm/v/dsh-aha-tutor?logo=npm&label=npm)](https://www.npmjs.com/package/dsh-aha-tutor)
 [![MIT](https://img.shields.io/badge/license-MIT-111111.svg)](LICENSE)
 
-[能做什么](#能做什么) · [安装](#安装) · [三分钟上手](#三分钟上手) · [界面预览](#界面预览) · [使用指南](docs/guide.zh-CN.md) · [隐私](#隐私与数据) · [常见问题](#常见问题)
+[能做什么](#能做什么) · [安装](#安装) · [三分钟上手](#三分钟上手) · [界面预览](#界面预览) · [使用指南](docs/guide.zh-CN.md) · [隐私](#隐私与数据) · [常见问题](#常见问题) · [支持作者](#支持作者)
 
 </div>
 
@@ -132,10 +132,13 @@ pnpm run check
 
 「开窍 / Aha Tutor」是独立的开源项目，与 DeepSeek 或其他任何学习产品均无隶属关系。
 
-<!-- 赞助区：二维码图片（docs/assets/sponsor-qr.png）提供后在此启用。
 ## 支持作者
 
-如果开窍帮你弄懂了某个卡了很久的知识点，欢迎扫码支持，让小窍继续长大。
+开窍免费开源，赞赏全凭心意。如果它帮你弄懂了某个卡了很久的知识点，欢迎扫码支持，让小窍继续长大。
 
-<img src="docs/assets/sponsor-qr.png" width="220" alt="赞助二维码">
--->
+<table align="center">
+  <tr>
+    <td align="center"><img src="docs/assets/sponsor-wechat.png" width="200" alt="微信赞赏码"><br><b>微信赞赏</b></td>
+    <td align="center"><img src="docs/assets/sponsor-alipay.png" width="200" alt="支付宝收款码"><br><b>支付宝</b></td>
+  </tr>
+</table>

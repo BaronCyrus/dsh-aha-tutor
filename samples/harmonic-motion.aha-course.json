@@ -1,7 +1,7 @@
 {
  "format": "aha-tutor.coursepack",
  "version": 1,
- "exportedAt": "2026-10-18T14:31:18.233Z",
+ "exportedAt": "2026-10-19T05:41:04.603Z",
  "app": {
   "name": "dsh-aha-tutor",
   "version": "sample"
@@ -16,7 +16,7 @@
   "goal": "适合高中到大一的学习者。从“为什么会来回振动”出发，建立回复力、周期、相位的直觉，再推出单摆公式，最后用自己测的数据验证它。",
   "units": [
    {
-    "id": "unt_mvdxbbh3wxu0y2",
+    "id": "unt_mvettal5m4joeu",
     "title": "振动从哪里来",
     "summary": "回复力让物体来回运动；一个旋转的圆告诉我们它的样子。",
     "objectives": [
@@ -25,12 +25,12 @@
     ],
     "lectures": [
      {
-      "id": "lec_mvdxbbh3zi7vu0",
+      "id": "lec_mvettal5s3ucmy",
       "title": "回复力",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvdxbbh0kcwybb",
+        "id": "les_mvettal2rezjk4",
         "title": "回复力：为什么会来回振动",
         "summary": "从弹簧振子出发认识回复力与胡克定律。",
         "objectives": [
@@ -39,11 +39,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvdxbbh2j5s0kl",
+          "id": "cpt_mvettal5cvykpp",
           "name": "回复力"
          },
          {
-          "id": "cpt_mvdxbbh2vi2q7b",
+          "id": "cpt_mvettal51kykz6",
           "name": "胡克定律"
          }
         ],
@@ -51,7 +51,7 @@
         "kind": "lesson"
        },
        {
-        "id": "les_mvdxbbh3r4dasr",
+        "id": "les_mvettal5oktisl",
         "title": "振幅、周期与频率",
         "summary": "描述振动的三个基本量。",
         "objectives": [
@@ -60,11 +60,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvdxbbh3pin6vw",
+          "id": "cpt_mvettal5qw906v",
           "name": "振幅"
          },
          {
-          "id": "cpt_mvdxbbh3h3jk3d",
+          "id": "cpt_mvettal5jvn19z",
           "name": "周期与频率"
          }
         ],
@@ -74,12 +74,12 @@
       ]
      },
      {
-      "id": "lec_mvdxbbh300gfv0",
+      "id": "lec_mvettal5gtpjx0",
       "title": "运动的样子",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvdxbbh3rsm86w",
+        "id": "les_mvettal5568qh8",
         "title": "从圆周运动看简谐运动",
         "summary": "简谐运动是匀速圆周运动的“影子”。",
         "objectives": [
@@ -88,11 +88,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvdxbbh3fmq9nt",
+          "id": "cpt_mvettal5mwjl3b",
           "name": "参考圆"
          },
          {
-          "id": "cpt_mvdxbbh321jg47",
+          "id": "cpt_mvettal5w76r1s",
           "name": "角频率"
          }
         ],
@@ -100,7 +100,7 @@
         "kind": "lesson"
        },
        {
-        "id": "les_mvdxbbh3h059ux",
+        "id": "les_mvettal5w9z6xb",
         "title": "位移、速度与加速度的相位关系",
         "summary": "三个量依次相差四分之一个周期。",
         "objectives": [
@@ -109,11 +109,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvdxbbh3bo5bdm",
+          "id": "cpt_mvettal5fop0pr",
           "name": "相位"
          },
          {
-          "id": "cpt_mvdxbbh3tvd7hl",
+          "id": "cpt_mvettal5fq9dny",
           "name": "速度与加速度"
          }
         ],
@@ -125,7 +125,7 @@
     ]
    },
    {
-    "id": "unt_mvdxbbh3dwgpq2",
+    "id": "unt_mvettal5rdw1wu",
     "title": "单摆与能量",
     "summary": "把方法用到单摆上，并从能量的角度再看一次振动。",
     "objectives": [
@@ -134,12 +134,12 @@
     ],
     "lectures": [
      {
-      "id": "lec_mvdxbbh3eymc22",
+      "id": "lec_mvettal5sstiaz",
       "title": "单摆",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvdxbbh3ojw7pf",
+        "id": "les_mvettal5r65d1t",
         "title": "小角度近似：单摆为什么是简谐运动",
         "summary": "sin θ ≈ θ 让单摆满足回复力的形式。",
         "objectives": [
@@ -148,11 +148,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvdxbbh3aj16b5",
+          "id": "cpt_mvettal5ijeu9c",
           "name": "小角度近似"
          },
          {
-          "id": "cpt_mvdxbbh3drrwig",
+          "id": "cpt_mvettal5i4m5ya",
           "name": "单摆的回复力"
          }
         ],
@@ -160,7 +160,7 @@
         "kind": "lesson"
        },
        {
-        "id": "les_mvdxbbh3qnnk7g",
+        "id": "les_mvettal5biagfk",
         "title": "周期公式与测量重力加速度",
         "summary": "T = 2π√(L/g)，以及如何用它测出 g。",
         "objectives": [
@@ -169,11 +169,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvdxbbh3xewef0",
+          "id": "cpt_mvettal5z1uk3i",
           "name": "单摆周期"
          },
          {
-          "id": "cpt_mvdxbbh39sdj5f",
+          "id": "cpt_mvettal5ajaefg",
           "name": "重力加速度"
          }
         ],
@@ -183,12 +183,12 @@
       ]
      },
      {
-      "id": "lec_mvdxbbh3sdcv0a",
+      "id": "lec_mvettal5aaj4q4",
       "title": "能量视角",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvdxbbh3sv3sgq",
+        "id": "les_mvettal5zfvt5l",
         "title": "动能与势能的来回交换",
         "summary": "振动的过程就是能量在两种形式之间流动。",
         "objectives": [
@@ -197,11 +197,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvdxbbh3zilxxa",
+          "id": "cpt_mvettal5acrjft",
           "name": "机械能守恒"
          },
          {
-          "id": "cpt_mvdxbbh37gujc5",
+          "id": "cpt_mvettal5d4e1e0",
           "name": "振动的能量"
          }
         ],
@@ -215,7 +215,7 @@
   ],
   "projects": [
    {
-    "id": "prj_mvdxbbh3pp76rk",
+    "id": "prj_mvettal6bgi5j6",
     "title": "用一根绳子测出重力加速度",
     "kind": "code",
     "brief": "用手机秒表和一根绳子做一个单摆，测出不同摆长下的周期，再用 Python 画出 T² 与 L 的关系，从直线斜率求出你所在地的重力加速度 g，并和 9.8 m/s² 比较、分析误差来源。",
@@ -286,12 +286,12 @@
       "content": "import csv\nimport math\n\n# 读取数据\nrows = list(csv.DictReader(open(\"data.csv\", encoding=\"utf-8\")))\nL = [float(r[\"length_m\"]) for r in rows]\nT = [float(r[\"time_10_s\"]) / 10 for r in rows]\n\n# TODO 1：计算每个摆长对应的 T 的平方\nT2 = []\n\n# TODO 2：对 T2 关于 L 做最小二乘线性拟合，求斜率 k\n# 提示：k = Σ(L - L̄)(T2 - T̄2) / Σ(L - L̄)²\nk = None\n\n# TODO 3：由 T² = (4π²/g)·L 求 g\ng = None\n\nprint(\"g =\", g)\n"
      }
     ],
-    "unitId": "unt_mvdxbbh3dwgpq2"
+    "unitId": "unt_mvettal5rdw1wu"
    }
   ]
  },
  "boards": {
-  "les_mvdxbbh0kcwybb": {
+  "les_mvettal2rezjk4": {
    "title": "回复力：为什么会来回振动",
    "steps": [
     {
@@ -402,7 +402,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvdxbbh2j5s0kl"
+       "cpt_mvettal5cvykpp"
       ],
       "options": [
        {
@@ -826,7 +826,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvdxbbh2vi2q7b"
+       "cpt_mvettal51kykz6"
       ],
       "answer": 4,
       "tolerance": 0.01,
@@ -856,8 +856,8 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvdxbbh2j5s0kl",
-       "cpt_mvdxbbh2vi2q7b"
+       "cpt_mvettal5cvykpp",
+       "cpt_mvettal51kykz6"
       ],
       "options": [
        {
@@ -881,9 +881,9 @@
      }
     }
    ],
-   "lessonId": "les_mvdxbbh0kcwybb"
+   "lessonId": "les_mvettal2rezjk4"
   },
-  "les_mvdxbbh3rsm86w": {
+  "les_mvettal5568qh8": {
    "title": "从圆周运动看简谐运动",
    "steps": [
     {
@@ -950,7 +950,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvdxbbh3fmq9nt"
+       "cpt_mvettal5mwjl3b"
       ],
       "options": [
        {
@@ -1024,7 +1024,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvdxbbh321jg47"
+       "cpt_mvettal5w76r1s"
       ],
       "answer": 10,
       "tolerance": 0.01,
@@ -1730,8 +1730,8 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvdxbbh321jg47",
-       "cpt_mvdxbbh3fmq9nt"
+       "cpt_mvettal5w76r1s",
+       "cpt_mvettal5mwjl3b"
       ],
       "options": [
        {
@@ -1755,12 +1755,12 @@
      }
     }
    ],
-   "lessonId": "les_mvdxbbh3rsm86w"
+   "lessonId": "les_mvettal5568qh8"
   }
  },
  "practice": {
-  "les_mvdxbbh0kcwybb": {
-   "lessonId": "les_mvdxbbh0kcwybb",
+  "les_mvettal2rezjk4": {
+   "lessonId": "les_mvettal2rezjk4",
    "items": [
     {
      "id": "i1",
@@ -1772,7 +1772,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvdxbbh2j5s0kl"
+      "cpt_mvettal5cvykpp"
      ],
      "options": [
       {
@@ -1804,7 +1804,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvdxbbh2vi2q7b"
+      "cpt_mvettal51kykz6"
      ],
      "answer": 5,
      "tolerance": 0.01,
@@ -1820,7 +1820,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvdxbbh2vi2q7b"
+      "cpt_mvettal51kykz6"
      ],
      "answer": [
       "-kx",
@@ -1840,7 +1840,7 @@
      ],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvdxbbh2j5s0kl"
+      "cpt_mvettal5cvykpp"
      ],
      "options": [
       {
@@ -1870,7 +1870,7 @@
      "hints": [],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvdxbbh2j5s0kl"
+      "cpt_mvettal5cvykpp"
      ],
      "answer": "到达平衡位置时回复力为零但速度最大，由于惯性会冲过平衡位置；冲过之后回复力反向，使它减速并被拉回，如此往复。",
      "rubric": [
@@ -1881,8 +1881,8 @@
     }
    ]
   },
-  "les_mvdxbbh3rsm86w": {
-   "lessonId": "les_mvdxbbh3rsm86w",
+  "les_mvettal5568qh8": {
+   "lessonId": "les_mvettal5568qh8",
    "items": [
     {
      "id": "i1",
@@ -1892,7 +1892,7 @@
      "hints": [],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvdxbbh3fmq9nt"
+      "cpt_mvettal5mwjl3b"
      ],
      "options": [
       {
@@ -1924,7 +1924,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvdxbbh321jg47"
+      "cpt_mvettal5w76r1s"
      ],
      "answer": 12.566,
      "tolerance": 0.06,
@@ -1938,7 +1938,7 @@
      "hints": [],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvdxbbh3fmq9nt"
+      "cpt_mvettal5mwjl3b"
      ],
      "options": [
       {
@@ -1970,7 +1970,7 @@
      ],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvdxbbh321jg47"
+      "cpt_mvettal5w76r1s"
      ],
      "answer": 1.2566,
      "tolerance": 0.01,
@@ -1984,7 +1984,7 @@
      "hints": [],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvdxbbh321jg47"
+      "cpt_mvettal5w76r1s"
      ],
      "options": [
       {

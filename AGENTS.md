@@ -75,7 +75,8 @@ Never reuse, move, delete or overwrite a published npm version or Git tag. If a 
 ## Release cadence
 
 - Tags publish straight to npm's `latest`, which the in-plugin update button and DSH's Plugins page install.
-- DSH's pnpm holds a version back for 24 hours after it is published. The in-plugin update reports it as pending until then; the Plugins page accepts an exact version (`dsh-aha-tutor@<version>`) earlier. Prefer at least 24 hours between releases so users are not chasing versions they cannot install yet.
+- With DSH's default pnpm settings an exact version installs as soon as it is published: pnpm adds `dsh-aha-tutor@<version>` to the profile's `minimumReleaseAgeExclude` itself. The in-plugin update installs that way, and so does the Plugins page when given `dsh-aha-tutor@<version>`; given only the package name, the Plugins page picks the newest version published at least 24 hours ago. Only a profile that sets `minimumReleaseAge` explicitly holds a new version back, and the in-plugin update then reports it as pending with the time it becomes installable.
+- Releases need no 24-hour spacing. Spacing only protects users of update buttons that bypass the cooldown with `--config.minimumReleaseAge`, and this plugin's button has never done that.
 - A broken release reaches `latest` at once: deprecate it on npm and publish a fixed patch version.
 
 ## First release

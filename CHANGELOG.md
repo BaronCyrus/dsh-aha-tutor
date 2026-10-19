@@ -2,7 +2,7 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
-## Unreleased
+## 1.2.0 - 2026-10-19
 
 ### Added
 
@@ -18,6 +18,7 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 - **Captions** show the sentence being spoken, with formulas typeset; narration speaks formulas as readable text instead of raw TeX.
 - **Raised-hand answers and re-explanations** appear on the board while they are written, stay with the lesson (replayed where they were asked when you come back), and show up in the side panel's transcript. The saved position now counts the lesson's own steps.
 - **Confirming a course is quicker**: it prepares the projects and the first unit's practice; a later lecture gets practice for all its lessons when one of them is first opened or practised, with room for every lesson. The blueprint step shows how many lessons have been written so far.
+- **Sample course**: the first lesson of the Bayes sample writes the set {2, 4, 6} as a formula instead of showing stray backslashes.
 
 ## 1.1.0 - 2026-10-19
 

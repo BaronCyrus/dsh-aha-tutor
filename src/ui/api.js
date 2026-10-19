@@ -26,6 +26,9 @@ export function createApi(rpc) {
   }
 
   // Accepts either a finished value or { job }. Resolves with the job result.
+  // Aborting `signal` only stops watching: the job keeps running on the host
+  // (a screen that is left must not throw away minutes of generation), and
+  // returning to the screen picks it up again. cancel() stops it for real.
   async function follow(valueOrJob, { onPartial, onProgress, signal } = {}) {
     const job = valueOrJob?.job
     if (!job) return valueOrJob
@@ -38,12 +41,9 @@ export function createApi(rpc) {
       }
       if (current.progress) onProgress?.(current.progress)
       if (current.status === 'done') return current.result
-      if (current.status === 'failed' || current.status === 'cancelled') throw new ApiError(current.error?.code ?? current.status, current.error?.message ?? current.status)
+      if (current.status === 'cancelled' || signal?.aborted) throw new ApiError('cancelled', 'cancelled')
+      if (current.status === 'failed') throw new ApiError(current.error?.code ?? current.status, current.error?.message ?? current.status)
       if (current.status === 'missing') throw new ApiError('missing', 'The task was lost; try again')
-      if (signal?.aborted) {
-        call('job/cancel', { id: job.id }).catch(() => undefined)
-        throw new ApiError('cancelled', 'cancelled')
-      }
       await new Promise(resolve => { setTimeout(resolve, POLL_MS) })
       current = await call('job/get', { id: job.id, since })
     }
@@ -53,7 +53,13 @@ export function createApi(rpc) {
     return follow(await call(endpoint, payload), options)
   }
 
-  return { call, follow, run }
+  // Stop a host job (the learner pressed cancel, or replaced it).
+  function cancel(jobOrId) {
+    const id = typeof jobOrId === 'string' ? jobOrId : jobOrId?.id
+    return id ? call('job/cancel', { id }).catch(() => undefined) : Promise.resolve()
+  }
+
+  return { call, follow, run, cancel }
 }
 
 // Read a File as base64 without blowing the stack on large inputs.

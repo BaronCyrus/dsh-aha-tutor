@@ -64,8 +64,8 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
 
     'lesson/get': payload => lessons.get({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les') }),
     'lesson/prepare': payload => lessons.prepare({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les'), force: payload.force === true, style: payload.style }),
-    'lesson/ask': payload => ({ job: lessons.ask({ scope: scopeOf(payload), stepIndex: payload.stepIndex, question: payload.question }) }),
-    'lesson/reexplain': payload => ({ job: lessons.reexplain({ scope: scopeOf(payload), stepIndex: payload.stepIndex, style: STYLES.includes(payload.style) ? payload.style : 'example' }) }),
+    'lesson/ask': payload => ({ job: lessons.ask({ scope: scopeOf(payload), stepIndex: payload.stepIndex, question: payload.question, anchorStepId: payload.anchorStepId }) }),
+    'lesson/reexplain': payload => ({ job: lessons.reexplain({ scope: scopeOf(payload), stepIndex: payload.stepIndex, style: STYLES.includes(payload.style) ? payload.style : 'example', anchorStepId: payload.anchorStepId }) }),
     'lesson/record': payload => lessons.record({
       courseId: need(payload, 'courseId', 'crs'),
       lessonId: optional(payload, 'lessonId', 'les'),

@@ -17,7 +17,7 @@ import {
 } from '../core/course-model.js'
 import { assertId, newId } from '../core/ids.js'
 import { emptyProgress, materialImages, materialsSummary, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
-import { generateJson, TutorError } from './generate.js'
+import { generateJson, streamCounter, TutorError } from './generate.js'
 import { blueprintPrompt, detectLanguage, practicePrompt, projectsPrompt, questionnairePrompt, revisePrompt } from './prompts.js'
 
 const TIMELINES = ['intensive', 'balanced', 'relaxed']
@@ -73,6 +73,7 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
       progress,
       intake,
       jobs: {
+        questions: jobs.running(`questions:${courseId}`),
         blueprint: jobs.running(`blueprint:${courseId}`),
         confirm: jobs.running(`confirm:${courseId}`),
       },
@@ -119,7 +120,7 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
       await store.writeJson(store.paths.intake(courseId), { questionnaire, answers: {}, at: stamp() })
       api.progress(1, 2, 'questions')
       return { courseId, questionnaire }
-    }, { meta: { courseId } })
+    }, { key: `questions:${courseId}`, meta: { courseId } })
   }
 
   // Step 2: answers → blueprint.
@@ -137,7 +138,8 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
         weeklyMinutes: clampMinutes(weeklyMinutes),
         deadline: /^\d{4}-\d{2}-\d{2}$/u.test(String(deadline ?? '')) ? deadline : null,
       }
-      api.progress(0, 1, 'blueprint')
+      // The blueprint streams: report the lessons written so far (no total yet).
+      api.progress(0, 0, 'blueprint')
       const blueprint = await generateJson(llm, {
         purpose: 'teach',
         prompt: blueprintPrompt({
@@ -152,11 +154,11 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
         images: llm.supportsImages?.('teach') ? await materialImages(store, materials) : undefined,
         maxTokens: 16000,
         signal: api.signal,
+        onText: streamCounter('"estMinutes"', count => api.progress(count, 0, 'blueprint')),
         normalize: raw => attachProjectUnits(raw, normalizeBlueprint(raw, { language: course.language })),
       })
       const next = { ...course, ...blueprint, language: course.language, status: 'blueprint', settings }
       await saveCourse(next)
-      api.progress(1, 1, 'blueprint')
       return { course: next }
     }, { key: `blueprint:${courseId}`, meta: { courseId } })
   }
@@ -168,11 +170,13 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
       const course = await readCourse(courseId)
       if (!course.units) throw new TutorError('invalid', 'There is no blueprint to revise yet')
       const current = { title: course.title, subtitle: course.subtitle, emoji: course.emoji, summary: course.summary, level: course.level, units: course.units, projects: course.projects }
+      api.progress(0, 0, 'blueprint')
       const revised = await generateJson(llm, {
         purpose: 'teach',
         prompt: revisePrompt({ blueprint: current, instruction: request, language: course.language }),
         maxTokens: 16000,
         signal: api.signal,
+        onText: streamCounter('"estMinutes"', count => api.progress(count, 0, 'blueprint')),
         normalize: raw => attachProjectUnits(raw, normalizeBlueprint(raw, { language: course.language })),
       })
       const next = { ...course, ...revised, language: course.language, status: course.status === 'ready' ? 'ready' : 'blueprint' }
@@ -191,12 +195,39 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
     return { course: next }
   }
 
-  // Step 3: confirm → project briefs and practice for every lecture.
+  // Practice sets for some lessons of one lecture in one model call, each
+  // saved as soon as it is checked. Returns { [lessonId]: saved set }.
+  async function writeLecturePractice({ course, lecture, lessons = lecture.lessons, materials, signal }) {
+    const query = lessons.map(lesson => `${lesson.title} ${lesson.objectives.join(' ')}`).join(' ')
+    const sources = materials ?? await readMaterials(store, course.materialIds ?? [])
+    const sets = await generateJson(llm, {
+      purpose: 'teach',
+      prompt: practicePrompt({ course, lecture, lessons, language: course.language, passages: passagesFor(sources, query, 5000) }),
+      // 4–6 items per lesson with hints and explanations: room for all of them,
+      // so the last lessons of a long lecture are not cut off.
+      maxTokens: Math.min(16000, 3000 + lessons.length * 2200),
+      signal,
+      normalize: raw => raw?.lessons ?? raw,
+    })
+    const written = {}
+    for (const lesson of lessons) {
+      const raw = sets?.[lesson.id] ?? sets?.[lesson.title] ?? (lessons.length === 1 ? Object.values(sets ?? {})[0] : undefined)
+      const set = normalizePractice(raw ?? { items: [] }, lesson.concepts.map(concept => concept.id))
+      if (!set.items.length) continue
+      written[lesson.id] = { lessonId: lesson.id, ...set, createdAt: stamp() }
+      await store.writeJson(store.paths.practice(course.id, lesson.id), written[lesson.id])
+    }
+    return written
+  }
+
+  // Step 3: confirm → project briefs, and practice for the first unit. Later
+  // lectures get theirs when one of their lessons is first opened
+  // (lessons.practice), so confirming stays quick even for a long course.
   function confirm({ courseId }) {
     return jobs.start('craft/confirm', async api => {
       const course = await readCourse(courseId)
       if (!course.units) throw new TutorError('invalid', 'Generate a blueprint first')
-      const lectures = course.units.flatMap(unit => unit.lectures.map(lecture => ({ unit, lecture })))
+      const lectures = course.units.slice(0, 1).flatMap(unit => unit.lectures.map(lecture => ({ unit, lecture })))
       const total = lectures.length + (course.projects?.length ? 1 : 0)
       let done = 0
       const warnings = []
@@ -231,19 +262,7 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
           api.signal.throwIfAborted()
           const { lecture } = queue.shift()
           try {
-            const query = lecture.lessons.map(lesson => `${lesson.title} ${lesson.objectives.join(' ')}`).join(' ')
-            const sets = await generateJson(llm, {
-              purpose: 'teach',
-              prompt: practicePrompt({ course, lecture, lessons: lecture.lessons, language: course.language, passages: passagesFor(materials, query, 5000) }),
-              maxTokens: 9000,
-              signal: api.signal,
-              normalize: raw => raw?.lessons ?? raw,
-            })
-            for (const lesson of lecture.lessons) {
-              const conceptIds = lesson.concepts.map(concept => concept.id)
-              const set = normalizePractice(sets?.[lesson.id] ?? sets?.[lesson.title] ?? { items: [] }, conceptIds)
-              if (set.items.length) await store.writeJson(store.paths.practice(course.id, lesson.id), { lessonId: lesson.id, ...set, createdAt: stamp() })
-            }
+            await writeLecturePractice({ course, lecture, materials, signal: api.signal })
           } catch (error) {
             if (api.signal.aborted) throw error
             warnings.push(lecture.id)
@@ -316,7 +335,7 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
     return summary(course.id)
   }
 
-  return Object.freeze({ list, get, summary, readCourse, saveCourse, startCraft, submitIntake, revise, saveBlueprint, confirm, update, remove, exportPack, importPack })
+  return Object.freeze({ list, get, summary, readCourse, saveCourse, startCraft, submitIntake, revise, saveBlueprint, writeLecturePractice, confirm, update, remove, exportPack, importPack })
 }
 
 function sanitizeAnswers(questionnaire, answers) {

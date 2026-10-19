@@ -4,14 +4,17 @@
 
 import { boardToPlainText } from '../core/board-script.js'
 import { conceptIndex, findLesson, insertLesson, lessonAfter, normalizeCards, normalizeCheatsheet, normalizePractice, outlineForPrompt, text } from '../core/course-model.js'
-import { assertId } from '../core/ids.js'
+import { assertId, newId } from '../core/ids.js'
 import { applyEvidence, createConceptState, masteryPercent, recommendNext } from '../core/mastery.js'
 import { createCard, gradeFromScore, review } from '../core/srs.js'
 import { masteryFor, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
 import { generateJson, generateSteps, TutorError } from './generate.js'
-import { askPrompt, cheatsheetPrompt, flashcardsPrompt, gradePrompt, lessonPrompt, practicePrompt, quizPrompt, reexplainPrompt } from './prompts.js'
+import { askPrompt, cheatsheetPrompt, flashcardsPrompt, gradePrompt, lessonPrompt, quizPrompt, reexplainPrompt } from './prompts.js'
 
 const EVENTS_KEPT = 200
+// Questions and re-explanations kept per lesson, replayed where they were asked.
+const ASIDES_KEPT = 30
+const STEP_ID = /^s\d{1,4}$/u
 
 export function createLessons({ store, llm, jobs, courses, learner, now = () => new Date() }) {
   const stamp = () => now().toISOString()
@@ -25,10 +28,11 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
 
   async function get({ courseId, lessonId }) {
     const { course, row } = await context(courseId, lessonId)
-    const [board, practice, progress] = await Promise.all([
+    const [board, practice, progress, asides] = await Promise.all([
       store.readJson(store.paths.board(courseId, lessonId), null),
       store.readJson(store.paths.practice(courseId, lessonId), null),
       readProgress(store, courseId),
+      store.readJson(store.paths.asides(courseId, lessonId), null),
     ])
     return {
       courseId,
@@ -38,6 +42,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       lesson: row.lesson,
       board,
       practice,
+      asides: Array.isArray(asides?.items) ? asides.items : [],
       state: progress.lessons?.[lessonId] ?? { status: 'new', stepIndex: 0 },
       next: lessonAfter(course, lessonId)?.lesson ?? null,
       job: jobs.running(`board:${courseId}:${lessonId}`),
@@ -81,6 +86,13 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
   // Generate (or regenerate) a lesson board; steps stream into the job.
   async function prepare({ courseId, lessonId, force = false, style }) {
     const { course, row } = await context(courseId, lessonId)
+    ensurePractice(course, row)
+    // Regenerating replaces a board that is still being written, and drops
+    // the questions asked about the old one.
+    if (force) {
+      jobs.cancelKey(`board:${courseId}:${lessonId}`)
+      await store.writeJson(store.paths.asides(courseId, lessonId), { items: [] })
+    }
     if (!force) {
       const existing = await store.readJson(store.paths.board(courseId, lessonId), null)
       if (existing) {
@@ -135,7 +147,21 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     throw new TutorError('invalid', 'Unknown board')
   }
 
-  function ask({ scope, stepIndex = 0, question }) {
+  // A lesson keeps its questions and re-explanations, so they are still on
+  // the board (and in the lesson's Q&A list) when the learner comes back.
+  // The job saves them itself: leaving mid-answer loses nothing.
+  async function keepAside(scope, aside) {
+    if (scope?.kind !== 'lesson') return null
+    const saved = { id: newId('asd'), ...aside, at: stamp() }
+    await store.updateJson(store.paths.asides(scope.courseId, scope.lessonId), null, value => ({
+      items: [...(Array.isArray(value?.items) ? value.items : []), saved].slice(-ASIDES_KEPT),
+    }))
+    return saved
+  }
+
+  const anchorFor = (board, stepIndex, anchorStepId) => (STEP_ID.test(String(anchorStepId)) ? anchorStepId : board?.steps?.[Math.max(0, Number(stepIndex) || 0)]?.id ?? 's1')
+
+  function ask({ scope, stepIndex = 0, question, anchorStepId }) {
     const request = text(question, 1500)
     if (!request) throw new TutorError('invalid', 'Type your question')
     return jobs.start('lesson/ask', async api => {
@@ -150,12 +176,13 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
         conceptIds: lesson?.concepts?.map(concept => concept.id) ?? [],
         onStep: step => api.push(step),
       })
+      const aside = await keepAside(scope, { kind: 'question', question: request, anchorStepId: anchorFor(board, stepIndex, anchorStepId), steps: answer.steps })
       if (scope.kind === 'lesson') await logEvent(scope.courseId, { type: 'question', lessonId: scope.lessonId, text: request.slice(0, 200) })
-      return { steps: answer.steps }
+      return { steps: answer.steps, aside }
     })
   }
 
-  function reexplain({ scope, stepIndex = 0, style = 'example' }) {
+  function reexplain({ scope, stepIndex = 0, style = 'example', anchorStepId }) {
     return jobs.start('lesson/reexplain', async api => {
       const { course, lesson, board, language } = await scopeBoard(scope)
       if (!board?.steps?.length) throw new TutorError('invalid', 'Nothing to re-explain yet')
@@ -169,11 +196,12 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
         conceptIds: lesson?.concepts?.map(concept => concept.id) ?? [],
         onStep: next => api.push(next),
       })
+      const aside = await keepAside(scope, { kind: 'reexplain', style, anchorStepId: anchorFor(board, index, anchorStepId), steps: answer.steps })
       if (scope.kind === 'lesson' && course) {
         const conceptIds = lesson.concepts.map(concept => concept.id)
         await record({ courseId: course.id, lessonId: lesson.id, conceptIds, evidence: { kind: 'reexplain' } })
       }
-      return { steps: answer.steps }
+      return { steps: answer.steps, aside }
     })
   }
 
@@ -276,27 +304,34 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     return { recommendation, inserted, next: lessonAfter(course, lessonId)?.lesson ?? null }
   }
 
-  // Practice for one lesson, generated on demand when confirmation skipped it.
+  // Practice for one lesson. The first unit's comes with the course; a later
+  // lecture gets practice for all its lessons at once, in the background when
+  // one of them is opened (prepare) or right away when it is practised. The
+  // job result maps every lesson of the lecture to its set.
   async function practice({ courseId, lessonId }) {
     const { course, row } = await context(courseId, lessonId)
     const existing = await store.readJson(store.paths.practice(courseId, lessonId), null)
     if (existing) return { practice: existing }
-    const job = jobs.start('lesson/practice', async api => {
-      const materials = await readMaterials(store, course.materialIds ?? [])
-      const sets = await generateJson(llm, {
-        purpose: 'teach',
-        prompt: practicePrompt({ course, lecture: row.lecture, lessons: [row.lesson], language: course.language, passages: passagesFor(materials, row.lesson.title, 4000) }),
-        maxTokens: 5000,
-        signal: api.signal,
-        normalize: raw => raw?.lessons ?? raw,
-      })
-      const set = normalizePractice(sets?.[lessonId] ?? Object.values(sets ?? {})[0] ?? { items: [] }, row.lesson.concepts.map(concept => concept.id))
-      if (!set.items.length) throw new TutorError('bad-output', 'No practice items came back. Try again.')
-      const saved = { lessonId, ...set, createdAt: stamp() }
-      await store.writeJson(store.paths.practice(courseId, lessonId), saved)
-      return { practice: saved }
-    }, { key: `practice:${courseId}:${lessonId}`, meta: { courseId, lessonId } })
-    return { job }
+    return { job: lecturePractice(course, row) }
+  }
+
+  function lecturePractice(course, row) {
+    return jobs.start('lesson/practice', async api => {
+      const missing = []
+      for (const lesson of row.lecture.lessons) if (!(await store.exists(store.paths.practice(course.id, lesson.id)))) missing.push(lesson)
+      const written = missing.length ? await courses.writeLecturePractice({ course, lecture: row.lecture, lessons: missing, signal: api.signal }) : {}
+      const sets = {}
+      for (const lesson of row.lecture.lessons) sets[lesson.id] = written[lesson.id] ?? await store.readJson(store.paths.practice(course.id, lesson.id), null)
+      if (!Object.values(sets).some(Boolean)) throw new TutorError('bad-output', 'No practice items came back. Try again.')
+      return { sets }
+    }, { key: `practice:${course.id}:${row.lecture.id}`, meta: { courseId: course.id, lectureId: row.lecture.id } })
+  }
+
+  // Opening a lesson prepares its lecture's practice in the background.
+  function ensurePractice(course, row) {
+    store.exists(store.paths.practice(course.id, row.lesson.id)).then(exists => {
+      if (!exists && !jobs.running(`practice:${course.id}:${row.lecture.id}`)) lecturePractice(course, row)
+    }).catch(() => undefined)
   }
 
   async function unitSheet({ courseId, unitId, force = false }) {

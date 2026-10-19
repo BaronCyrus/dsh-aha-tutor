@@ -6,12 +6,18 @@
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 
+import { assertPublicHostname, createGuardedFetch } from './web-fetch.js'
+
 export const MAX_UPLOAD_BYTES = 60 * 1024 * 1024
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_TEXT_CHARS = 2_000_000
 const CHUNK_CHARS = 1600
 const FETCH_TIMEOUT_MS = 20_000
 const MAX_PAGE_BYTES = 6 * 1024 * 1024
+
+// Web pages and linked PDFs are read through a fetch that only connects to
+// public addresses.
+const pageFetch = createGuardedFetch({ maxBytes: MAX_UPLOAD_BYTES })
 
 export class MaterialError extends Error {
   constructor(code, message) {
@@ -296,8 +302,8 @@ export async function ingestFile({ name, bytes, signal }) {
 
 // ── web pages ───────────────────────────────────────────────────────────────
 
-const PRIVATE_HOST = /^(localhost|.*\.local|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|169\.254\.\d+\.\d+|0\.0\.0\.0|\[?::1\]?|\[?f[cd][0-9a-f]{2}:.*)$/iu
-
+// Literal addresses and local names are refused here; names are resolved and
+// checked again when guardedFetch connects (see web-fetch.js).
 export function checkPublicUrl(value) {
   let url
   try {
@@ -307,11 +313,15 @@ export function checkPublicUrl(value) {
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new MaterialError('bad-url', 'Only http and https addresses are supported')
   if (url.username || url.password) throw new MaterialError('bad-url', 'Addresses with credentials are not supported')
-  if (PRIVATE_HOST.test(url.hostname)) throw new MaterialError('bad-url', 'Local network addresses are not supported')
+  try {
+    assertPublicHostname(url.hostname)
+  } catch (error) {
+    throw new MaterialError('bad-url', error.message)
+  }
   return url
 }
 
-export async function ingestUrl(address, { fetchImpl = globalThis.fetch, signal } = {}) {
+export async function ingestUrl(address, { fetchImpl = pageFetch, signal } = {}) {
   let url = checkPublicUrl(address)
   let response
   // Follow up to five redirects by hand so every hop is checked.
@@ -325,6 +335,8 @@ export async function ingestUrl(address, { fetchImpl = globalThis.fetch, signal 
       })
     } catch (error) {
       if (signal?.aborted) throw signal.reason ?? error
+      if (error?.name === 'AddressError') throw new MaterialError('bad-url', error.message)
+      if (error?.code === 'ETOOLARGE') throw new MaterialError('too-large', 'The page is too large')
       throw new MaterialError('network', timeout.aborted ? 'The page took too long to load' : 'The page could not be loaded')
     }
     if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {

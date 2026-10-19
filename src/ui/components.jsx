@@ -12,10 +12,19 @@ export function Progress({ value }) {
   return <div className="aha-progress"><div style={{ width: `${Math.max(0, Math.min(100, value))}%` }} /></div>
 }
 
-export function JobProgress({ progress, label }) {
-  if (!progress) return <Spinner label={label} />
-  const percent = progress.total ? Math.round((progress.done / progress.total) * 100) : 0
-  return <div className="aha-col" style={{ gap: 6 }}><Spinner label={label} />{progress.total ? <Progress value={percent} /> : null}</div>
+// Long generations keep running on the host when the learner leaves, so
+// they get a cancel button and a note saying so.
+export function JobProgress({ progress, label, onCancel }) {
+  const { t } = useApp()
+  const percent = progress?.total ? Math.round((progress.done / progress.total) * 100) : 0
+  return <div className="aha-col" style={{ gap: 6 }}>
+    <Spinner label={label} />
+    {progress?.total ? <Progress value={percent} /> : null}
+    {onCancel ? <div className="aha-row">
+      <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={onCancel}>{t('cancel')}</button>
+      <span className="aha-hint">{t('keepsRunning')}</span>
+    </div> : null}
+  </div>
 }
 
 export function Modal({ title, onClose, children, footer, width }) {

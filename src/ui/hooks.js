@@ -29,16 +29,19 @@ export function useLoad(loader, deps = []) {
   return { ...state, reload, setValue: value => setState(previous => ({ ...previous, value: typeof value === 'function' ? value(previous.value) : value })) }
 }
 
-// Run a host job with progress; cancels when the component unmounts.
+// Run a host job with progress. Leaving the screen only stops watching it
+// (the host finishes and saves the work); cancel() stops the job itself.
 export function useJob() {
   const { api } = useApp()
   const [state, setState] = useState({ running: false, progress: null, error: null })
   const controller = useRef(null)
+  const jobId = useRef(null)
   useEffect(() => () => controller.current?.abort(), [])
   const run = useCallback(async (endpoint, payload, { onPartial, existing } = {}) => {
     controller.current?.abort()
     const local = new AbortController()
     controller.current = local
+    jobId.current = existing?.id ?? null
     setState({ running: true, progress: null, error: null })
     try {
       const options = {
@@ -47,7 +50,9 @@ export function useJob() {
         onProgress: progress => { if (!local.signal.aborted) setState(previous => ({ ...previous, progress })) },
       }
       // `existing` resumes a job that is already running on the host.
-      const result = existing ? await api.follow({ job: existing }, options) : await api.run(endpoint, payload, options)
+      const first = existing ? { job: existing } : await api.call(endpoint, payload)
+      if (first?.job?.id && !local.signal.aborted) jobId.current = first.job.id
+      const result = await api.follow(first, options)
       if (!local.signal.aborted) setState({ running: false, progress: null, error: null })
       return result
     } catch (error) {
@@ -57,8 +62,10 @@ export function useJob() {
   }, [api])
   const cancel = useCallback(() => {
     controller.current?.abort()
+    if (jobId.current) api.cancel(jobId.current)
+    jobId.current = null
     setState({ running: false, progress: null, error: null })
-  }, [])
+  }, [api])
   return { ...state, run, cancel }
 }
 

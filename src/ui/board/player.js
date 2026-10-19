@@ -4,6 +4,7 @@
 // Framework-free; the React layer subscribes to snapshots.
 
 import { estimateSpeechMs, stepTiming } from '../../core/board-script.js'
+import { captionSentences, spokenText } from './inline.js'
 
 const STEP_GAP_MS = 450
 
@@ -20,6 +21,7 @@ export function createPlayer({ speech, onChange, now = () => performance.now(), 
     index: Math.max(0, startIndex),
     op: 0,
     progress: 0,
+    sentence: 0, // the caption sentence being spoken
     status: 'idle', // idle | playing | paused | check | buffering | ended
   }
 
@@ -42,21 +44,53 @@ export function createPlayer({ speech, onChange, now = () => performance.now(), 
     }
     state.op = 0
     state.progress = 0
+    state.sentence = 0
     state.status = 'playing'
     const timing = stepTiming(step, { rate })
-    run = { step, timing, startedAt: now(), elapsedBefore: 0, speechDone: !step.say, silentUntil: null, token: {} }
+    const sentences = captionSentences(step.say).map(spokenText)
+    run = { step, timing, startedAt: now(), elapsedBefore: 0, speechDone: !step.say, silentUntil: null, token: {}, sentences, exactSentence: false }
     const token = run.token
     if (step.say) {
-      const spoken = speech?.speak(step.say, { rate }) ?? { done: Promise.resolve({ silent: true }) }
+      const spoken = speech?.speak(spokenText(step.say), {
+        rate,
+        sentences,
+        // System voices report each sentence as it starts; other engines are
+        // followed by elapsed time instead (see sentenceAt).
+        onSentence: index => {
+          if (!run || run.token !== token) return
+          run.exactSentence = true
+          if (state.sentence !== index) {
+            state.sentence = index
+            emit()
+          }
+        },
+      }) ?? { done: Promise.resolve({ silent: true }) }
       spoken.done.then(result => {
         if (!run || run.token !== token) return
         if (result?.silent || result?.error) run.silentUntil = estimateSpeechMs(step.say, rate) * 0.8
         else run.speechDone = true
       })
-      speech?.prefetch?.(steps[state.index + 1]?.say)
+      speech?.prefetch?.(spokenText(steps[state.index + 1]?.say ?? ''))
     }
     emit()
     loop()
+  }
+
+  // Which sentence is being spoken, estimated from elapsed time and the
+  // sentences' lengths when the engine does not report it.
+  function sentenceAt(time) {
+    const sentences = run?.sentences ?? []
+    if (sentences.length < 2) return 0
+    if (run.speechDone) return sentences.length - 1
+    const total = estimateSpeechMs(run.step.say, rate)
+    const lengths = sentences.map(sentence => [...sentence].length)
+    const sum = lengths.reduce((acc, value) => acc + value, 0) || 1
+    let passed = 0
+    for (let index = 0; index < lengths.length; index += 1) {
+      passed += lengths[index]
+      if (time < (passed / sum) * total) return index
+    }
+    return sentences.length - 1
   }
 
   function elapsed() {
@@ -84,8 +118,10 @@ export function createPlayer({ speech, onChange, now = () => performance.now(), 
       }
       acc += writes[index]
     }
-    const changed = op !== state.op || Math.abs(progress - state.progress) > 0.002
+    const sentence = run.exactSentence ? state.sentence : sentenceAt(time)
+    const changed = op !== state.op || Math.abs(progress - state.progress) > 0.002 || sentence !== state.sentence
     state.op = op
+    state.sentence = sentence
     state.progress = Math.min(1, Math.max(0, progress))
     if (run.silentUntil !== null && time >= run.silentUntil) run.speechDone = true
     const written = op >= writes.length

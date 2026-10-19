@@ -3,11 +3,12 @@ import { test } from 'node:test'
 
 import { DOMParser } from 'linkedom'
 
+import { createApi } from '../src/ui/api.js'
 import { chartSvg, escapeXml, niceTicks } from '../src/ui/charts.js'
 import { animationDocument, sanitizeSvg } from '../src/ui/sanitize.js'
 import { splitSentences } from '../src/ui/speech.js'
 import { themedSvg, wrap } from '../src/ui/video.js'
-import { inlinePlain, parseInline, sliceInline } from '../src/ui/board/inline.js'
+import { captionSentences, inlinePlain, parseInline, sliceInline, spokenText, texToText } from '../src/ui/board/inline.js'
 
 test('svg sanitizer keeps drawing markup and strips anything active or external', () => {
   const dirty = `<svg viewBox="0 0 100 100" onload="alert(1)">
@@ -99,4 +100,31 @@ test('formulas inside a highlight or bold keep rendering as math', () => {
   assert.deepEqual(parseInline('==价格 $5=='), [{ kind: 'mark', text: '价格 $5' }])
   assert.equal(inlinePlain('==以 $a$ 为边=='), '以 a 为边')
   assert.deepEqual(sliceInline(parseInline('==以 $a$ 为边=='), 2), [{ kind: 'mark', text: '以 ' }])
+})
+
+test('leaving a screen stops watching a job without cancelling it', async () => {
+  const calls = []
+  const rpc = {
+    call: async (channel, endpoint, payload) => {
+      calls.push(endpoint)
+      if (endpoint === 'job/get') return { ok: true, value: { id: payload.id, status: 'running', partial: [], progress: { done: 1, total: 2 } } }
+      return { ok: true, value: { id: payload.id, status: 'cancelled' } }
+    },
+  }
+  const api = createApi(rpc)
+  const controller = new AbortController()
+  const watching = api.follow({ job: { id: 'job_a', status: 'running', partial: [] } }, { signal: controller.signal })
+  controller.abort()
+  await assert.rejects(watching, error => error.code === 'cancelled')
+  assert.ok(!calls.includes('job/cancel'))
+  await api.cancel({ id: 'job_a' })
+  assert.deepEqual(calls.filter(endpoint => endpoint === 'job/cancel'), ['job/cancel'])
+})
+
+test('captions split narration into sentences without breaking formulas', () => {
+  assert.deepEqual(captionSentences('由 $a^2+b^2=c^2;$ 可得。他说：“成立！”然后呢？好\n下一行'), ['由 $a^2+b^2=c^2;$ 可得。', '他说：“成立！”', '然后呢？', '好', '下一行'])
+  assert.deepEqual(captionSentences('Pi is about 3.14. Then e.g. this works. Done'), ['Pi is about 3.14.', 'Then e.g. this works.', 'Done'])
+  assert.deepEqual(captionSentences(''), [])
+  assert.equal(spokenText('面积是 $\\frac{1}{2}ab$，**要点**'), '面积是 1/2ab，要点')
+  assert.equal(texToText('\\sqrt{x^2+y^2}'), '√(x²+y²)')
 })

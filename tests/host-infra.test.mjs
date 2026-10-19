@@ -6,6 +6,7 @@ import { test } from 'node:test'
 import { pathToFileURL } from 'node:url'
 
 import { createJobs } from '../src/host/jobs.js'
+import { streamCounter } from '../src/host/generate.js'
 import { compareSemver, createPluginManager, findInstall, releaseAgeRefusal, resolveLauncher } from '../src/host/plugin-version.js'
 import { createStore, resolveDshHome } from '../src/host/store.js'
 import { checkEndpoint, createTts, splitForTts, TtsError } from '../src/host/tts.js'
@@ -59,6 +60,18 @@ test('jobs report progress and partial results, dedupe by key and cancel', async
   const failing = jobs.start('fail', async () => { throw new Error('secret internal detail') })
   await new Promise(resolve => setTimeout(resolve, 5))
   assert.equal(jobs.get(failing.id).error.message, 'Generation failed')
+
+  // Regenerating replaces a running job: a cancelled job is never reused.
+  const first = jobs.start('board', api => new Promise((_, reject) => api.signal.addEventListener('abort', () => reject(new Error('stop')))), { key: 'board:y' })
+  assert.equal(jobs.running('board:y').id, first.id)
+  jobs.cancelKey('board:y')
+  assert.equal(jobs.running('board:y'), null)
+  const second = jobs.start('board', async () => 'fresh', { key: 'board:y' })
+  assert.notEqual(second.id, first.id)
+  await new Promise(resolve => setTimeout(resolve, 5))
+  assert.equal(jobs.get(first.id).status, 'cancelled')
+  assert.equal(jobs.get(first.id).error.code, 'cancelled', 'a cancelled job does not read as a failure')
+  assert.equal(jobs.get(second.id).result, 'fresh')
 })
 
 test('TTS splits long text, calls each provider correctly and caches audio', async () => {
@@ -160,4 +173,11 @@ test('plugin update follows the cooldown rules', async () => {
   } finally {
     await rm(home, { recursive: true, force: true })
   }
+})
+
+test('streamed progress counts markers even when a delta splits them', () => {
+  const counts = []
+  const count = streamCounter('"estMinutes"', value => counts.push(value))
+  for (const piece of ['{"est', 'Minutes":3}', ',{"estMinutes":4}', 'no marker here']) count(piece)
+  assert.deepEqual(counts, [1, 2])
 })

@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { createServer } from 'node:http'
 import { posix, win32 } from 'node:path'
 import { test } from 'node:test'
 
 import JSZip from 'jszip'
 
-import { formatPassages, search, buildIndex, selectPassages, tokenize } from '../src/core/retrieval.js'
+import { documentParts, formatPassages, passageRange, search, buildIndex, selectPassages, spreadPassages, tokenize } from '../src/core/retrieval.js'
 import { checkPublicUrl, chunkText, decodeText, detectKind, ingestFile, ingestUrl, MaterialError, pdfjsAssetUrls } from '../src/host/materials.js'
+import { createGuardedFetch, createGuardedLookup, isPublicAddress } from '../src/host/web-fetch.js'
 
 const fixture = name => readFile(new URL(`./fixtures/${name}`, import.meta.url))
 
@@ -101,6 +103,58 @@ test('web ingestion rejects private addresses and extracts article text', async 
   await assert.rejects(ingestUrl('https://example.org/evil', { fetchImpl }), /Local network/)
 })
 
+test('web import refuses local addresses in every spelling', () => {
+  const local = ['127.0.0.1', '10.1.2.3', '100.64.0.1', '0.1.2.3', '169.254.169.254', '172.16.5.4', '192.168.0.1', '198.18.0.1', '224.0.0.1', '255.255.255.255',
+    '::1', '::', '::ffff:7f00:1', '::ffff:127.0.0.1', '::ffff:169.254.169.254', 'fe80::1', 'fe80::1%en0', 'fc00::1', 'fd12:3456::1', 'ff02::1', '64:ff9b::7f00:1', '2002:7f00:1::1', '2001:db8::1', '2001::1']
+  for (const address of local) assert.equal(isPublicAddress(address), false, address)
+  for (const address of ['8.8.8.8', '1.1.1.1', '93.184.216.34', '2606:4700:4700::1111', '64:ff9b::808:808', '2002:808:808::1']) assert.equal(isPublicAddress(address), true, address)
+  for (const url of ['http://[::ffff:127.0.0.1]/', 'http://[::ffff:169.254.169.254]/', 'http://localhost./', 'http://[fe80::1]/', 'http://[::]/', 'http://0.1.2.3/', 'http://100.64.0.1/', 'http://metadata.google.internal/', 'http://printer.local/', 'http://app.localhost/', 'http://intranet/']) {
+    assert.throws(() => checkPublicUrl(url), /Local network/, url)
+  }
+  assert.equal(checkPublicUrl('https://example.org/a').hostname, 'example.org')
+})
+
+test('web import checks every resolved address when it connects', async () => {
+  const resolve = (host, options, callback) => callback(null, host === 'rebind.example'
+    ? [{ address: '93.184.216.34', family: 4 }, { address: '127.0.0.1', family: 4 }]
+    : [{ address: '93.184.216.34', family: 4 }, { address: '2606:2800:220:1::1', family: 6 }])
+  const lookup = createGuardedLookup({ resolve })
+  const ask = (host, options) => new Promise((done, fail) => lookup(host, options, (error, ...rest) => (error ? fail(error) : done(rest))))
+  await assert.rejects(ask('rebind.example', {}), /Local network/)
+  assert.deepEqual(await ask('site.example', { family: 6 }), ['2606:2800:220:1::1', 6])
+  assert.deepEqual(await ask('site.example', { all: true }), [[{ address: '93.184.216.34', family: 4 }, { address: '2606:2800:220:1::1', family: 6 }]])
+
+  const { gzipSync } = await import('node:zlib')
+  const server = createServer((request, response) => {
+    if (request.url === '/moved') {
+      response.writeHead(302, { location: 'https://example.org/next' })
+      response.end()
+      return
+    }
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-encoding': 'gzip' })
+    response.end(gzipSync(Buffer.from('<p>勾股定理</p>'.repeat(40))))
+  })
+  await new Promise(done => server.listen(0, '127.0.0.1', done))
+  const { port } = server.address()
+  try {
+    // A public-looking name that resolves to this machine is refused…
+    const toLoopback = (host, options, callback) => callback(null, [{ address: '127.0.0.1', family: 4 }])
+    await assert.rejects(createGuardedFetch({ resolve: toLoopback })(`http://public.example:${port}/`), /Local network/)
+    await assert.rejects(createGuardedFetch()(`http://127.0.0.1:${port}/`), /Local network/)
+    // …while the same request through an allowed address works, decoded, without following redirects.
+    const open = createGuardedFetch({ resolve: toLoopback, allowed: () => true })
+    const page = await open(`http://public.example:${port}/`)
+    assert.equal(page.status, 200)
+    assert.match(await page.text(), /^<p>勾股定理<\/p>/u)
+    const moved = await open(`http://public.example:${port}/moved`)
+    assert.equal(moved.status, 302)
+    assert.equal(moved.headers.get('location'), 'https://example.org/next')
+    await assert.rejects(createGuardedFetch({ resolve: toLoopback, allowed: () => true, maxBytes: 100 })(`http://public.example:${port}/`), error => error.code === 'ETOOLARGE')
+  } finally {
+    await new Promise(done => server.close(done))
+  }
+})
+
 test('retrieval ranks the passage that matches the query', () => {
   const chunks = [
     { id: 'c1', page: 1, text: '回复力总是指向平衡位置，大小与位移成正比。' },
@@ -113,4 +167,26 @@ test('retrieval ranks the passage that matches the query', () => {
   const picked = selectPassages(chunks, '回复力', { maxChars: 100 })
   assert.equal(picked[0].id, 'c1')
   assert.match(formatPassages(picked, '讲义'), /<<讲义 · p\.1>>/)
+})
+
+test('long materials are sampled and split across the whole document', () => {
+  const chunks = Array.from({ length: 100 }, (_, index) => ({ id: `c${index}`, page: index + 1, text: `第${index + 1}页 ${'内容'.repeat(395)}` }))
+  const spread = spreadPassages(chunks, { maxChars: 8000, samples: 10 })
+  assert.equal(spread.length, 10)
+  assert.equal(spread[0].page, 1)
+  assert.equal(spread.at(-1).page, 100)
+  assert.ok(spread.some(chunk => chunk.page > 40 && chunk.page < 60))
+  assert.ok(spread.reduce((sum, chunk) => sum + chunk.text.length, 0) <= 8000 + spread.length)
+  assert.equal(spreadPassages(chunks.slice(0, 3), { maxChars: 8000 }).length, 3)
+
+  const parts = documentParts(chunks, { partChars: 20000 })
+  assert.equal(parts.length, 4)
+  assert.deepEqual(parts.flat().map(chunk => chunk.page), chunks.map(chunk => chunk.page))
+  assert.match(passageRange(parts[0]), /^p\.1–p\.2[4-6]$/u)
+  assert.ok(parts.every(part => part.length >= 24 && part.length <= 26))
+  const capped = documentParts(chunks, { partChars: 2000, maxParts: 5, maxPartChars: 9000 })
+  assert.equal(capped.length, 5)
+  assert.ok(capped.every(part => part.reduce((sum, chunk) => sum + chunk.text.length, 0) <= 9000 + part.length))
+  assert.equal(capped.at(-1).at(-1).page, 100)
+  assert.match(formatPassages([{ page: 7, text: 'x' }], ''), /^<<p\.7>>/u)
 })

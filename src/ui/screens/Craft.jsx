@@ -38,7 +38,7 @@ function CraftCourse({ courseId }) {
 
   // Resume a generation that was running when the screen was left.
   useEffect(() => {
-    const running = detail.value?.jobs?.blueprint ?? detail.value?.jobs?.confirm
+    const running = detail.value?.jobs?.questions ?? detail.value?.jobs?.blueprint ?? detail.value?.jobs?.confirm
     if (!running || job.running) return
     job.run(null, null, { existing: running }).then(() => detail.reload()).catch(() => undefined)
   }, [detail.value])
@@ -82,7 +82,12 @@ function Intake({ course, intake, job, onDone }) {
     }
   }
 
-  if (job.running) return <div className="aha-page"><h2 className="aha-title">{course.goal}</h2><JobProgress progress={job.progress} label={t('designingBlueprint')} /></div>
+  if (job.running) {
+    const label = job.progress?.label === 'questions' ? t('thinkingQuestions')
+      : job.progress?.done ? t('blueprintSoFar', { count: job.progress.done })
+        : t('designingBlueprint')
+    return <div className="aha-page"><h2 className="aha-title">{course.goal}</h2><JobProgress progress={job.progress} label={label} onCancel={job.cancel} /></div>
+  }
 
   return <div className="aha-page">
     <div className="aha-col" style={{ gap: 4 }}>
@@ -204,8 +209,9 @@ function Blueprint({ course, job, onChange }) {
   if (job.running) {
     const label = job.progress?.label === 'practice' || job.progress?.label === 'projects'
       ? t('confirming', { done: job.progress.done, total: job.progress.total })
-      : t('revising')
-    return <div className="aha-page"><h2 className="aha-title">{course.emoji} {course.title}</h2><JobProgress progress={job.progress} label={label} /></div>
+      : job.progress?.done ? t('revisingSoFar', { count: job.progress.done })
+        : t('revising')
+    return <div className="aha-page"><h2 className="aha-title">{course.emoji} {course.title}</h2><JobProgress progress={job.progress} label={label} onCancel={job.cancel} /></div>
   }
 
   return <div className="aha-page">

@@ -91,6 +91,12 @@ a.aha-btn{text-decoration:none}
 .aha-stage{position:relative;flex:1 1 auto;min-height:360px;display:flex;flex-direction:column;border-radius:16px;overflow:hidden;border:1px solid var(--aha-border)}
 .aha-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center}
 .aha-caption{min-height:44px;padding:8px 16px;text-align:center;font-size:15px;line-height:22px;color:var(--aha-text)}
+.aha-caption .katex{font-size:1em}
+.aha-qaList{display:flex;flex-direction:column;gap:4px;max-height:180px;overflow:auto;padding:2px 0}
+.aha-qaItem{display:flex;align-items:flex-start;gap:8px;width:100%;padding:6px 10px;border:1px solid var(--aha-border);border-radius:9px;background:var(--aha-surface);color:var(--aha-text);font:inherit;text-align:left;cursor:pointer}
+.aha-qaItem:hover:not(:disabled){background:var(--aha-hover)}
+.aha-qaItem:disabled{opacity:.6;cursor:default}
+.aha-qaLabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .aha-checkCard{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);width:min(600px,calc(100% - 28px));border-radius:14px;background:var(--aha-surface);border:1px solid var(--aha-border);box-shadow:0 14px 40px rgba(0,0,0,.22);padding:12px 14px 0;display:flex;flex-direction:column;gap:8px;z-index:5;max-height:62%;overflow:auto}
 .aha-checkCard .aha-itemActions{position:sticky;bottom:0;background:var(--aha-surface);padding:8px 0 12px;margin-top:2px}
 .aha-options[data-grid=true]{display:grid;grid-template-columns:1fr 1fr;gap:6px}

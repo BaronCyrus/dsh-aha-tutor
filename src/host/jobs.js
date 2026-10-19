@@ -27,12 +27,13 @@ export function createJobs({ logger, now = Date.now } = {}) {
     }
   }
 
-  // `key` deduplicates: starting the same work twice returns the running job.
+  // `key` deduplicates: starting the same work twice returns the running job
+  // (unless that job was just cancelled and is still winding down).
   function start(kind, run, { key, meta } = {}) {
     sweep()
     if (key && byKey.has(key)) {
       const existing = jobs.get(byKey.get(key))
-      if (existing && !existing.finishedAt) return snapshot(existing)
+      if (existing && !existing.finishedAt && !existing.controller.signal.aborted) return snapshot(existing)
     }
     const controller = new AbortController()
     const job = {
@@ -73,7 +74,7 @@ export function createJobs({ logger, now = Date.now } = {}) {
       })
       .catch(error => {
         job.status = controller.signal.aborted ? 'cancelled' : 'failed'
-        job.error = { code: error?.code ?? 'failed', message: publicMessage(error) }
+        job.error = controller.signal.aborted ? { code: 'cancelled', message: 'Cancelled' } : { code: error?.code ?? 'failed', message: publicMessage(error) }
         if (job.status === 'failed') logger?.warn?.('aha-tutor job %s failed: %s', kind, error?.message)
       })
       .finally(() => {
@@ -110,7 +111,13 @@ export function createJobs({ logger, now = Date.now } = {}) {
   function running(key) {
     const id = byKey.get(key)
     const job = id ? jobs.get(id) : undefined
-    return job && !job.finishedAt ? snapshot(job) : null
+    return job && !job.finishedAt && !job.controller.signal.aborted ? snapshot(job) : null
+  }
+
+  // Cancel the job running under `key`, if any (regenerating replaces it).
+  function cancelKey(key) {
+    const job = running(key)
+    return job ? cancel(job.id) : null
   }
 
   function dispose() {
@@ -119,7 +126,7 @@ export function createJobs({ logger, now = Date.now } = {}) {
     byKey.clear()
   }
 
-  return Object.freeze({ start, get, cancel, running, dispose })
+  return Object.freeze({ start, get, cancel, cancelKey, running, dispose })
 }
 
 // Only messages written for users cross to the browser.

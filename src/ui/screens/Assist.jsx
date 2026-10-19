@@ -23,9 +23,11 @@ export function AssistScreen({ draftMode, draftRequest, draftMaterials, token })
     if (!ask) return
     setError(null)
     const threadId = session?.threadId ?? newId('thd')
+    // Asking again while the previous answer is still being written replaces it.
+    if (session?.stream && !session.done) api.cancel(session.stream)
     try {
       const { job } = await api.call('assist/ask', { mode, request: ask, materialIds, threadId: session?.threadId, newThreadId: session?.threadId ? undefined : threadId })
-      setSession(current => ({ threadId, turn: current ? current.turn + 1 : 0, stream: job, steps: [], title: ask.slice(0, 80), language: undefined, key: `${threadId}:${Date.now()}` }))
+      setSession(current => ({ threadId, turn: current ? current.turn + 1 : 0, stream: job, done: false, steps: [], title: ask.slice(0, 80), language: undefined, key: `${threadId}:${Date.now()}` }))
       setRequest('')
     } catch (failure) {
       setError(failure)
@@ -50,7 +52,10 @@ export function AssistScreen({ draftMode, draftRequest, draftMaterials, token })
   return <div className="aha-page" data-wide="true">
     <div className="aha-split">
       <div className="aha-col" style={{ minHeight: 0 }}>
-        {session ? <Classroom key={session.key} scope={{ kind: 'thread', id: session.threadId, turn: session.turn }} title={session.title} steps={session.steps} stream={session.stream} language={session.language} recordChecks={false} onStreamDone={() => history.reload()} /> : <div className="aha-col" style={{ gap: 4 }}>
+        {session ? <Classroom key={session.key} scope={{ kind: 'thread', id: session.threadId, turn: session.turn }} title={session.title} steps={session.steps} stream={session.stream} language={session.language} recordChecks={false} onStreamDone={result => {
+          setSession(current => (current?.stream?.id === session.stream?.id ? { ...current, done: true, turn: Number.isInteger(result?.turn) ? result.turn : current.turn } : current))
+          history.reload()
+        }} /> : <div className="aha-col" style={{ gap: 4 }}>
           <h2 className="aha-title">{t('assistTitle')}</h2>
           <p className="aha-hint">{t('assistHint')}</p>
         </div>}

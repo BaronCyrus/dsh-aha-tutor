@@ -331,13 +331,28 @@ export function summaryPrompt({ scopeTitle, passages, outline, language }) {
   }
 }
 
-export function digestPrompt({ title, passages, language }) {
+// A short document is digested from its full text; a long one from notes
+// taken on each of its parts (digestPartPrompt), so the digest covers it all.
+export function digestPrompt({ title, passages, notes, language }) {
   return {
     system: join(PERSONA, `You help learners digest long readings: you surface the structure and the argument, not just a summary. ${languageRule(language)}`, JSON_ONLY),
     user: join(
       block('document', title),
-      block('passages', passages),
+      notes ? block('notes_on_each_part', notes) : block('passages', passages),
+      notes ? 'The notes above cover the whole document part by part, in order. Combine them into one digest of the whole document: follow its structure from beginning to end, merge points that repeat, and keep the page references from the notes.' : '',
       'Return {"overview":"3–5 sentences","structure":[{"heading":"…","points":["…"],"pages":"e.g. 3–7"}],"keyIdeas":["…"],"arguments":[{"claim":"…","support":"…","page":"…"}],"glossary":[{"term":"…","meaning":"…"}],"questions":["5 questions worth discussing or testing"]}',
+    ),
+  }
+}
+
+export function digestPartPrompt({ title, part, parts, range, passages, language }) {
+  return {
+    system: join(PERSONA, `You are reading a long document one part at a time for a learner. Take faithful notes on this part only; a later pass combines the notes of all parts. ${languageRule(language)}`, JSON_ONLY),
+    user: join(
+      block('document', title),
+      block('part', `Part ${part} of ${parts}${range ? ` (${range})` : ''}`),
+      block('passages', passages),
+      'Take notes on this part only. Return {"sections":[{"heading":"the chapter or section title as the text gives it","pages":"e.g. 12–18","points":["…"]}],"keyIdeas":["…"],"arguments":[{"claim":"…","support":"…","page":"…"}],"glossary":[{"term":"…","meaning":"…"}]}. Take page numbers from the passage labels; never invent them.',
     ),
   }
 }
@@ -381,7 +396,7 @@ export function materialBriefPrompt({ title, passages, language }) {
     user: join(
       block('document', title),
       block('passages', passages),
-      'Describe this material for a course designer. Return {"summary":"3–4 sentences","topics":["main topics in order"],"level":"beginner|intermediate|advanced","suggestedGoal":"one sentence learning goal a student might have for it"}',
+      'The passages are excerpts spread across the whole document, each labelled with where it comes from. Describe this material as a whole for a course designer, not just its opening. Return {"summary":"3–4 sentences","topics":["main topics in the order the document covers them"],"level":"beginner|intermediate|advanced","suggestedGoal":"one sentence learning goal a student might have for it"}',
     ),
   }
 }

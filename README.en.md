@@ -23,7 +23,7 @@
 
 | Feature | What you get |
 | --- | --- |
-| **A course made for you** | Say what you want to learn or drop in a textbook. The tutor first asks a few multiple-choice questions about your background, goal and time, then proposes a unit → chapter → lesson blueprint you can edit by hand or by asking. Confirming generates practice sets and hands-on projects |
+| **A course made for you** | Say what you want to learn or drop in a textbook. The tutor first asks a few multiple-choice questions about your background, goal and time, then proposes a unit → chapter → lesson blueprint you can edit by hand or by asking. Confirming prepares the hands-on projects and the first unit's practice; later lectures get theirs when you reach them |
 | **Handwriting chalkboard lessons** | Narration (voice + captions) while the board fills up with handwritten points, formulas, diagrams, charts and, when it helps, a small animation; pause, rewind and change speed any time |
 | **Quick checks that adapt** | At key moments the lesson stops for a question and asks how sure you are. Lucky guesses, hesitation and confident mistakes count differently, and a revisit lesson is added automatically for concepts that did not stick |
 | **Raise your hand, hear it again** | Ask anything mid-lesson and the tutor answers on the board, then picks up where it left off; or have a step re-explained with an analogy, a drawing, an example, more simply or in more depth |
@@ -66,14 +66,14 @@ Only cloud voices can be recorded into exported videos; with a system voice the 
 
 ## Models
 
-Aha uses your DSH default model. In **Aha → Settings** you can pick separate models for "course design & teaching" and "grading & questions". The plugin never switches to another paid model on its own and never generates in bulk in the background: the course structure is made when you confirm it, and each lesson's board when you open it (plus the next one). Follow the terms of subscription-based models you use.
+Aha uses your DSH default model. In **Aha → Settings** you can pick separate models for "course design & teaching" and "grading & questions". The plugin never switches to another paid model on its own and never generates in bulk in the background: the course structure is made when you confirm it, and each lesson's board when you open it (plus the next one), as is the practice for later lectures. Follow the terms of subscription-based models you use.
 
 ## Privacy and data
 
 - Courses, progress, materials, profile and plan stay on this computer under `$DSH_HOME/aha-tutor/` (default `~/.dsh/aha-tutor/`, on Windows `C:\Users\<you>\.dsh\aha-tutor\`).
 - Project folders live under `~/AhaTutor/projects/`; files you changed are never overwritten.
 - Models receive only what the current task needs: your request, the course outline, relevant passages from your materials and a short learner profile.
-- Web import fetches public addresses only, never localhost or private networks.
+- Web import fetches public addresses only, never localhost or private networks; every address a name resolves to is checked again when connecting.
 - Model-drawn diagrams pass an allow-list sanitizer; animations run in a sandbox without network access.
 
 See [SECURITY.md](SECURITY.md).

@@ -110,8 +110,10 @@ test('end-to-end tutoring flow on the host', async () => {
     const started = await finish(jobs, courses.startCraft({ goal: '我想学简谐运动', materialIds: [uploaded.material.id] }))
     assert.equal(started.questionnaire.questions.length, 2)
     const { courseId } = started
-    const drafted = await finish(jobs, courses.submitIntake({ courseId, answers: { q1: { choice: ['b'], other: '' }, q9: { choice: ['a'] } }, timeline: 'intensive', weeklyMinutes: 120, deadline: '2026-12-01' }))
+    const intakeJob = courses.submitIntake({ courseId, answers: { q1: { choice: ['b'], other: '' }, q9: { choice: ['a'] } }, timeline: 'intensive', weeklyMinutes: 120, deadline: '2026-12-01' })
+    const drafted = await finish(jobs, intakeJob)
     assert.equal(drafted.course.status, 'blueprint')
+    assert.deepEqual(jobs.get(intakeJob.id).progress, { done: 3, total: 0, label: 'blueprint' }, 'the streamed blueprint reports lessons written so far')
     assert.equal(drafted.course.language, 'zh-CN')
     assert.equal(drafted.course.projects[0].unitId, drafted.course.units[1].id)
     const intakePrompt = llm.calls.find(call => call.user.includes('Design the course blueprint')).user
@@ -128,7 +130,14 @@ test('end-to-end tutoring flow on the host', async () => {
     assert.deepEqual(confirmed.warnings, [])
     assert.deepEqual(confirmed.course.projects[0].starterFiles.map(file => file.path), ['main.py'])
     const detail = await courses.get({ courseId })
-    assert.equal(detail.ready.practice.length, 3)
+    assert.equal(detail.ready.practice.length, 2, 'only the first unit gets practice when the course is confirmed')
+    // A later lecture gets practice for all its lessons when one is practised…
+    const laterLesson = confirmed.course.units[1].lectures[0].lessons[0]
+    const later = await lessons.practice({ courseId, lessonId: laterLesson.id })
+    assert.ok(later.job)
+    const laterSets = await finish(jobs, later.job)
+    assert.equal(laterSets.sets[laterLesson.id].items.length, 2)
+    assert.ok((await lessons.practice({ courseId, lessonId: laterLesson.id })).practice, 'and keeps it')
 
     // classroom
     const firstLesson = confirmed.course.units[0].lectures[0].lessons[0]
@@ -145,8 +154,14 @@ test('end-to-end tutoring flow on the host', async () => {
     const asked = await finish(jobs, lessons.ask({ scope: { kind: 'lesson', courseId, lessonId: firstLesson.id }, stepIndex: 1, question: '为什么有负号？' }))
     assert.equal(asked.steps[0].say, '这是你问题的答案')
     assert.match(llm.calls.at(-1).user, /F=-kx/)
-    const again = await finish(jobs, lessons.reexplain({ scope: { kind: 'lesson', courseId, lessonId: firstLesson.id }, stepIndex: 1, style: 'analogy' }))
+    const again = await finish(jobs, lessons.reexplain({ scope: { kind: 'lesson', courseId, lessonId: firstLesson.id }, stepIndex: 1, style: 'analogy', anchorStepId: 's3' }))
     assert.equal(again.steps.length, 2)
+    // Both stay with the lesson, anchored where they were asked.
+    const kept = (await lessons.get({ courseId, lessonId: firstLesson.id })).asides
+    assert.deepEqual(kept.map(aside => [aside.kind, aside.anchorStepId]), [['question', 's2'], ['reexplain', 's3']])
+    assert.equal(kept[0].question, '为什么有负号？')
+    assert.equal(kept[0].steps[0].say, '这是你问题的答案')
+    assert.equal(asked.aside.id, kept[0].id)
 
     const conceptId = firstLesson.concepts[0].id
     const recorded = await lessons.record({ courseId, lessonId: firstLesson.id, conceptIds: [conceptId], evidence: { kind: 'check', score: 0, confidence: 'sure', errorTag: '方向搞反' } })
@@ -156,6 +171,11 @@ test('end-to-end tutoring flow on the host', async () => {
     assert.equal(completed.inserted.kind, 'remedial')
     assert.equal(completed.next.id, completed.inserted.id)
     assert.deepEqual(completed.inserted.concepts.map(concept => concept.id), [conceptId])
+    // …and opening a lesson that has none prepares it in the background.
+    const remedialBoard = await lessons.prepare({ courseId, lessonId: completed.inserted.id })
+    await finish(jobs, remedialBoard.job)
+    for (let attempt = 0; attempt < 300 && !(await store.exists(store.paths.practice(courseId, completed.inserted.id))); attempt += 1) await new Promise(resolve => setTimeout(resolve, 3))
+    assert.ok(await store.exists(store.paths.practice(courseId, completed.inserted.id)))
     const graded = await lessons.grade({ item: { prompt: '解释负号', answer: '方向相反' }, response: '反方向' })
     assert.equal(graded.verdict, 'partial')
 
@@ -198,6 +218,54 @@ test('end-to-end tutoring flow on the host', async () => {
     assert.equal((await courses.list()).length, 2)
     await courses.remove({ courseId })
     assert.equal((await courses.list()).length, 1)
+    jobs.dispose()
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('a long document is digested from notes on every part, and briefed from all of it', async () => {
+  const seen = {}
+  const root = await mkdtemp(join(tmpdir(), 'aha-digest-'))
+  try {
+    const store = createStore({ root: join(root, 'data') })
+    const jobs = createJobs()
+    const calls = []
+    const llm = {
+      supportsImages: () => false,
+      async complete(request) {
+        calls.push(request.user)
+        if (request.user.includes('Describe this material')) return JSON.stringify({ summary: '一本书', topics: ['证明'], level: 'beginner', suggestedGoal: '读懂' })
+        if (request.user.includes('Take notes on this part only')) {
+          const [, part, of] = /Part (\d+) of (\d+)/u.exec(request.user)
+          seen[part] = (seen[part] ?? 0) + 1
+          // Part 2 fails once (with its repair round) and is read on the retry;
+          // part 3 never comes back usable.
+          if ((part === '2' && seen[part] <= 2) || part === '3') return '{}'
+          return JSON.stringify({ sections: [{ heading: `第${part}/${of}部分`, points: ['要点'] }], keyIdeas: ['想法'] })
+        }
+        if (request.user.includes('notes_on_each_part')) return JSON.stringify({ overview: '全书概览', structure: [{ heading: '终章', points: ['收尾'] }], keyIdeas: ['k'], questions: ['q'] })
+        return '{}'
+      },
+      async stream(request) {
+        return this.complete(request)
+      },
+    }
+    const studio = createStudio({ store, llm, jobs })
+    const book = Array.from({ length: 120 }, (_, index) => `章节标记${index} ${'勾股定理的证明与应用。'.repeat(40)}`).join('\n\n')
+    const uploaded = await finish(jobs, studio.upload({ name: 'book.md', bytes: Buffer.from(book) }))
+    const brief = calls.find(user => user.includes('Describe this material'))
+    assert.match(brief, /章节标记0 /u)
+    assert.match(brief, /章节标记1[01]\d/u, 'the brief sees the end of the book, not just its opening')
+
+    const { material } = await finish(jobs, studio.digest({ id: uploaded.material.id }))
+    assert.equal(material.digest.overview, '全书概览')
+    assert.deepEqual(seen, { 1: 1, 2: 3, 3: 4 }, 'a failed part is tried once more')
+    assert.ok(calls.some(user => user.includes('Part 3 of 3') && /章节标记119/u.test(user)), 'the last part reaches the end of the book')
+    const combine = calls.find(user => user.includes('notes_on_each_part'))
+    for (const heading of ['第1/3部分', '第2/3部分']) assert.ok(combine.includes(heading), heading)
+    assert.ok(!combine.includes('Part 3/3'))
+    assert.equal(material.digest.missing.length, 1, 'the unread part is named in the digest')
     jobs.dispose()
   } finally {
     await rm(root, { recursive: true, force: true })

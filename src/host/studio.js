@@ -5,14 +5,19 @@
 import { normalizeCards, normalizeCheatsheet, normalizePractice, text } from '../core/course-model.js'
 import { assertId, newId } from '../core/ids.js'
 import { createCard, review } from '../core/srs.js'
+import { documentParts, formatPassages, passageRange, spreadPassages } from '../core/retrieval.js'
 import { materialImages, passagesFor, readMaterials, readProfile } from './context.js'
 import { generateJson, generateSteps, generateText, TutorError } from './generate.js'
 import { ingestFile, ingestUrl, MAX_UPLOAD_BYTES } from './materials.js'
-import { assistPrompt, cheatsheetPrompt, detectLanguage, digestPrompt, flashcardsPrompt, materialBriefPrompt, quizPrompt, shortPrompt, summaryPrompt } from './prompts.js'
+import { assistPrompt, cheatsheetPrompt, detectLanguage, digestPartPrompt, digestPrompt, flashcardsPrompt, materialBriefPrompt, quizPrompt, shortPrompt, summaryPrompt } from './prompts.js'
 import { cleanLayout } from './lessons.js'
 
 const ASSIST_MODES = ['explain', 'solve', 'visualize']
 const MAX_TURNS = 30
+// A document up to this size is digested in one call; a longer one is read
+// part by part (about 20,000 characters each, at most 24 parts) first.
+const DIGEST_SINGLE_CHARS = 24_000
+const DIGEST_NOTES_CHARS = 48_000
 
 export function createStudio({ store, llm, jobs, now = () => new Date(), uiLanguage = () => 'zh-CN' }) {
   const stamp = () => now().toISOString()
@@ -41,7 +46,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
       try {
         meta.brief = await generateJson(llm, {
           purpose: 'quick',
-          prompt: materialBriefPrompt({ title: meta.title, passages: result.chunks.slice(0, 8).map(chunk => chunk.text).join('\n\n').slice(0, 9000), language: detectLanguage(result.chunks[0].text, uiLanguage()) }),
+          prompt: materialBriefPrompt({ title: meta.title, passages: formatPassages(spreadPassages(result.chunks, { maxChars: 12000 }), ''), language: detectLanguage(result.chunks[0].text, uiLanguage()) }),
           maxTokens: 1500,
           signal,
           normalize: raw => ({
@@ -110,25 +115,60 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
     return { removed: id }
   }
 
+  // The whole document is read: short ones in one call, long ones part by
+  // part (two parts at a time) and then combined from the notes.
   function digest({ id }) {
     return jobs.start('material/digest', async api => {
       const [material] = await readMaterials(store, [assertId(id, 'mat')])
       if (!material?.chunks.length) throw new TutorError('invalid', 'This material has no text to digest')
+      const title = material.meta.title
       const language = detectLanguage(material.chunks[0].text, uiLanguage())
-      const result = await generateJson(llm, {
-        purpose: 'teach',
-        prompt: digestPrompt({ title: material.meta.title, passages: passagesFor([material], '', 24000), language }),
-        maxTokens: 9000,
-        signal: api.signal,
-        normalize: raw => ({
-          overview: text(raw?.overview, 2000),
-          structure: (Array.isArray(raw?.structure) ? raw.structure : []).slice(0, 30).map(item => ({ heading: text(item?.heading, 160), points: (item?.points ?? []).map(point => text(point, 400)).filter(Boolean).slice(0, 10), pages: text(item?.pages, 30) })).filter(item => item.heading),
-          keyIdeas: (raw?.keyIdeas ?? []).map(item => text(item, 400)).filter(Boolean).slice(0, 15),
-          arguments: (raw?.arguments ?? []).slice(0, 15).map(item => ({ claim: text(item?.claim, 400), support: text(item?.support, 600), page: text(item?.page, 20) })).filter(item => item.claim),
-          glossary: (raw?.glossary ?? []).slice(0, 30).map(item => ({ term: text(item?.term, 80), meaning: text(item?.meaning, 400) })).filter(item => item.term),
-          questions: (raw?.questions ?? []).map(item => text(item, 300)).filter(Boolean).slice(0, 8),
-        }),
-      })
+      const size = material.chunks.reduce((sum, chunk) => sum + chunk.text.length, 0)
+      let prompt
+      let missing = []
+      if (size <= DIGEST_SINGLE_CHARS) {
+        api.progress(0, 1, 'writing')
+        prompt = digestPrompt({ title, passages: formatPassages(material.chunks, ''), language })
+      } else {
+        const parts = documentParts(material.chunks)
+        const notes = new Array(parts.length).fill(null)
+        const readPart = async index => {
+          try {
+            notes[index] = await generateJson(llm, {
+              purpose: 'teach',
+              prompt: digestPartPrompt({ title, part: index + 1, parts: parts.length, range: passageRange(parts[index]), passages: formatPassages(parts[index], ''), language }),
+              maxTokens: 6000,
+              signal: api.signal,
+              normalize: normalizeDigestPart,
+            })
+          } catch (error) {
+            if (api.signal.aborted) throw error
+          }
+        }
+        const queue = parts.map((part, index) => index)
+        let done = 0
+        api.progress(0, parts.length + 1, 'reading')
+        const worker = async () => {
+          while (queue.length) {
+            api.signal.throwIfAborted()
+            await readPart(queue.shift())
+            done += 1
+            api.progress(done, parts.length + 1, 'reading')
+          }
+        }
+        await Promise.all([worker(), worker()])
+        // One more try for parts that failed (a cut-off or malformed answer).
+        for (const [index, note] of notes.entries()) if (!note) await readPart(index)
+        const read = notes.map((note, index) => (note ? { part: index + 1, of: parts.length, range: passageRange(parts[index]), ...note } : null)).filter(Boolean)
+        // Notes on a fraction of the book would pass for a digest of all of it.
+        if (read.length < Math.ceil(parts.length / 2)) throw new TutorError('bad-output', 'The model could not read enough of this document. Try again or pick a stronger model in settings.')
+        missing = parts.map((part, index) => (notes[index] ? null : passageRange(part) || `${index + 1}/${parts.length}`)).filter(Boolean)
+        api.progress(parts.length, parts.length + 1, 'writing')
+        prompt = digestPrompt({ title, notes: digestNotesText(read, DIGEST_NOTES_CHARS), language })
+      }
+      const result = await generateJson(llm, { purpose: 'teach', prompt, maxTokens: 9000, signal: api.signal, normalize: normalizeDigest })
+      // Parts that could not be read are named in the digest, not hidden.
+      if (missing.length) result.missing = missing
       const meta = await store.updateJson(store.paths.material(id), null, value => ({ ...value, digest: { ...result, createdAt: stamp() } }))
       return { material: meta }
     }, { key: `digest:${id}` })
@@ -304,12 +344,17 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
         minSteps: 1,
       })
       const turn = { mode: chosen, request: ask, board, at: stamp() }
-      if (!thread) thread = { id: /^thd_[a-z0-9]{6,40}$/u.test(String(newThreadId)) ? newThreadId : newId('thd'), title: board.title || ask.slice(0, 60), language, materialIds: ids, turns: [], createdAt: stamp() }
-      thread.turns = [...thread.turns, turn].slice(-MAX_TURNS)
-      thread.materialIds = ids
-      thread.updatedAt = stamp()
-      await store.writeJson(store.paths.item('assist', thread.id), thread)
-      return { threadId: thread.id, turn: thread.turns.length - 1, board }
+      const id = thread?.id ?? (/^thd_[a-z0-9]{6,40}$/u.test(String(newThreadId)) ? newThreadId : newId('thd'))
+      // Append under the store's lock: an earlier answer may finish in the
+      // background while this one was being written.
+      const saved = await store.updateJson(store.paths.item('assist', id), null, current => {
+        const next = current ?? { id, title: board.title || ask.slice(0, 60), language, materialIds: [], turns: [], createdAt: stamp() }
+        next.turns = [...(next.turns ?? []), turn].slice(-MAX_TURNS)
+        next.materialIds = [...new Set([...(next.materialIds ?? []), ...ids])].slice(0, 8)
+        next.updatedAt = stamp()
+        return next
+      })
+      return { threadId: saved.id, turn: saved.turns.length - 1, board }
     }, { meta: { threadId: threadId ?? null } })
   }
 
@@ -353,4 +398,40 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
     makeSheet, makeTopicSheet, makeNotes, makeCards, makeQuiz, listItems, getItem, removeItem, saveStandaloneLayout, reviewDeckCard,
     assist, assistImages, makeShort,
   })
+}
+
+function normalizeDigest(raw) {
+  return {
+    overview: text(raw?.overview, 2000),
+    structure: (Array.isArray(raw?.structure) ? raw.structure : []).slice(0, 30).map(item => ({ heading: text(item?.heading, 160), points: (item?.points ?? []).map(point => text(point, 400)).filter(Boolean).slice(0, 10), pages: text(item?.pages, 30) })).filter(item => item.heading),
+    keyIdeas: (raw?.keyIdeas ?? []).map(item => text(item, 400)).filter(Boolean).slice(0, 15),
+    arguments: (raw?.arguments ?? []).slice(0, 15).map(item => ({ claim: text(item?.claim, 400), support: text(item?.support, 600), page: text(item?.page, 20) })).filter(item => item.claim),
+    glossary: (raw?.glossary ?? []).slice(0, 30).map(item => ({ term: text(item?.term, 80), meaning: text(item?.meaning, 400) })).filter(item => item.term),
+    questions: (raw?.questions ?? []).map(item => text(item, 300)).filter(Boolean).slice(0, 8),
+  }
+}
+
+export function normalizeDigestPart(raw) {
+  const value = {
+    sections: (Array.isArray(raw?.sections) ? raw.sections : []).slice(0, 12).map(item => ({ heading: text(item?.heading, 160), pages: text(item?.pages, 30), points: (Array.isArray(item?.points) ? item.points : []).map(point => text(point, 300)).filter(Boolean).slice(0, 6) })).filter(item => item.heading),
+    keyIdeas: (Array.isArray(raw?.keyIdeas) ? raw.keyIdeas : []).map(item => text(item, 300)).filter(Boolean).slice(0, 8),
+    arguments: (Array.isArray(raw?.arguments) ? raw.arguments : []).slice(0, 8).map(item => ({ claim: text(item?.claim, 300), support: text(item?.support, 400), page: text(item?.page, 20) })).filter(item => item.claim),
+    glossary: (Array.isArray(raw?.glossary) ? raw.glossary : []).slice(0, 12).map(item => ({ term: text(item?.term, 80), meaning: text(item?.meaning, 300) })).filter(item => item.term),
+  }
+  if (!value.sections.length && !value.keyIdeas.length) throw new Error('no notes for this part')
+  return value
+}
+
+// Part notes as compact text, each part trimmed to an equal share of the budget.
+export function digestNotesText(notes, maxChars) {
+  const share = Math.max(600, Math.floor(maxChars / Math.max(1, notes.length)))
+  return notes.map(note => {
+    const lines = [`[Part ${note.part}/${note.of}${note.range ? ` · ${note.range}` : ''}]`]
+    for (const section of note.sections) lines.push(`- ${section.heading}${section.pages ? ` (p.${section.pages})` : ''}: ${section.points.join('; ')}`)
+    if (note.keyIdeas.length) lines.push(`Key ideas: ${note.keyIdeas.join('; ')}`)
+    for (const argument of note.arguments) lines.push(`Claim: ${argument.claim}${argument.page ? ` (p.${argument.page})` : ''} — ${argument.support}`)
+    if (note.glossary.length) lines.push(`Terms: ${note.glossary.map(entry => `${entry.term}: ${entry.meaning}`).join('; ')}`)
+    const block = lines.join('\n')
+    return block.length > share ? `${block.slice(0, share)}…` : block
+  }).join('\n\n')
 }

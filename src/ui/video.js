@@ -5,7 +5,7 @@
 // system voices cannot be recorded, so those videos carry captions only.
 
 import { estimateSpeechMs, stepTiming } from '../core/board-script.js'
-import { parseInline } from './board/inline.js'
+import { spokenText, texToText } from './board/inline.js'
 import { chartSvg } from './charts.js'
 import { sanitizeSvg } from './sanitize.js'
 import { BOARD_FONT } from './styles.js'
@@ -33,30 +33,6 @@ function pickMime() {
     if (MediaRecorder.isTypeSupported?.(type)) return type
   }
   return ''
-}
-
-const GREEK = { alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', varepsilon: 'ε', zeta: 'ζ', eta: 'η', theta: 'θ', vartheta: 'ϑ', iota: 'ι', kappa: 'κ', lambda: 'λ', mu: 'μ', nu: 'ν', xi: 'ξ', pi: 'π', rho: 'ρ', sigma: 'σ', tau: 'τ', upsilon: 'υ', phi: 'φ', varphi: 'φ', chi: 'χ', psi: 'ψ', omega: 'ω', Gamma: 'Γ', Delta: 'Δ', Theta: 'Θ', Lambda: 'Λ', Xi: 'Ξ', Pi: 'Π', Sigma: 'Σ', Phi: 'Φ', Psi: 'Ψ', Omega: 'Ω' }
-const SYMBOLS = { cdot: '·', times: '×', div: '÷', pm: '±', mp: '∓', le: '≤', leq: '≤', ge: '≥', geq: '≥', neq: '≠', ne: '≠', approx: '≈', equiv: '≡', infty: '∞', to: '→', rightarrow: '→', Rightarrow: '⇒', leftarrow: '←', Leftrightarrow: '⇔', sum: 'Σ', prod: 'Π', int: '∫', oint: '∮', partial: '∂', nabla: '∇', sqrt: '√', in: '∈', notin: '∉', subset: '⊂', subseteq: '⊆', cup: '∪', cap: '∩', forall: '∀', exists: '∃', degree: '°', circ: '°', angle: '∠', perp: '⊥', parallel: '∥', ldots: '…', cdots: '⋯', dots: '…', propto: '∝', sim: '∼', hbar: 'ħ', ell: 'ℓ', quad: ' ', qquad: '  ' }
-const SUPER = { 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹', '+': '⁺', '-': '⁻', '=': '⁼', '(': '⁽', ')': '⁾', n: 'ⁿ', i: 'ⁱ', x: 'ˣ', T: 'ᵀ' }
-const SUB = { 0: '₀', 1: '₁', 2: '₂', 3: '₃', 4: '₄', 5: '₅', 6: '₆', 7: '₇', 8: '₈', 9: '₉', '+': '₊', '-': '₋', '=': '₌', '(': '₍', ')': '₎', a: 'ₐ', e: 'ₑ', i: 'ᵢ', n: 'ₙ', x: 'ₓ', k: 'ₖ', t: 'ₜ' }
-
-// Readable Unicode for common LaTeX, for canvas text.
-export function texToText(tex) {
-  let value = String(tex ?? '')
-  for (let round = 0; round < 4; round += 1) {
-    value = value.replace(/\\[dt]?frac\{([^{}]*)\}\{([^{}]*)\}/gu, (_, a, b) => `${a.length > 1 ? `(${a})` : a}/${b.length > 1 ? `(${b})` : b}`)
-    value = value.replace(/\\sqrt\{([^{}]*)\}/gu, (_, a) => `√${a.length > 1 ? `(${a})` : a}`)
-    value = value.replace(/\\(?:text|mathrm|mathbf|mathit|operatorname|textbf)\{([^{}]*)\}/gu, '$1')
-  }
-  value = value.replace(/\\(left|right|big|Big|bigg|Bigg|displaystyle)\b/gu, '')
-  value = value.replace(/\\([a-zA-Z]+)/gu, (match, word) => GREEK[word] ?? SYMBOLS[word] ?? word)
-  value = value.replace(/\^\{([^{}]*)\}|\^(.)/gu, (_, group, single) => [...(group ?? single)].map(char => SUPER[char] ?? char).join(''))
-  value = value.replace(/_\{([^{}]*)\}|_(.)/gu, (_, group, single) => [...(group ?? single)].map(char => SUB[char] ?? char).join(''))
-  return value.replace(/\\[,;:! ]/gu, ' ').replace(/[{}]/gu, '').replace(/\s+/gu, ' ').trim()
-}
-
-function plainInline(textValue) {
-  return parseInline(textValue).map(segment => (segment.kind === 'math' ? texToText(segment.tex) : segment.text)).join('')
 }
 
 function font(size, weight = 400) {
@@ -150,13 +126,13 @@ async function layout(ctx, steps, palette, theme) {
       if (op.t === 'mark') continue
       if (op.t === 'title') {
         if (items.some(item => item.page === pages.length - 1)) { pages.push({ title: op.text }); column = 0; y = TOP } else pages[pages.length - 1].title = op.text
-        items.push({ ...base, page: pages.length - 1, kind: 'title', text: plainInline(op.text) })
+        items.push({ ...base, page: pages.length - 1, kind: 'title', text: spokenText(op.text) })
         continue
       }
       if (op.t === 'h' || op.t === 'p' || op.t === 'note' || op.t === 'math' || op.t === 'list') {
         const size = op.t === 'h' ? 31 : op.t === 'math' ? 28 : 25
         ctx.font = font(size, op.t === 'h' ? 700 : 400)
-        const raw = op.t === 'math' ? op.text || texToText(op.tex) : op.t === 'list' ? op.items.map((item, index) => `${op.ordered ? `${index + 1}.` : '•'} ${plainInline(item)}`).join('\n') : plainInline(op.text)
+        const raw = op.t === 'math' ? op.text || texToText(op.tex) : op.t === 'list' ? op.items.map((item, index) => `${op.ordered ? `${index + 1}.` : '•'} ${spokenText(item)}`).join('\n') : spokenText(op.text)
         const lines = wrap(ctx, raw, COL_W - (op.t === 'note' ? 28 : 0))
         const lineHeight = Math.round(size * 1.42)
         place(lines.length * lineHeight + (op.t === 'note' ? 22 : 0), { ...base, kind: 'text', size, weight: op.t === 'h' ? 700 : 400, lines, lineHeight, color: op.t === 'h' ? palette.head : palette.ink, center: op.t === 'math', note: op.t === 'note', marker: op.t === 'h' })
@@ -281,7 +257,7 @@ function drawItem(ctx, item, progress, palette) {
         const y = item.y + rowIndex * 34
         ctx.strokeRect(x, y, cell, 34)
         ctx.fillStyle = rowIndex === 0 ? palette.head : palette.ink
-        let label = plainInline(value)
+        let label = spokenText(value)
         while (label.length > 1 && ctx.measureText(label).width > cell - 12) label = `${label.slice(0, -2)}…`
         ctx.fillText(label, x + 6, y + 17)
       })
@@ -344,7 +320,7 @@ export async function exportVideo({ steps, title, fetchAudio, watermark, theme =
         continue
       }
       try {
-        const audio = await fetchAudio(step.say)
+        const audio = await fetchAudio(spokenText(step.say))
         const bytes = audio.blob ? await audio.blob.arrayBuffer() : Uint8Array.from(atob(audio.base64), char => char.charCodeAt(0)).buffer
         buffers.push(await audioCtx.decodeAudioData(bytes))
       } catch {
@@ -393,7 +369,7 @@ export async function exportVideo({ steps, title, fetchAudio, watermark, theme =
       ctx.fillText(pageTitle, MARGIN, 52)
     }
     for (const item of visible) if (item.page === page) drawItem(ctx, item, reveal(item), palette)
-    drawCaption(ctx, at.index < steps.length ? plainInline(steps[at.index].say) : '')
+    drawCaption(ctx, at.index < steps.length ? spokenText(steps[at.index].say) : '')
     if (watermark) drawWatermark(ctx, watermark, palette)
   }
 

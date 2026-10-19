@@ -16,7 +16,7 @@ export function visibilityOf(entryStep, opIndex, position) {
   return position.progress
 }
 
-function Inline({ text, reveal = 1 }) {
+export function Inline({ text, reveal = 1 }) {
   const segments = useMemo(() => parseInline(text), [text])
   const total = useMemo(() => inlineLength(segments), [segments])
   const shown = reveal >= 1 ? segments : sliceInline(segments, total * reveal)

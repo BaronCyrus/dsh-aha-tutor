@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { Empty, ErrorLine, JobProgress, Spinner } from '../components.jsx'
+import { ApiError } from '../api.js'
 import { useApp, useJob, useLoad } from '../hooks.js'
 import { ItemCard } from '../ItemCard.jsx'
 import { RichText } from '../markdown.jsx'
@@ -16,6 +17,7 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
   const [error, setError] = useState(null)
   const [index, setIndex] = useState(0)
   const [results, setResults] = useState([])
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let live = true
@@ -35,7 +37,9 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
         const payload = unitId ? { courseId, unitId } : { courseId, lessonId }
         const first = await api.call(endpoint, payload)
         const value = first.job ? await job.run(null, null, { existing: first.job }) : first
-        const items = (value.quiz ?? value.practice)?.items ?? []
+        // A lecture's practice job returns every lesson's set.
+        const items = (value.quiz ?? value.sets?.[lessonId] ?? value.practice)?.items ?? []
+        if (!items.length && !unitId) throw new ApiError('bad-output', 'No practice items came back')
         const lesson = lessonId ? await api.call('lesson/get', { courseId, lessonId }) : null
         if (live) setSet({ title: lesson?.lesson.title ?? t('unitQuiz'), items, language: lesson?.language })
       } catch (failure) {
@@ -44,7 +48,7 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
     }
     load()
     return () => { live = false }
-  }, [courseId, lessonId, unitId, review, deckId])
+  }, [courseId, lessonId, unitId, review, deckId, attempt])
 
   const item = set?.items[index]
   const record = result => {
@@ -59,8 +63,8 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
     }).catch(() => undefined)
   }
 
-  if (error) return <div className="aha-page"><ErrorLine error={error} /></div>
-  if (!set) return <div className="aha-page"><JobProgress progress={job.progress} label={t('makingPractice')} /></div>
+  if (error) return <div className="aha-page"><ErrorLine error={error} /><div><button type="button" className="aha-btn" onClick={() => { setError(null); setAttempt(value => value + 1) }}>{t('retry')}</button></div></div>
+  if (!set) return <div className="aha-page"><JobProgress progress={job.progress} label={t('makingPractice')} onCancel={job.running ? job.cancel : undefined} /></div>
   if (!set.items.length) return <div className="aha-page"><Empty>{review ? t('nothingToReview') : t('empty')}</Empty></div>
 
   const done = index >= set.items.length
@@ -132,7 +136,7 @@ export function CardsScreen({ courseId, deckId }) {
   }
 
   if (error) return <div className="aha-page"><ErrorLine error={error} /></div>
-  if (!deck || !queue) return <div className="aha-page"><JobProgress progress={job.progress} label={t('makingCards')} /></div>
+  if (!deck || !queue) return <div className="aha-page"><JobProgress progress={job.progress} label={t('makingCards')} onCancel={job.running ? job.cancel : undefined} /></div>
   return <div className="aha-page" style={{ maxWidth: 720 }}>
     <div className="aha-spread"><h2 className="aha-title">{t('cardsTitle')}</h2><span className="aha-tag">{t('cardsDue', { count: queue.length })}</span></div>
     {current ? <>
@@ -184,7 +188,7 @@ export function SheetScreen({ courseId, unitId, sheetId }) {
   }
 
   if (error) return <div className="aha-page"><ErrorLine error={error} /></div>
-  if (!sheet || !layout) return <div className="aha-page"><JobProgress progress={job.progress} label={t('makingSheet')} /></div>
+  if (!sheet || !layout) return <div className="aha-page"><JobProgress progress={job.progress} label={t('makingSheet')} onCancel={job.running ? job.cancel : undefined} /></div>
   const order = layout.order.map(id => sheet.sections.find(section => section.id === id)).filter(Boolean)
   const hidden = new Set(layout.hidden ?? [])
   return <div className="aha-page" style={{ maxWidth: 1200 }}>
@@ -233,6 +237,7 @@ export function ItemScreen({ kind, id, materialId }) {
   const job = useJob()
   const [state, setState] = useState(null)
   const [error, setError] = useState(null)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let live = true
@@ -240,7 +245,7 @@ export function ItemScreen({ kind, id, materialId }) {
       try {
         if (kind === 'digest') {
           const { material } = await api.call('material/get', { id: materialId })
-          let digest = material.digest
+          let digest = attempt === 0 ? material.digest : null
           if (!digest) {
             const first = await api.call('material/digest', { id: materialId })
             digest = (await job.run(null, null, { existing: first.job })).material.digest
@@ -256,11 +261,17 @@ export function ItemScreen({ kind, id, materialId }) {
     }
     load()
     return () => { live = false }
-  }, [kind, id, materialId])
+  }, [kind, id, materialId, attempt])
 
   if (kind === 'quiz') return <PracticeScreen deckId={id} />
   if (error) return <div className="aha-page"><ErrorLine error={error} /></div>
-  if (!state) return <div className="aha-page"><JobProgress progress={job.progress} label={t('generating')} /></div>
+  if (!state) {
+    const progress = job.progress
+    const label = progress?.label === 'reading' ? t('digestReading', { done: progress.done, total: Math.max(1, progress.total - 1) })
+      : progress?.label === 'writing' ? t('digestWriting')
+        : t('generating')
+    return <div className="aha-page"><JobProgress progress={progress} label={label} onCancel={job.running ? job.cancel : undefined} /></div>
+  }
   if (state.markdown !== undefined) return <div className="aha-page" style={{ maxWidth: 860 }}>
     <h2 className="aha-title">{state.title}</h2>
     <div className="aha-card"><RichText text={state.markdown} /></div>
@@ -268,13 +279,17 @@ export function ItemScreen({ kind, id, materialId }) {
   const digest = state.digest
   return <div className="aha-page" style={{ maxWidth: 900 }}>
     <h2 className="aha-title">{t('digestTitle')} · {state.title}</h2>
+    {digest.missing?.length ? <div className="aha-row">
+      <span className="aha-error">{t('digestMissing', { count: digest.missing.length, parts: digest.missing.join(', ') })}</span>
+      <button type="button" className="aha-btn" data-size="sm" onClick={() => { setState(null); setAttempt(value => value + 1) }}>{t('redigest')}</button>
+    </div> : null}
     <section className="aha-card"><b>{t('overview')}</b><RichText text={digest.overview} /></section>
     {digest.structure?.length ? <section className="aha-card"><b>{t('structure')}</b>{digest.structure.map((part, index) => <div key={index} className="aha-col" style={{ gap: 2 }}>
-      <div><b>{part.heading}</b>{part.pages ? <span className="aha-cite">(p.{part.pages})</span> : null}</div>
+      <div><b>{part.heading}</b>{/\d/u.test(part.pages ?? '') ? <span className="aha-cite">(p.{part.pages})</span> : null}</div>
       <ul style={{ margin: 0 }}>{part.points.map((point, pointIndex) => <li key={pointIndex}><RichText text={point} compact /></li>)}</ul>
     </div>)}</section> : null}
     {digest.keyIdeas?.length ? <section className="aha-card"><b>{t('keyIdeas')}</b><ul style={{ margin: 0 }}>{digest.keyIdeas.map((idea, index) => <li key={index}><RichText text={idea} compact /></li>)}</ul></section> : null}
-    {digest.arguments?.length ? <section className="aha-card"><b>{t('arguments')}</b>{digest.arguments.map((argument, index) => <div key={index}><b>{argument.claim}</b>{argument.page ? <span className="aha-cite">(p.{argument.page})</span> : null}<p className="aha-hint">{argument.support}</p></div>)}</section> : null}
+    {digest.arguments?.length ? <section className="aha-card"><b>{t('arguments')}</b>{digest.arguments.map((argument, index) => <div key={index}><b>{argument.claim}</b>{/\d/u.test(argument.page ?? '') ? <span className="aha-cite">(p.{argument.page})</span> : null}<p className="aha-hint">{argument.support}</p></div>)}</section> : null}
     {digest.glossary?.length ? <section className="aha-card"><b>{t('glossary')}</b>{digest.glossary.map((entry, index) => <div key={index}><b>{entry.term}</b>：{entry.meaning}</div>)}</section> : null}
     {digest.questions?.length ? <section className="aha-card"><b>{t('discussion')}</b><ol style={{ margin: 0 }}>{digest.questions.map((question, index) => <li key={index}>{question}</li>)}</ol></section> : null}
   </div>

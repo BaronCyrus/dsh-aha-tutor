@@ -21,8 +21,10 @@ export class TutorError extends Error {
 
 const REPAIR = 'Your previous reply could not be parsed as JSON. Reply again with the complete answer as valid JSON only — no code fences, no commentary.'
 
-export async function generateJson(llm, { purpose = 'teach', prompt, maxTokens = 8000, images, signal, normalize = value => value }) {
-  const first = await llm.complete({ purpose, system: prompt.system, user: prompt.user, images, maxTokens, signal })
+// onText(delta), when given, streams the first answer (used for progress).
+export async function generateJson(llm, { purpose = 'teach', prompt, maxTokens = 8000, images, signal, normalize = value => value, onText }) {
+  const request = { purpose, system: prompt.system, user: prompt.user, images, maxTokens, signal }
+  const first = onText ? await llm.stream({ ...request, onText }) : await llm.complete(request)
   try {
     return normalize(extractJson(first))
   } catch (error) {
@@ -102,6 +104,23 @@ export async function generateSteps(llm, { purpose = 'teach', prompt, maxTokens 
     emitted += 1
   }
   return board
+}
+
+// Counts a marker in streamed text, even when a delta splits it, and reports
+// the running total (e.g. lessons written so far in a blueprint).
+export function streamCounter(marker, onCount) {
+  let tail = ''
+  let count = 0
+  return delta => {
+    const textValue = tail + String(delta ?? '')
+    let found = 0
+    for (let at = textValue.indexOf(marker); at !== -1; at = textValue.indexOf(marker, at + marker.length)) found += 1
+    tail = textValue.slice(-(marker.length - 1))
+    if (found) {
+      count += found
+      onCount(count)
+    }
+  }
 }
 
 export async function generateText(llm, { purpose = 'teach', prompt, maxTokens = 6000, signal, onText }) {

@@ -69,9 +69,61 @@ export function selectPassages(chunks, query, { maxChars = 12000, limit = 12 } =
   return result
 }
 
+// Excerpts spread evenly over a whole document within a character budget:
+// the opening (often the contents) plus samples from every later part, so a
+// description of the material covers all of it, not just its first pages.
+export function spreadPassages(chunks, { maxChars = 12000, samples = 16 } = {}) {
+  if (!chunks?.length) return []
+  const total = chunks.reduce((sum, chunk) => sum + chunk.text.length, 0)
+  if (total <= maxChars) return chunks.slice()
+  const count = Math.min(chunks.length, Math.max(2, samples))
+  const share = Math.max(200, Math.floor(maxChars / count))
+  const picked = []
+  for (let index = 0; index < count; index += 1) {
+    const at = Math.round((index * (chunks.length - 1)) / (count - 1))
+    if (picked.at(-1) !== at) picked.push(at)
+  }
+  return picked.map(at => {
+    const chunk = chunks[at]
+    return chunk.text.length > share ? { ...chunk, text: `${chunk.text.slice(0, share)}…` } : chunk
+  })
+}
+
+// Consecutive parts of roughly `partChars` characters each (at most
+// `maxParts`), for reading a long document part by part. A part longer than
+// `maxPartChars` (only in very long documents) is sampled evenly.
+export function documentParts(chunks, { partChars = 20000, maxParts = 24, maxPartChars = 40000 } = {}) {
+  if (!chunks?.length) return []
+  const total = Math.max(1, chunks.reduce((sum, chunk) => sum + chunk.text.length, 0))
+  const count = Math.min(maxParts, Math.max(1, Math.ceil(total / partChars)))
+  const parts = Array.from({ length: count }, () => [])
+  let seen = 0
+  for (const chunk of chunks) {
+    parts[Math.min(count - 1, Math.floor((seen / total) * count))].push(chunk)
+    seen += chunk.text.length
+  }
+  return parts.filter(part => part.length).map(part => {
+    const size = part.reduce((sum, chunk) => sum + chunk.text.length, 0)
+    return size > maxPartChars ? spreadPassages(part, { maxChars: maxPartChars, samples: 24 }) : part
+  })
+}
+
+function locationOf(passage) {
+  return passage?.page ? `p.${passage.page}` : passage?.slide ? `slide ${passage.slide}` : passage?.section ?? ''
+}
+
+// "p.12–p.40": where a run of passages starts and ends.
+export function passageRange(passages) {
+  const first = locationOf(passages?.[0])
+  const last = locationOf(passages?.at(-1))
+  return first && last && first !== last ? `${first}–${last}` : first || last
+}
+
+// An empty sourceTitle labels each passage with its location only.
 export function formatPassages(passages, sourceTitle) {
   return passages.map(passage => {
-    const where = passage.page ? `p.${passage.page}` : passage.slide ? `slide ${passage.slide}` : passage.section ?? ''
-    return `<<${sourceTitle ?? passage.source ?? 'source'}${where ? ` · ${where}` : ''}>>\n${passage.text}`
+    const where = locationOf(passage)
+    const label = [sourceTitle ?? passage.source ?? 'source', where].filter(Boolean).join(' · ') || 'excerpt'
+    return `<<${label}>>\n${passage.text}`
   }).join('\n\n')
 }

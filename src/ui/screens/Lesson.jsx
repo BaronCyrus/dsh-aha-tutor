@@ -54,6 +54,7 @@ export function LessonScreen({ courseId, lessonId }) {
       crumb={`${unit.title} · ${lecture.title}`}
       steps={source.steps}
       stream={source.stream}
+      asides={version === 0 ? detail.value.asides ?? [] : []}
       language={language}
       startIndex={source.stream ? 0 : startIndex}
       onPosition={savePosition}

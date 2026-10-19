@@ -64,7 +64,7 @@ export function ProjectScreen({ courseId, projectId }) {
       <b>{t('submitProject')}</b>
       <textarea className="aha-textarea" value={notes} placeholder={t('submitNotes')} onChange={event => setNotes(event.currentTarget.value)} />
       <label className="aha-row" style={{ gap: 6 }}><input type="checkbox" checked={includeFiles} onChange={event => setIncludeFiles(event.currentTarget.checked)} />{t('includeFiles')}</label>
-      {job.running ? <JobProgress progress={job.progress} label={t('reviewing')} /> : <div><button type="button" className="aha-btn" data-kind="primary" disabled={!notes.trim() && !includeFiles} onClick={submit}>{t('submitProject')}</button></div>}
+      {job.running ? <JobProgress progress={job.progress} label={t('reviewing')} onCancel={job.cancel} /> : <div><button type="button" className="aha-btn" data-kind="primary" disabled={!notes.trim() && !includeFiles} onClick={submit}>{t('submitProject')}</button></div>}
       <ErrorLine error={job.error} />
     </section>
 

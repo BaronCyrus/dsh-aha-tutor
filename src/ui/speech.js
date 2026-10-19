@@ -64,13 +64,18 @@ export function pickVoice(language, preferredId) {
 function browserEngine() {
   let session = null
 
-  function speak(textValue, { language, voiceId, rate = 1, onSentence } = {}) {
+  // `sentences` (optional) is the narration already split the way captions
+  // show it; onSentence(index, total) then reports positions in that list.
+  function speak(textValue, { language, voiceId, rate = 1, onSentence, sentences: given } = {}) {
     cancel()
-    const sentences = splitSentences(textValue)
-    if (!browserSpeechAvailable() || !sentences.length) return { done: Promise.resolve({ completed: true }) }
+    const pieces = Array.isArray(given) && given.length
+      ? given.flatMap((sentence, owner) => splitSentences(sentence).map(text => ({ text, owner })))
+      : splitSentences(textValue).map((text, owner) => ({ text, owner }))
+    const total = Array.isArray(given) && given.length ? given.length : pieces.length
+    if (!browserSpeechAvailable() || !pieces.length) return { done: Promise.resolve({ completed: true }) }
     let resolveDone
     const done = new Promise(resolve => { resolveDone = resolve })
-    const state = { sentences, index: 0, paused: false, cancelled: false, rate, language, voiceId, resolveDone, onSentence }
+    const state = { sentences: pieces.map(piece => piece.text), owners: pieces.map(piece => piece.owner), total, index: 0, paused: false, cancelled: false, rate, language, voiceId, resolveDone, onSentence }
     session = state
     playFrom(state)
     return { done }
@@ -93,7 +98,7 @@ function browserEngine() {
     }
     utterance.rate = Math.min(2, Math.max(0.5, state.rate))
     const current = state.index
-    utterance.onstart = () => state.onSentence?.(current, state.sentences.length)
+    utterance.onstart = () => state.onSentence?.(state.owners[current], state.total)
     const next = () => {
       if (state.cancelled || state.paused || state.index !== current) return
       state.index += 1

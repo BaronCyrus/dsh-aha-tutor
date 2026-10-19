@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import { estimateSpeechMs } from '../src/core/board-script.js'
 import { layoutBoard, reidSteps } from '../src/ui/board/layout.js'
 import { createPlayer } from '../src/ui/board/player.js'
 
@@ -8,10 +9,12 @@ function harness() {
   let time = 0
   const frames = []
   const spoken = []
+  const options = []
   const pending = []
   const speech = {
-    speak(textValue) {
+    speak(textValue, settings) {
       spoken.push(textValue)
+      options.push(settings)
       let resolve
       const done = new Promise(r => { resolve = r })
       pending.push(resolve)
@@ -45,7 +48,7 @@ function harness() {
     await Promise.resolve()
     await Promise.resolve()
   }
-  return { player, advance, finishSpeech, spoken, snapshots }
+  return { player, advance, finishSpeech, spoken, options, snapshots }
 }
 
 const steps = [
@@ -133,4 +136,30 @@ test('a script column break right after an overflow break does not turn the page
   assert.equal(where.get('f3').column, 1, 'overflow moved writing right')
   assert.equal(pages.length, 1, 'the script col did not open a new page')
   assert.equal(where.get('after').column, 1)
+})
+
+test('captions follow the spoken sentence and formulas are spoken as text', async () => {
+  const say = '先看 $a^2+b^2=c^2$。再看图形！最后总结。'
+  const exact = harness()
+  exact.player.setSteps([{ id: 's1', say, ops: [] }], { done: true })
+  exact.player.play()
+  assert.equal(exact.spoken[0], '先看 a²+b²=c²。再看图形！最后总结。')
+  assert.deepEqual(exact.options[0].sentences, ['先看 a²+b²=c²。', '再看图形！', '最后总结。'])
+  assert.equal(exact.player.state.sentence, 0)
+  exact.options[0].onSentence(1, 3)
+  assert.equal(exact.player.state.sentence, 1, 'a system voice reports the sentence it starts')
+  await exact.advance(estimateSpeechMs(say, 1) * 0.95)
+  assert.equal(exact.player.state.sentence, 1, 'reported positions are not overridden by the estimate')
+
+  // Engines that do not report sentences (cloud voices, muted) are followed by time.
+  const timed = harness()
+  timed.player.setSteps([{ id: 's1', say, ops: [] }], { done: true })
+  timed.player.play()
+  const seen = new Set()
+  for (let elapsed = 0; elapsed < estimateSpeechMs(say, 1) * 0.98; elapsed += 200) {
+    await timed.advance(200)
+    seen.add(timed.player.state.sentence)
+  }
+  assert.deepEqual([...seen].sort(), [0, 1, 2])
+  await timed.finishSpeech()
 })

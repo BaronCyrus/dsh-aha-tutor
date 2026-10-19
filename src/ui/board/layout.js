@@ -119,3 +119,19 @@ export function reidSteps(steps, prefix) {
     }
   })
 }
+
+// The text a board will write, to fetch its font slices before the pencil
+// reaches them (a slice swapped in mid-stroke would make the line jump).
+export function boardText(steps, max = 12000) {
+  const parts = []
+  for (const step of steps) {
+    for (const op of step.ops) {
+      if (op.text) parts.push(op.text)
+      if (op.caption) parts.push(op.caption)
+      if (op.items) parts.push(...op.items)
+      if (op.head) parts.push(...op.head)
+      if (op.rows) for (const row of op.rows) parts.push(...row)
+    }
+  }
+  return [...new Set([...parts.join('')])].join('').slice(0, max)
+}

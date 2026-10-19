@@ -29,6 +29,7 @@ export function useVideoExport() {
         steps,
         title,
         theme,
+        font: settings.boardFont === 'standard' ? 'standard' : 'hand',
         watermark: `${t('appName')} · ${t('appTagline')}`,
         fetchAudio: settings.voiceEngine === 'cloud' ? text => fetchSpeech(api, text) : null,
         signal: local.signal,

@@ -7,7 +7,7 @@ import { createApi } from '../src/ui/api.js'
 import { chartSvg, escapeXml, niceTicks } from '../src/ui/charts.js'
 import { animationDocument, sanitizeSvg } from '../src/ui/sanitize.js'
 import { splitSentences } from '../src/ui/speech.js'
-import { themedSvg, wrap } from '../src/ui/video.js'
+import { syncedStarts, themedSvg, wrap } from '../src/ui/video.js'
 import { captionSentences, inlinePlain, parseInline, sliceInline, spokenText, texToText } from '../src/ui/board/inline.js'
 
 test('svg sanitizer keeps drawing markup and strips anything active or external', () => {
@@ -127,4 +127,11 @@ test('captions split narration into sentences without breaking formulas', () => 
   assert.deepEqual(captionSentences(''), [])
   assert.equal(spokenText('面积是 $\\frac{1}{2}ab$，**要点**'), '面积是 1/2ab，要点')
   assert.equal(texToText('\\sqrt{x^2+y^2}'), '√(x²+y²)')
+})
+
+test('exported videos write synced ops when their sentence starts', () => {
+  const step = { say: '一二三四。五六七八。', ops: [{ t: 'p', text: 'a', at: 0 }, { t: 'p', text: 'b', at: 1 }] }
+  assert.deepEqual(syncedStarts(step, [500, 500], 8000), [0, 4000])
+  assert.deepEqual(syncedStarts(step, [6000, 500], 8000), [0, 6000], 'an op never starts before the one before it is done')
+  assert.equal(syncedStarts({ say: '一。', ops: [{ t: 'p', text: 'a' }] }, [500], 1000), null)
 })

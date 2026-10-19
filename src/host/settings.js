@@ -12,6 +12,7 @@ export const PREF_DEFAULTS = Object.freeze({
   voiceEngine: 'browser',
   voiceRate: 1,
   boardTheme: 'auto',
+  boardFont: 'hand',
   ttsProvider: 'openai',
   tts: Object.fromEntries(TTS_PROVIDERS.map(provider => [provider, providerDefaults(provider)])),
 })
@@ -29,6 +30,7 @@ export function cleanPrefs(input = {}, base = PREF_DEFAULTS) {
     if (Number.isFinite(rate)) next.voiceRate = Math.min(2, Math.max(0.5, Math.round(rate * 100) / 100))
   }
   if (['auto', 'light', 'dark'].includes(input.boardTheme)) next.boardTheme = input.boardTheme
+  if (['hand', 'standard'].includes(input.boardFont)) next.boardFont = input.boardFont
   if (TTS_PROVIDERS.includes(input.ttsProvider)) next.ttsProvider = input.ttsProvider
   for (const provider of TTS_PROVIDERS) {
     const patch = input.tts?.[provider]

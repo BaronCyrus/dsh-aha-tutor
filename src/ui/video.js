@@ -5,7 +5,8 @@
 // system voices cannot be recorded, so those videos carry captions only.
 
 import { estimateSpeechMs, stepTiming } from '../core/board-script.js'
-import { spokenText, texToText } from './board/inline.js'
+import { captionSentences, spokenText, texToText } from './board/inline.js'
+import { boardText } from './board/layout.js'
 import { chartSvg } from './charts.js'
 import { sanitizeSvg } from './sanitize.js'
 import { BOARD_FONT } from './styles.js'
@@ -35,8 +36,12 @@ function pickMime() {
   return ''
 }
 
+// The board's font family for this export: the bundled handwriting fonts or
+// the app's own font (Settings → board font).
+let family = BOARD_FONT
+
 function font(size, weight = 400) {
-  return `${weight} ${size}px ${BOARD_FONT}`
+  return `${weight} ${size}px ${family}`
 }
 
 // Punctuation that may not start a line, and brackets that may not end one.
@@ -276,7 +281,7 @@ function drawItem(ctx, item, progress, palette) {
 
 function drawCaption(ctx, textValue) {
   if (!textValue) return
-  ctx.font = `500 25px ${BOARD_FONT}`
+  ctx.font = `500 25px ${family}`
   const lines = wrap(ctx, textValue, W - 200).slice(-2)
   const height = lines.length * 34 + 24
   ctx.fillStyle = 'rgba(15,18,24,0.72)'
@@ -289,7 +294,7 @@ function drawCaption(ctx, textValue) {
 }
 
 function drawWatermark(ctx, label, palette) {
-  ctx.font = `600 17px ${BOARD_FONT}`
+  ctx.font = `600 17px ${family}`
   ctx.fillStyle = palette.soft
   ctx.globalAlpha = 0.65
   ctx.textBaseline = 'top'
@@ -297,10 +302,39 @@ function drawWatermark(ctx, label, palette) {
   ctx.globalAlpha = 1
 }
 
+// A synced step's op start times (ms into the step): each op starts when its
+// sentence does, estimated from the sentences' spoken lengths, or when the op
+// before it is done. Null for unsynced steps.
+export function syncedStarts(step, writes, speechMs) {
+  if (!step.say || !step.ops.length || !step.ops.some(op => Number.isInteger(op.at))) return null
+  const lengths = captionSentences(step.say).map(sentence => [...spokenText(sentence)].length)
+  const total = lengths.reduce((sum, value) => sum + value, 0) || 1
+  let passed = 0
+  const sentenceStart = lengths.map(length => {
+    const start = (passed / total) * speechMs
+    passed += length
+    return start
+  })
+  const last = Math.max(0, lengths.length - 1)
+  let end = 0
+  return step.ops.map((op, index) => {
+    const start = Math.max(end, sentenceStart[Math.min(op.at ?? 0, last)] ?? 0)
+    end = start + writes[index]
+    return start
+  })
+}
+
 // fetchAudio(text) → { blob } | { base64, mime } (cloud voice) or null to
 // export silently.
-export async function exportVideo({ steps, title, fetchAudio, watermark, theme = 'light', onProgress, signal }) {
+export async function exportVideo({ steps, title, fetchAudio, watermark, theme = 'light', font: fontChoice = 'hand', onProgress, signal }) {
   if (!videoSupported()) throw new Error('unsupported')
+  family = fontChoice === 'standard' ? getComputedStyle(document.body).fontFamily || 'system-ui,sans-serif' : BOARD_FONT
+  // A canvas draws with whatever is loaded: fetch the slices first.
+  if (fontChoice !== 'standard' && document.fonts?.load) {
+    const text = `${boardText(steps)}${steps.map(step => spokenText(step.say)).join('')}`
+    const loading = Promise.all(['Aha Hand Latin', 'Aha Hand'].map(name => document.fonts.load(`25px '${name}'`, text))).catch(() => undefined)
+    await Promise.race([loading, new Promise(resolve => { setTimeout(resolve, 8000) })])
+  }
   const palette = PALETTE[theme] ?? PALETTE.light
   const canvas = document.createElement('canvas')
   canvas.width = W
@@ -334,8 +368,10 @@ export async function exportVideo({ steps, title, fetchAudio, watermark, theme =
   for (const [index, step] of steps.entries()) {
     const speechMs = buffers[index] ? buffers[index].duration * 1000 : estimateSpeechMs(step.say)
     const timing = stepTiming(step, { speechMs })
-    timeline.push({ start: cursor, end: cursor + timing.durationMs, writes: timing.writeMs })
-    cursor += timing.durationMs
+    const starts = syncedStarts(step, timing.writeMs, speechMs)
+    const durationMs = starts ? Math.max(timing.durationMs, starts.at(-1) + timing.writeMs.at(-1) + 350) : timing.durationMs
+    timeline.push({ start: cursor, end: cursor + durationMs, writes: timing.writeMs, starts })
+    cursor += durationMs
   }
   const total = cursor + 1500
 
@@ -344,6 +380,14 @@ export async function exportVideo({ steps, title, fetchAudio, watermark, theme =
     if (index < 0) return { index: steps.length, op: 0, progress: 1 }
     const entry = timeline[index]
     const elapsed = Math.max(0, time - entry.start)
+    if (entry.starts) {
+      for (let op = 0; op < entry.writes.length; op += 1) {
+        const start = entry.starts[op]
+        if (elapsed < start) return { index, op, progress: 0 }
+        if (elapsed < start + entry.writes[op]) return { index, op, progress: (elapsed - start) / Math.max(1, entry.writes[op]) }
+      }
+      return { index, op: entry.writes.length, progress: 1 }
+    }
     let acc = 0
     for (let op = 0; op < entry.writes.length; op += 1) {
       if (elapsed < acc + entry.writes[op]) return { index, op, progress: (elapsed - acc) / Math.max(1, entry.writes[op]) }

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ErrorLine, Spinner } from '../components.jsx'
 import { useApp, useLoad } from '../hooks.js'
 import { browserSpeechAvailable, listVoices, onVoicesChanged, pickVoice } from '../speech.js'
+import { BOARD_FONT } from '../styles.js'
 
 const PROVIDERS = [['openai', 'providerOpenai'], ['volcengine', 'providerVolcengine'], ['minimax', 'providerMinimax'], ['azure', 'providerAzure']]
 
@@ -119,6 +120,8 @@ export function SettingsScreen() {
     <section className="aha-card">
       <b>{t('boardTheme')}</b>
       <div className="aha-row" style={{ gap: 6 }}>{[['auto', 'themeAuto'], ['light', 'themeLight'], ['dark', 'themeDark']].map(([value, label]) => <button key={value} type="button" className="aha-chip" data-active={(settings.boardTheme ?? 'auto') === value} onClick={() => save({ boardTheme: value })}>{t(label)}</button>)}</div>
+      <b>{t('boardFont')}</b>
+      <div className="aha-row" style={{ gap: 6 }}>{[['hand', 'fontHand'], ['standard', 'fontStandard']].map(([value, label]) => <button key={value} type="button" className="aha-chip" data-active={(settings.boardFont ?? 'hand') === value} onClick={() => save({ boardFont: value })} style={value === 'hand' ? { fontFamily: BOARD_FONT } : undefined}>{t(label)}</button>)}</div>
     </section>
 
     <VersionCard />

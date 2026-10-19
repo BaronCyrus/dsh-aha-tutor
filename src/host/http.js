@@ -1,10 +1,17 @@
 // Exact HTTP routes under DSH's connection (owner-only, same-origin): raw
-// file uploads without base64 inflation, and TTS audio as real audio bytes.
+// file uploads without base64 inflation, TTS audio as real audio bytes, and
+// the board's bundled handwriting fonts.
 
+import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+
+import { BOARD_FONT_FILES } from '../core/board-fonts.js'
 import { MAX_UPLOAD_BYTES } from './materials.js'
 
 export const UPLOAD_PATH = '/api/aha-tutor/upload'
 export const TTS_PATH = '/api/aha-tutor/tts'
+export const FONT_PATH = '/api/aha-tutor/font'
 
 export async function readCapped(stream, max, signal) {
   const parts = []
@@ -64,6 +71,35 @@ export function ttsRoute({ speak }) {
         const known = error?.name === 'TtsError' || error?.name === 'TutorError'
         return failure(error?.code ?? 'tts', known ? error.message : 'Speech synthesis failed', error?.code === 'auth' ? 401 : 502)
       }
+    },
+  }
+}
+
+// The package's own assets/fonts folder. lib/ (installed) and src/host/
+// (tests) sit at different depths, so the package is found by its name.
+export function fontsDir() {
+  return join(dirname(createRequire(import.meta.url).resolve('dsh-aha-tutor/package.json')), 'assets', 'fonts')
+}
+
+const FONT_FILES = new Set(BOARD_FONT_FILES.map(entry => entry.file))
+
+// GET ?f=<file>: only the files in the generated manifest. Their names carry a
+// content hash, so browsers may cache them for good.
+export function fontRoute({ dir = fontsDir() } = {}) {
+  const loaded = new Map()
+  return {
+    path: FONT_PATH,
+    methods: ['GET'],
+    requestBody: 'buffered',
+    fetch: async request => {
+      const name = new URL(request.url).searchParams.get('f') ?? ''
+      if (!FONT_FILES.has(name)) return new Response('Not found', { status: 404 })
+      try {
+        if (!loaded.has(name)) loaded.set(name, await readFile(join(dir, name)))
+      } catch {
+        return new Response('Not found', { status: 404 })
+      }
+      return new Response(loaded.get(name), { status: 200, headers: { 'content-type': 'font/woff2', 'cache-control': 'public, max-age=31536000, immutable' } })
     },
   }
 }

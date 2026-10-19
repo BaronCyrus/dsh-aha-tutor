@@ -148,7 +148,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
   }
 
   // A lesson keeps its questions and re-explanations, so they are still on
-  // the board (and in the lesson's Q&A list) when the learner comes back.
+  // the board (and in the classroom's transcript) when the learner comes back.
   // The job saves them itself: leaving mid-answer loses nothing.
   async function keepAside(scope, aside) {
     if (scope?.kind !== 'lesson') return null

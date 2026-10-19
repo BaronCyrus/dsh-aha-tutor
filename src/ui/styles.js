@@ -2,9 +2,18 @@
 // chrome follows DSH's theme variables (--dsw-alias-*); the board has its
 // own paper (light) and chalkboard (dark) palettes.
 
-export const BOARD_FONT = "'Segoe Print','Ink Free','Bradley Hand','Chalkboard SE','Noteworthy','Comic Sans MS','LXGW WenKai','Kaiti SC','STKaiti','KaiTi','楷体',cursive"
+import { BOARD_FONT_FILES } from '../core/board-fonts.js'
 
-export const STYLE = `
+// The bundled handwriting fonts first (Caveat for Latin, LXGW WenKai GB for
+// Chinese, served by the host's font route); the per-OS handwriting and Kaiti
+// stack covers characters outside their subsets.
+export const BOARD_FONT = "'Aha Hand Latin','Aha Hand','Segoe Print','Ink Free','Bradley Hand','Chalkboard SE','Noteworthy','Comic Sans MS','LXGW WenKai','Kaiti SC','STKaiti','KaiTi','楷体',cursive"
+
+// Relative URLs resolve against the page, like the plugin's other routes.
+// Each slice downloads only when a character in its range is drawn.
+const FONT_FACES = BOARD_FONT_FILES.map(entry => `@font-face{font-family:'${entry.family}';font-style:normal;font-weight:400;font-display:swap;src:url('api/aha-tutor/font?f=${entry.file}') format('woff2');unicode-range:${entry.unicodeRange}}`).join('\n')
+
+export const STYLE = `${FONT_FACES}
 .aha{container-type:inline-size;container-name:aha;--aha-gap:12px;--aha-radius:var(--dsw-radius-md,12px);--aha-text:var(--dsw-alias-label-primary,#1f2328);--aha-muted:var(--dsw-alias-label-tertiary,#6b7280);--aha-dim:var(--dsw-alias-label-caption,#9ca3af);--aha-border:var(--dsw-alias-border-l2,#e5e7eb);--aha-bg:var(--dsw-alias-bg-base,#fafafa);--aha-surface:var(--dsw-alias-bg-layer-1,#fff);--aha-soft:var(--dsw-alias-bg-module-platform,#f4f5f7);--aha-hover:var(--dsw-alias-interactive-bg-hover,rgba(0,0,0,.05));--aha-brand:var(--dsw-alias-state-business-primary,#3b6cf6);--aha-primary-bg:var(--dsw-alias-brand-primary,#111);--aha-primary-fg:var(--dsw-alias-label-primary-inverted,#fff);--aha-ok:var(--dsw-alias-state-success-primary,#1f9d55);--aha-bad:var(--dsw-alias-state-error-primary,#d64545);
   display:flex;flex:1 1 auto;height:100%;min-height:0;overflow:hidden;background:var(--aha-bg);color:var(--aha-text);font-size:var(--dsh-content-font-size,14px);line-height:1.6;box-sizing:border-box}
 [data-platform=darwin] .aha{padding-top:var(--dsh-frame-top-clearance,0px)}
@@ -85,18 +94,36 @@ a.aha-btn{text-decoration:none}
 @container aha (max-width:1060px){.aha-split{grid-template-columns:1fr}.aha-nav{width:56px;flex-basis:56px}.aha-navItem span,.aha-brand small,.aha-brand span{display:none}}
 
 /* ── classroom ─────────────────────────────────────────────────────────── */
-.aha-class{display:flex;flex-direction:column;gap:10px;height:100%;min-height:0}
+.aha-class{display:flex;flex-direction:column;gap:10px;height:100%;min-height:0;container-type:inline-size;container-name:classroom}
+.aha-classBody{flex:1 1 auto;min-height:0;display:flex;gap:12px}
+.aha-classMain{flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column;gap:10px}
+.aha-panel{flex:0 0 clamp(220px,26cqi,300px);width:clamp(220px,26cqi,300px);min-height:0;display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid var(--aha-border);border-radius:16px;background:var(--aha-surface)}
+.aha-panelHead{font-size:13px;color:var(--aha-muted)}
+.aha-goals{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.aha-goals li{display:flex;gap:8px;align-items:flex-start;font-size:13px;line-height:19px;color:var(--aha-muted)}
+.aha-goals li[data-state=current],.aha-goals li[data-state=done],.aha-goals li[data-state=plain]{color:var(--aha-text)}
+.aha-goals li[data-state=current]{font-weight:600}
+.aha-goalMark{flex:0 0 20px;height:20px;border-radius:50%;border:1.5px solid var(--aha-border);display:inline-flex;align-items:center;justify-content:center;font-size:11px;line-height:1}
+.aha-goals li[data-state=current] .aha-goalMark{border-color:var(--aha-brand);color:var(--aha-brand)}
+.aha-goals li[data-state=done] .aha-goalMark{background:var(--aha-ok);border-color:var(--aha-ok);color:#fff}
+.aha-transcript{flex:1 1 auto;min-height:80px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+.aha-line{display:flex;gap:6px;align-items:flex-start;width:100%;padding:6px 8px;border:0;border-radius:8px;background:transparent;color:var(--aha-muted);font:inherit;font-size:13px;line-height:19px;text-align:left;cursor:pointer}
+.aha-line:hover:not(:disabled){background:var(--aha-hover)}
+.aha-line:disabled{cursor:default}
+.aha-line[data-current=true]{background:var(--aha-soft);color:var(--aha-text)}
+.aha-line[data-aside=true]{margin-left:10px;width:calc(100% - 10px);border-left:2px dashed var(--aha-ok);border-radius:0 8px 8px 0}
+.aha-line[data-kind=question],.aha-line[data-kind=reexplain]{color:var(--aha-text);font-weight:600}
+.aha-lineText{flex:1;min-width:0;overflow-wrap:anywhere}
+.aha-panel .aha-askBox{flex-direction:column;align-items:stretch}
+.aha-panel .aha-askBox .aha-btn{align-self:flex-end}
 .aha-classBar{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap}
 .aha-crumb{color:var(--aha-muted);font-size:12.5px}
 .aha-stage{position:relative;flex:1 1 auto;min-height:360px;display:flex;flex-direction:column;border-radius:16px;overflow:hidden;border:1px solid var(--aha-border)}
 .aha-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center}
 .aha-caption{min-height:44px;padding:8px 16px;text-align:center;font-size:15px;line-height:22px;color:var(--aha-text)}
 .aha-caption .katex{font-size:1em}
-.aha-qaList{display:flex;flex-direction:column;gap:4px;max-height:180px;overflow:auto;padding:2px 0}
-.aha-qaItem{display:flex;align-items:flex-start;gap:8px;width:100%;padding:6px 10px;border:1px solid var(--aha-border);border-radius:9px;background:var(--aha-surface);color:var(--aha-text);font:inherit;text-align:left;cursor:pointer}
-.aha-qaItem:hover:not(:disabled){background:var(--aha-hover)}
-.aha-qaItem:disabled{opacity:.6;cursor:default}
-.aha-qaLabel{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Narrow: the panel goes under the board and the classroom scrolls, with the panel's header peeking in at the bottom. */
+@container classroom (max-width:900px){.aha-classBody{flex-direction:column;overflow-y:auto}.aha-classMain{flex:1 0 auto;min-height:calc(100% - 52px)}.aha-stage{min-height:300px}.aha-panel{flex:0 0 auto;width:auto}.aha-transcript{flex:0 1 auto;max-height:260px}}
 .aha-checkCard{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);width:min(600px,calc(100% - 28px));border-radius:14px;background:var(--aha-surface);border:1px solid var(--aha-border);box-shadow:0 14px 40px rgba(0,0,0,.22);padding:12px 14px 0;display:flex;flex-direction:column;gap:8px;z-index:5;max-height:62%;overflow:auto}
 .aha-checkCard .aha-itemActions{position:sticky;bottom:0;background:var(--aha-surface);padding:8px 0 12px;margin-top:2px}
 .aha-options[data-grid=true]{display:grid;grid-template-columns:1fr 1fr;gap:6px}
@@ -109,19 +136,26 @@ a.aha-btn{text-decoration:none}
 /* ── the board ─────────────────────────────────────────────────────────── */
 .aha-board{--ink:#23262f;--ink-soft:#4a4f5c;--head:#1f4fb8;--marker:rgba(255,214,79,.62);--accent:#d64545;--accent2:#2f9e6e;--paper:#fdfcf8;--grid:rgba(40,50,80,.05);--note:#fff7da;--note-line:#e9c45a;--pencil:#c98a2c;
   position:relative;flex:1 1 auto;min-height:0;container-type:inline-size;container-name:board;background:var(--paper);background-image:radial-gradient(var(--grid) 1px,transparent 1.2px);background-size:22px 22px;color:var(--ink);font-family:${BOARD_FONT};overflow:hidden}
+.aha-board[data-font=standard]{font-family:inherit}
 .aha-board[data-theme=dark]{--ink:#ecebe4;--ink-soft:#c9c8bf;--head:#9cc2ff;--marker:rgba(214,178,58,.45);--accent:#ff8a80;--accent2:#7fd6a8;--paper:#1d2622;--grid:rgba(255,255,255,.05);--note:#2a3530;--note-line:#8f7a2f;--pencil:#e7c27a}
 .aha-boardScroll{position:absolute;inset:0;overflow:auto;padding:22px 30px 40px}
 .aha-boardTitle{font-size:28px;line-height:38px;color:var(--head);margin:0 0 14px;font-weight:700}
 .aha-boardTitle span{background:linear-gradient(transparent 62%,var(--marker) 62%,var(--marker) 92%,transparent 92%)}
 .aha-cols{display:grid;grid-template-columns:1fr 1fr;gap:34px;align-items:start}
 .aha-colBody{display:flex;flex-direction:column;gap:12px;min-width:0}
-.aha-op{position:relative;min-width:0;font-size:19px;line-height:30px}
+.aha-op{position:relative;isolation:isolate;min-width:0;font-size:19px;line-height:30px}
+/* Text hugs its own width so the highlighter covers the words, not the column. */
+.aha-op:is([data-t=p],[data-t=h],[data-t=list]){align-self:flex-start;max-width:100%}
+.aha-op[data-now=true]::after{content:'';position:absolute;inset:-2px -6px;border-radius:9px;background:var(--marker);opacity:.42;z-index:-1;pointer-events:none;animation:aha-sweep .55s ease-out both}
+.aha-op[data-now=true]:not([data-t=p],[data-t=h],[data-t=list])::after{background:transparent;box-shadow:0 0 0 3px var(--marker);opacity:1}
+@keyframes aha-sweep{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}
+@media (prefers-reduced-motion:reduce){.aha-op[data-now=true]::after{animation:none}}
 .aha-op-h{font-size:23px;line-height:32px;color:var(--head);font-weight:700}
 .aha-op-h span{background:linear-gradient(transparent 60%,var(--marker) 60%,var(--marker) 92%,transparent 92%)}
 .aha-op-p,.aha-op-note,.aha-op-h,.aha-boardTitle{white-space:pre-line}
 .aha-op-p strong{font-weight:700}
 .aha-op mark{background:var(--marker);color:inherit;border-radius:3px;padding:0 2px}
-.aha-op-math{display:flex;justify-content:center;font-size:1.06em;overflow-x:auto;overflow-y:hidden;font-family:inherit}
+.aha-op-math{display:flex;justify-content:safe center;font-size:1.06em;overflow-x:auto;overflow-y:hidden;font-family:inherit}
 .aha-op-math .katex{font-size:1.15em}
 .aha-op-list{margin:0;padding-left:1.3em}.aha-op-list li{margin:2px 0}
 .aha-op-note{border:2px solid var(--note-line);background:var(--note);border-radius:12px;padding:8px 12px}

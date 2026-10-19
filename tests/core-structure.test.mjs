@@ -207,3 +207,14 @@ test('course packs round-trip with fresh ids and remapped progress', () => {
   assert.throws(() => parseCoursePack('{oops'), /not valid JSON/)
   assert.throws(() => parseCoursePack({ format: 'aha-tutor.coursepack', version: 99 }), /newer version/)
 })
+
+test('ops keep the sentence they are written during, and steps the goal they serve', () => {
+  const board = normalizeBoard({ steps: [
+    { say: '先看公式。它说明方向相反。最后看图。', goal: 1, ops: [{ t: 'math', tex: 'F=-kx', at: 0 }, { t: 'p', text: '负号' }, { t: 'p', text: '方向', at: '1' }, { t: 'p', text: '回退', at: 0 }, { t: 'p', text: '图', at: 2 }] },
+    { say: '回顾。', goal: 'x', ops: [{ t: 'note', text: '要点' }] },
+  ] })
+  assert.deepEqual(board.steps[0].ops.map(op => op.at), [0, 0, 1, 1, 2], 'missing ones repeat, and an op never goes back')
+  assert.equal(board.steps[0].goal, 1)
+  assert.equal(board.steps[1].ops[0].at, undefined, 'a step without any "at" stays unsynced')
+  assert.equal(board.steps[1].goal, undefined)
+})

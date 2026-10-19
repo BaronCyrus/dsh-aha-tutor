@@ -55,6 +55,7 @@ export function LessonScreen({ courseId, lessonId }) {
       steps={source.steps}
       stream={source.stream}
       asides={version === 0 ? detail.value.asides ?? [] : []}
+      objectives={lesson.objectives ?? []}
       language={language}
       startIndex={source.stream ? 0 : startIndex}
       onPosition={savePosition}

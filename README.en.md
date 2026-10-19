@@ -24,7 +24,7 @@
 | Feature | What you get |
 | --- | --- |
 | **A course made for you** | Say what you want to learn or drop in a textbook. The tutor first asks a few multiple-choice questions about your background, goal and time, then proposes a unit → chapter → lesson blueprint you can edit by hand or by asking. Confirming prepares the hands-on projects and the first unit's practice; later lectures get theirs when you reach them |
-| **Handwriting chalkboard lessons** | Narration (voice + captions) while the board fills up with handwritten points, formulas, diagrams, charts and, when it helps, a small animation; pause, rewind and change speed any time |
+| **Handwriting chalkboard lessons** | Narration (voice + captions) while the board fills up in a handwriting font with points, formulas, diagrams, charts and, when it helps, a small animation; each item is written as its sentence is spoken and highlighted while it is discussed, and a side panel shows the lesson's goals and a transcript; pause, rewind and change speed any time |
 | **Quick checks that adapt** | At key moments the lesson stops for a question and asks how sure you are. Lucky guesses, hesitation and confident mistakes count differently, and a revisit lesson is added automatically for concepts that did not stick |
 | **Raise your hand, hear it again** | Ask anything mid-lesson and the tutor answers on the board, then picks up where it left off; or have a step re-explained with an analogy, a drawing, an example, more simply or in more depth |
 | **Practice, flashcards, reviews** | Every lesson has practice (open answers graded by the model); flashcards and concepts come back on a spaced-repetition schedule, and the study plan leaves time for them |

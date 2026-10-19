@@ -17,6 +17,7 @@
   "files": [
     "icon.png",
     "lib/*.js",
+    "assets/fonts/*",
     "locale/*.json",
     "samples/*.aha-course.json",
     "cordis.patch.yml",

@@ -90,6 +90,8 @@ Fill the left column, then {"t":"col"}, then the right column; start a new page 
 export const STEP_SPEC = `Each output line is ONE teaching step:
 {"say":"what you say while writing — natural spoken sentences, 1–4 sentences, no markdown","ops":[ …board ops written during this step… ],"check":{ …optional quick question… }}
 
+Write the board in time with your voice: give every op "at", the 0-based index of the sentence in "say" during which you write it, so each item appears while the sentence about it is spoken (sentences end at 。！？；.!?;). "at" never goes down within a step: {"say":"先看这个公式。它说明力与位移方向相反。","ops":[{"t":"math","tex":"F=-kx","at":0},{"t":"p","text":"负号 = 方向相反","at":1}]}
+
 A check is a short question asked right after the step, to see whether the idea landed:
 {"kind":"choice|multi|blank|number|short","prompt":"…","options":["…","…"],"answer":<option index (0-based) for choice, list of indexes for multi, accepted strings for blank, a number for number, a model answer for short>,"tolerance":<number, for number>,"explanation":"why the answer is right, in one or two sentences","conceptIds":["<ids from the concept list>"]}
 Make wrong options plausible (common mistakes), never trick questions.`
@@ -211,6 +213,7 @@ export function lessonPrompt({ course, unit, lecture, lesson, language, learner,
 - Put 2–4 checks after the key ideas, plus one at the end; every check must name its conceptIds.
 - If source passages are given, stay consistent with them and mention the page when you lean on one.
 - Close with a recap step: a "key" note with the 2–3 takeaways, and say what comes next.
+- Give each step that works towards one of the objectives "goal": its 0-based index in the objectives above (${lesson.objectives.map((objective, index) => `${index} = ${objective}`).join('; ') || 'none'}); leave it out for the hook and the recap. Cover the objectives in order.
 Start with a step whose ops begin with {"t":"title","text":"${lesson.title.replace(/"/gu, '\\"')}"}.`,
     ),
   }

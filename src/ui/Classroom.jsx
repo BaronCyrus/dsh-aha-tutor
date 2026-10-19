@@ -4,8 +4,9 @@ import { Board, Inline } from './board/Board.jsx'
 import { captionSentences } from './board/inline.js'
 import { reidSteps } from './board/layout.js'
 import { createPlayer } from './board/player.js'
+import { goalStates, transcriptEntries } from './board/sidepanel.js'
 import { Spinner } from './components.jsx'
-import { useApp, useDarkMode } from './hooks.js'
+import { useApp, useDarkMode, usePersistentState } from './hooks.js'
 import { ItemCard } from './ItemCard.jsx'
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2]
@@ -19,9 +20,10 @@ function asideEntry({ id, kind, label, anchorId, steps = [], streaming = false }
 
 // scope: { kind: 'lesson', courseId, lessonId } | { kind: 'thread', id, turn } | { kind: 'short', id }
 // steps: initial steps; stream: a pending job whose partial results are steps;
-// asides: the lesson's saved questions and re-explanations (lesson/get).
+// asides: the lesson's saved questions and re-explanations (lesson/get);
+// objectives: the lesson's goals, shown with progress in the side panel.
 // startIndex and onPosition count the board's own steps, not asides.
-export function Classroom({ scope, title, crumb, steps: initialSteps = [], stream = null, asides: savedAsides = [], language, startIndex = 0, autoplay = true, onPosition, onEnded, onStreamDone, header, stageClass, recordChecks = true }) {
+export function Classroom({ scope, title, crumb, steps: initialSteps = [], stream = null, asides: savedAsides = [], objectives = [], language, startIndex = 0, autoplay = true, onPosition, onEnded, onStreamDone, header, stageClass, recordChecks = true }) {
   const { api, t, speech, settings } = useApp()
   const dark = useDarkMode()
   const boardTheme = settings.boardTheme === 'dark' || (settings.boardTheme !== 'light' && dark) ? 'dark' : 'light'
@@ -34,7 +36,9 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
     anchorId: aside.anchorStepId,
     steps: aside.steps ?? [],
   })))
-  const [qaOpen, setQaOpen] = useState(false)
+  const [panelOpen, setPanelOpen] = usePersistentState('classPanel', true)
+  const askField = useRef(null)
+  const transcriptBox = useRef(null)
   const [complete, setComplete] = useState(!stream)
   const [snapshot, setSnapshot] = useState(null)
   const [captions, setCaptions] = useState(true)
@@ -117,6 +121,9 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   }, [steps.length, autoplay, player])
 
   const index = snapshot?.index ?? 0
+  // The transcript keeps what was reached, even after stepping back.
+  const [reached, setReached] = useState(0)
+  useEffect(() => { setReached(value => Math.max(value, index)) }, [index])
 
   const ended = snapshot?.status === 'ended' && complete
   const endedNotified = useRef(false)
@@ -199,7 +206,9 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
     } catch (failure) {
       if (signal.aborted) return
       setAsides(current => current.flatMap(aside => (aside.id !== id ? [aside] : aside.steps.length ? [{ ...aside, streaming: false }] : [])))
-      setAsking(kind === 'question' && !shown ? true : false)
+      setAsking(false)
+      // Nothing was answered: give the question back for another try.
+      if (kind === 'question' && !shown) setQuestion(current => current || label)
       setError(failure.message)
     }
   }
@@ -220,10 +229,22 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
     await runAside({ endpoint: 'lesson/reexplain', payload: { style }, kind: 'reexplain', label: t('reexplainedAs', { style: styleLabel(style) }), anchorIndex: Math.max(0, Math.min(index, steps.length - 1)) })
   }
 
-  function jumpTo(aside) {
-    const position = playable.findIndex(step => step.id === aside.steps[0]?.id)
-    if (position >= 0) player.seek(position)
+  // Raising a hand pauses the lesson and puts the cursor in the ask box.
+  function raiseHand() {
+    player.pause()
+    setPanelOpen(true)
+    setTimeout(() => askField.current?.focus(), 0)
   }
+
+  const mainIndex = mainIndexOf(index)
+  const goals = useMemo(() => goalStates(main, mainIndex, objectives.length, snapshot?.status === 'ended' && complete), [main, mainIndex, objectives.length, snapshot?.status, complete])
+  const entries = useMemo(() => transcriptEntries(steps, Math.max(reached, index), asides), [steps, reached, index, asides])
+  // Scroll the transcript itself, never the page: on narrow screens the panel
+  // sits below the board, and following the lesson must not pull the view down.
+  useEffect(() => {
+    const box = transcriptBox.current
+    if (box) box.scrollTop = box.scrollHeight
+  }, [entries.length, panelOpen])
 
   const current = snapshot?.step
   const check = snapshot?.status === 'check' ? current?.check : null
@@ -249,7 +270,10 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
     : asking === 'reexplaining' || writing ? t('generating')
       : steps.length ? t('bufferingLesson') : t('preparingLesson')
 
-  return <div className="aha-class">
+  const doneGoals = goals ? goals.filter(state => state === 'done').length : 0
+  const writingAside = Boolean(writing) || asking === 'answering' || asking === 'reexplaining'
+
+  return <div className="aha-class" data-panel={panelOpen ? 'open' : 'closed'}>
     <div className="aha-classBar">
       <div className="aha-col" style={{ gap: 0 }}>
         {crumb ? <span className="aha-crumb">{crumb}</span> : null}
@@ -257,47 +281,68 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
       </div>
       <div className="aha-row">{header}</div>
     </div>
-    <div className={`aha-stage ${stageClass ?? ''}`}>
-      <Board steps={steps} position={snapshot ? { index: snapshot.index, op: snapshot.op, progress: snapshot.progress } : { index: 0, op: 0, progress: 0 }} theme={boardTheme}
-        buffering={buffering || Boolean(asking && asking !== true)} bufferingLabel={bufferingLabel} />
-      {check ? <div className="aha-checkCard">
-        <div className="aha-spread"><b>{t('checkTitle')}</b></div>
-        <ItemCard item={check} language={language} onResult={onCheckResult} onContinue={() => player.answer(check.id)} />
-      </div> : null}
-    </div>
-    {captions && caption ? <div className="aha-caption"><Inline text={caption} /></div> : <div className="aha-caption" />}
-    {error ? <div className="aha-error" style={{ textAlign: 'center' }}>{t('errorGeneric', { message: error })}</div> : null}
-    {asking === true ? <form className="aha-askBox" onSubmit={ask}>
-      <textarea className="aha-textarea" style={{ minHeight: 44 }} autoFocus value={question} placeholder={t('askPlaceholder')} onChange={event => setQuestion(event.currentTarget.value)}
-        onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) ask(event) }} />
-      <button type="submit" className="aha-btn" data-kind="primary" disabled={!question.trim()}>{t('ask')}</button>
-      <button type="button" className="aha-btn" data-kind="ghost" onClick={() => { setAsking(false); player.play() }}>{t('cancel')}</button>
-    </form> : null}
-    {qaOpen && asides.length ? <div className="aha-qaList" role="list" aria-label={t('lessonQaTitle')}>
-      {asides.map(aside => <button key={aside.id} type="button" role="listitem" className="aha-qaItem" disabled={!aside.steps.length} onClick={() => jumpTo(aside)}>
-        <span aria-hidden="true">{aside.kind === 'question' ? '✋' : '🔄'}</span>
-        <span className="aha-qaLabel">{aside.label}</span>
-        {aside.streaming ? <Spinner /> : null}
-      </button>)}
-    </div> : null}
-    <div className="aha-controls">
-      <button type="button" className="aha-btn" data-kind="ghost" onClick={() => player.prev()} title={t('prevStep')} aria-label={t('prevStep')}>⏮</button>
-      <button type="button" className="aha-btn" data-kind="primary" onClick={() => player.toggle()} disabled={!steps.length} aria-label={status === 'playing' ? t('pause') : t('play')}>{status === 'playing' ? '⏸' : '▶'} {status === 'playing' ? t('pause') : t('play')}</button>
-      <button type="button" className="aha-btn" data-kind="ghost" onClick={() => player.next()} title={t('nextStep')} aria-label={t('nextStep')}>⏭</button>
-      <span className="aha-tag">{t('stepOf', { current: Math.min(index + 1, Math.max(1, steps.length)), total: Math.max(total, 1) })}</span>
-      <select className="aha-select" style={{ width: 'auto' }} value={snapshot?.rate ?? 1} onChange={event => player.setRate(Number(event.currentTarget.value))} aria-label={t('speed')}>
-        {SPEEDS.map(speed => <option key={speed} value={speed}>{speed}×</option>)}
-      </select>
-      <button type="button" className="aha-chip" data-active={!muted} onClick={() => setMuted(value => !value)}>{muted ? `🔇 ${t('voiceOff')}` : `🔊 ${t('voiceOn')}`}</button>
-      <button type="button" className="aha-chip" data-active={captions} onClick={() => setCaptions(value => !value)}>CC {t('captions')}</button>
-      <button type="button" className="aha-chip" onClick={() => { player.pause(); setAsking(true) }} disabled={!steps.length}>✋ {t('raiseHand')}</button>
-      <span style={{ position: 'relative' }}>
-        <button type="button" className="aha-chip" onClick={() => setStyleMenu(value => !value)} disabled={!steps.length}>🔄 {t('reexplain')}</button>
-        {styleMenu ? <div className="aha-card" style={{ position: 'absolute', bottom: '110%', left: 0, zIndex: 10, padding: 6, gap: 2, minWidth: 140 }}>
-          {STYLES.map(([value, key]) => <button key={value} type="button" className="aha-btn" data-kind="ghost" style={{ justifyContent: 'flex-start' }} onClick={() => reexplain(value)}>{t(key)}</button>)}
-        </div> : null}
-      </span>
-      {asides.length ? <button type="button" className="aha-chip" data-active={qaOpen} aria-expanded={qaOpen} onClick={() => setQaOpen(value => !value)}>💬 {t('lessonQa', { count: asides.length })}</button> : null}
+    <div className="aha-classBody">
+      <div className="aha-classMain">
+        <div className={`aha-stage ${stageClass ?? ''}`}>
+          <Board steps={steps} position={snapshot ? { index: snapshot.index, op: snapshot.op, progress: snapshot.progress, now: snapshot.now } : { index: 0, op: 0, progress: 0 }} theme={boardTheme} font={settings.boardFont === 'standard' ? 'standard' : 'hand'}
+            buffering={buffering || Boolean(asking)} bufferingLabel={bufferingLabel} />
+          {check ? <div className="aha-checkCard">
+            <div className="aha-spread"><b>{t('checkTitle')}</b></div>
+            <ItemCard item={check} language={language} onResult={onCheckResult} onContinue={() => player.answer(check.id)} />
+          </div> : null}
+        </div>
+        {captions && caption ? <div className="aha-caption"><Inline text={caption} /></div> : <div className="aha-caption" />}
+        {error ? <div className="aha-error" style={{ textAlign: 'center' }}>{t('errorGeneric', { message: error })}</div> : null}
+        <div className="aha-controls">
+          <button type="button" className="aha-btn" data-kind="ghost" onClick={() => player.prev()} title={t('prevStep')} aria-label={t('prevStep')}>⏮</button>
+          <button type="button" className="aha-btn" data-kind="primary" onClick={() => player.toggle()} disabled={!steps.length} aria-label={status === 'playing' ? t('pause') : t('play')}>{status === 'playing' ? '⏸' : '▶'} {status === 'playing' ? t('pause') : t('play')}</button>
+          <button type="button" className="aha-btn" data-kind="ghost" onClick={() => player.next()} title={t('nextStep')} aria-label={t('nextStep')}>⏭</button>
+          <span className="aha-tag">{t('stepOf', { current: Math.min(index + 1, Math.max(1, steps.length)), total: Math.max(total, 1) })}</span>
+          <select className="aha-select" style={{ width: 'auto' }} value={snapshot?.rate ?? 1} onChange={event => player.setRate(Number(event.currentTarget.value))} aria-label={t('speed')}>
+            {SPEEDS.map(speed => <option key={speed} value={speed}>{speed}×</option>)}
+          </select>
+          <button type="button" className="aha-chip" data-active={!muted} onClick={() => setMuted(value => !value)}>{muted ? `🔇 ${t('voiceOff')}` : `🔊 ${t('voiceOn')}`}</button>
+          <button type="button" className="aha-chip" data-active={captions} onClick={() => setCaptions(value => !value)}>CC {t('captions')}</button>
+          <button type="button" className="aha-chip" onClick={raiseHand} disabled={!steps.length}>✋ {t('raiseHand')}</button>
+          <span style={{ position: 'relative' }}>
+            <button type="button" className="aha-chip" onClick={() => setStyleMenu(value => !value)} disabled={!steps.length}>🔄 {t('reexplain')}</button>
+            {styleMenu ? <div className="aha-card" style={{ position: 'absolute', bottom: '110%', left: 0, zIndex: 10, padding: 6, gap: 2, minWidth: 140 }}>
+              {STYLES.map(([value, key]) => <button key={value} type="button" className="aha-btn" data-kind="ghost" style={{ justifyContent: 'flex-start' }} onClick={() => reexplain(value)}>{t(key)}</button>)}
+            </div> : null}
+          </span>
+          {!panelOpen ? <button type="button" className="aha-chip" aria-expanded={false} onClick={() => setPanelOpen(true)}>📋 {t('showPanel')}</button> : null}
+        </div>
+      </div>
+      {panelOpen ? <aside className="aha-panel" aria-label={t('panelTitle')}>
+        <div className="aha-spread">
+          <b>{objectives.length ? t('lessonGoals') : t('transcript')}</b>
+          <span className="aha-row" style={{ gap: 6 }}>
+            {objectives.length && goals ? <span className="aha-tag">{doneGoals}/{objectives.length}</span> : null}
+            <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => setPanelOpen(false)} title={t('hidePanel')} aria-label={t('hidePanel')}>›</button>
+          </span>
+        </div>
+        {objectives.length ? <ol className="aha-goals">
+          {objectives.map((goal, goalIndex) => <li key={goalIndex} data-state={goals?.[goalIndex] ?? 'plain'}>
+            <span className="aha-goalMark" aria-hidden="true">{goals?.[goalIndex] === 'done' ? '✓' : goalIndex + 1}</span>
+            <span>{goal}</span>
+          </li>)}
+        </ol> : null}
+        {objectives.length ? <b className="aha-panelHead">{t('transcript')}</b> : null}
+        <div ref={transcriptBox} className="aha-transcript" role="list">
+          {entries.map(entry => <button key={entry.key} type="button" role="listitem" className="aha-line" data-kind={entry.kind} data-aside={entry.aside ? 'true' : undefined} data-current={entry.stepIndex === index ? 'true' : undefined}
+            disabled={entry.stepIndex < 0} onClick={() => player.seek(entry.stepIndex)}>
+            {entry.kind === 'question' ? <span className="aha-lineTag">✋</span> : entry.kind === 'reexplain' ? <span className="aha-lineTag">🔄</span> : null}
+            <span className="aha-lineText"><Inline text={entry.text} /></span>
+            {entry.pending ? <Spinner /> : null}
+          </button>)}
+        </div>
+        <form className="aha-askBox" onSubmit={ask}>
+          <textarea ref={askField} className="aha-textarea" rows={2} value={question} placeholder={t('askPlaceholder')} disabled={!steps.length}
+            onChange={event => setQuestion(event.currentTarget.value)}
+            onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) ask(event) }} />
+          <button type="submit" className="aha-btn" data-kind="primary" disabled={!question.trim() || writingAside}>{t('ask')}</button>
+        </form>
+      </aside> : null}
     </div>
   </div>
 }

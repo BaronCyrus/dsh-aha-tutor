@@ -4,13 +4,19 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 
 ## Unreleased
 
+### Added
+
+- **Handwriting board font**: the board writes in LXGW WenKai GB (Chinese) and Caveat (Latin), bundled as OFL subsets (GB 2312 and CJK punctuation, about 1.8 MB) and fetched slice by slice through a new `/api/aha-tutor/font` route, with the system stack as the fallback; the slices a board needs are fetched before the pencil reaches them, and exported videos use the same font. Settings → board font switches between handwriting and the app's standard font.
+- **The board follows the narration sentence by sentence**: new lessons tag each board item with the sentence it belongs to, so it is written when that sentence is spoken and highlighted while it is being talked about. Older boards keep their pacing. Exported videos follow the same timing.
+- **Side panel in the classroom**: the lesson's goals with progress (new lessons tag each step with the goal it serves), a transcript of what has been said with your questions and re-explanations (click a line to go back to it), and the ask box. It folds away, and drops below the board on narrow screens.
+
 ### Fixed
 
 - **Web import** no longer reaches this computer or the local network through other spellings of an address (`localhost.`, `[::ffff:127.0.0.1]`, IPv6 link-local, shared and reserved ranges, `*.internal`) or through a public name that resolves to a private address: every resolved address is checked when the connection is made, each redirect hop is checked again, and the page size is capped while it downloads. Import errors are translated.
 - **Leaving a screen no longer cancels its generation.** Blueprints, course confirmation, lesson boards, practice, cheat sheets and digests keep running in the background and are picked up when you come back; long waits show a cancel button instead. A cancelled job reads as cancelled, not failed.
 - **Long documents are read in full.** A digest reads the whole document part by part and combines the notes (failed parts are retried once, and any still missing are named in the digest with a "Digest again" button); the summary used for course design samples the whole document instead of its first pages.
 - **Captions** show the sentence being spoken, with formulas typeset; narration speaks formulas as readable text instead of raw TeX.
-- **Raised-hand answers and re-explanations** appear on the board while they are written, stay with the lesson (replayed where they were asked when you come back), and are listed under "Questions in this lesson". The saved position now counts the lesson's own steps.
+- **Raised-hand answers and re-explanations** appear on the board while they are written, stay with the lesson (replayed where they were asked when you come back), and show up in the side panel's transcript. The saved position now counts the lesson's own steps.
 - **Confirming a course is quicker**: it prepares the projects and the first unit's practice; a later lecture gets practice for all its lessons when one of them is first opened or practised, with room for every lesson. The blueprint step shows how many lessons have been written so far.
 
 ## 1.1.0 - 2026-10-19

@@ -25,7 +25,14 @@ export function createPlayer({ speech, onChange, now = () => performance.now(), 
     status: 'idle', // idle | playing | paused | check | buffering | ended
   }
 
-  const snapshot = () => ({ ...state, total: steps.length, complete, rate, step: steps[state.index] ?? null })
+  // In a synced step, the ops written during the sentence being spoken: the
+  // board highlights them (the pencil already shows the one being written).
+  const nowOps = () => {
+    if (!run?.synced || (state.status !== 'playing' && state.status !== 'paused')) return []
+    const last = Math.max(0, run.sentences.length - 1)
+    return run.step.ops.filter((op, index) => index <= state.op && Math.min(op.at, last) === state.sentence).map(op => (op.t === 'mark' ? op.ref : op.id))
+  }
+  const snapshot = () => ({ ...state, total: steps.length, complete, rate, step: steps[state.index] ?? null, now: nowOps() })
   const emit = () => onChange?.(snapshot())
 
   function stopLoop() {
@@ -48,7 +55,9 @@ export function createPlayer({ speech, onChange, now = () => performance.now(), 
     state.status = 'playing'
     const timing = stepTiming(step, { rate })
     const sentences = captionSentences(step.say).map(spokenText)
-    run = { step, timing, startedAt: now(), elapsedBefore: 0, speechDone: !step.say, silentUntil: null, token: {}, sentences, exactSentence: false }
+    // Synced steps write each op when its sentence starts (see tick).
+    const synced = Boolean(step.say) && step.ops.some(op => Number.isInteger(op.at))
+    run = { step, timing, startedAt: now(), elapsedBefore: 0, speechDone: !step.say, silentUntil: null, token: {}, sentences, exactSentence: false, synced, written: 0, lastTime: 0, finishAt: null }
     const token = run.token
     if (step.say) {
       const spoken = speech?.speak(spokenText(step.say), {
@@ -102,32 +111,55 @@ export function createPlayer({ speech, onChange, now = () => performance.now(), 
     handle = requestFrame(tick)
   }
 
+  // A synced step's writing clock only runs while the next op's sentence has
+  // been reached; otherwise writing simply follows the step's own clock.
+  function writingTime(time, sentence, writes) {
+    if (!run.synced) return time
+    const delta = Math.max(0, time - run.lastTime)
+    run.lastTime = time
+    const last = Math.max(0, run.sentences.length - 1)
+    const reached = run.speechDone ? Infinity : sentence
+    let allowed = 0
+    let cap = 0
+    while (allowed < writes.length && Math.min(run.step.ops[allowed].at, last) <= reached) {
+      cap += writes[allowed]
+      allowed += 1
+    }
+    run.written = Math.min(run.written + delta, cap)
+    return run.written
+  }
+
   function tick() {
     handle = null
     if (state.status !== 'playing' || !run) return
     const time = elapsed()
     const writes = run.timing.writeMs
+    if (run.silentUntil !== null && time >= run.silentUntil) run.speechDone = true
+    const sentence = run.exactSentence ? state.sentence : sentenceAt(time)
+    const writeTime = writingTime(time, sentence, writes)
     let acc = 0
     let op = writes.length
     let progress = 1
     for (let index = 0; index < writes.length; index += 1) {
-      if (time < acc + writes[index]) {
+      if (writeTime < acc + writes[index]) {
         op = index
-        progress = writes[index] ? (time - acc) / writes[index] : 1
+        progress = writes[index] ? (writeTime - acc) / writes[index] : 1
         break
       }
       acc += writes[index]
     }
-    const sentence = run.exactSentence ? state.sentence : sentenceAt(time)
     const changed = op !== state.op || Math.abs(progress - state.progress) > 0.002 || sentence !== state.sentence
     state.op = op
     state.sentence = sentence
     state.progress = Math.min(1, Math.max(0, progress))
-    if (run.silentUntil !== null && time >= run.silentUntil) run.speechDone = true
     const written = op >= writes.length
-    if (written && run.speechDone && time >= acc + STEP_GAP_MS) {
-      finishStep()
-      return
+    if (written && run.speechDone) {
+      // A short pause once both the board and the narration are done.
+      run.finishAt ??= run.synced ? time + STEP_GAP_MS : acc + STEP_GAP_MS
+      if (time >= run.finishAt) {
+        finishStep()
+        return
+      }
     }
     if (changed) emit()
     loop()
@@ -226,6 +258,9 @@ export function createPlayer({ speech, onChange, now = () => performance.now(), 
         run.elapsedBefore = time * ratio
         run.startedAt = now()
         run.timing = stepTiming(run.step, { rate: nextRate })
+        run.written *= ratio
+        run.lastTime = run.elapsedBefore
+        run.finishAt = null
       }
       rate = nextRate
       speech?.setRate?.(nextRate)

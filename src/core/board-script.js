@@ -124,7 +124,25 @@ export function normalizeOp(raw, index) {
   }
 }
 
+// Synced steps: an op's "at" is the sentence of the narration it is written
+// during. Once any op of a step has one, every op gets one, never going back
+// (a missing one repeats the previous). Steps without any stay unsynced.
+function syncOps(ops, rawAts) {
+  if (!rawAts.some(value => value !== null)) return
+  let current = 0
+  ops.forEach((op, index) => {
+    current = Math.max(current, rawAts[index] ?? current)
+    op.at = current
+  })
+}
+
+function sentenceIndex(value) {
+  const number = Number(value)
+  return value !== null && value !== '' && Number.isInteger(number) && number >= 0 ? Math.min(19, number) : null
+}
+
 // Ops get globally unique ids ("o1".."oN") so marks can point at earlier ops.
+// A step's "goal" names the lesson objective it serves (0-based).
 export function normalizeBoard(raw, { conceptIds = [] } = {}) {
   const sourceSteps = Array.isArray(raw) ? raw : Array.isArray(raw?.steps) ? raw.steps : []
   const steps = []
@@ -133,6 +151,7 @@ export function normalizeBoard(raw, { conceptIds = [] } = {}) {
   for (const rawStep of sourceSteps.slice(0, BOARD_LIMITS.steps)) {
     const say = text(rawStep?.say ?? rawStep?.narration ?? rawStep?.speech, BOARD_LIMITS.say)
     const ops = []
+    const ats = []
     for (const rawOp of (Array.isArray(rawStep?.ops ?? rawStep?.board) ? rawStep.ops ?? rawStep.board : []).slice(0, BOARD_LIMITS.opsPerStep)) {
       const op = normalizeOp(rawOp, opCounter)
       if (!op) continue
@@ -140,10 +159,13 @@ export function normalizeBoard(raw, { conceptIds = [] } = {}) {
       op.id = `o${++opCounter}`
       if (originalId) idMap.set(originalId, op.id)
       ops.push(op)
+      ats.push(sentenceIndex(rawOp?.at))
     }
+    syncOps(ops, ats)
     const check = rawStep?.check ? normalizeItem(rawStep.check, steps.length, conceptIds) : null
     if (!say && !ops.length && !check) continue
-    steps.push({ id: `s${steps.length + 1}`, say, ops, ...(check && check.kind !== 'order' ? { check: { ...check, id: `k${steps.length + 1}` } } : {}) })
+    const goal = sentenceIndex(rawStep?.goal)
+    steps.push({ id: `s${steps.length + 1}`, say, ops, ...(goal !== null && goal < 12 ? { goal } : {}), ...(check && check.kind !== 'order' ? { check: { ...check, id: `k${steps.length + 1}` } } : {}) })
   }
   // Point marks at the renumbered ops; drop marks that point nowhere.
   const known = new Set(steps.flatMap(step => step.ops.map(op => op.id)))

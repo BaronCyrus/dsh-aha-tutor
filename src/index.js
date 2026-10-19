@@ -9,7 +9,7 @@ import { credentialKey } from '@deepseek-ai/dsh-credentials'
 
 import { createCourses } from './host/courses.js'
 import { TutorError } from './host/generate.js'
-import { ttsRoute, uploadRoute } from './host/http.js'
+import { fontRoute, ttsRoute, uploadRoute } from './host/http.js'
 import { createJobs } from './host/jobs.js'
 import { createLearner } from './host/learner.js'
 import { createLessons } from './host/lessons.js'
@@ -95,6 +95,7 @@ export function apply(ctx) {
     if (typeof fetchRoutes?.register !== 'function') return
     connectionCtx.effect(() => fetchRoutes.register(uploadRoute({ studio })), 'aha-tutor: upload route')
     connectionCtx.effect(() => fetchRoutes.register(ttsRoute({ speak })), 'aha-tutor: tts route')
+    connectionCtx.effect(() => fetchRoutes.register(fontRoute()), 'aha-tutor: font route')
   })
 
   // Services for the teacher preset's tools (src/agent.js).

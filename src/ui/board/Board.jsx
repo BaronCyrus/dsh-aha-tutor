@@ -4,7 +4,7 @@ import { chartSvg } from '../charts.js'
 import { TeX } from '../math.jsx'
 import { animationDocument, sanitizeSvg } from '../sanitize.js'
 import { inlineLength, parseInline, sliceInline } from './inline.js'
-import { layoutBoard } from './layout.js'
+import { boardText, layoutBoard } from './layout.js'
 
 // position: { index, op, progress } from the player; null shows everything.
 export function visibilityOf(entryStep, opIndex, position) {
@@ -92,7 +92,7 @@ function Animation({ op, reveal, theme }) {
   </div>
 }
 
-function OpView({ op, reveal, marks, aside, opRef, theme }) {
+function OpView({ op, reveal, marks, aside, now, opRef, theme }) {
   const style = { '--reveal': `${Math.round(reveal * 1000) / 10}%` }
   const markDecor = marks.map(mark => <span key={mark.id} className={mark.style === 'circle' ? 'aha-markRing' : mark.style === 'box' ? 'aha-markBox' : 'aha-markLine'} style={{ opacity: mark.reveal, clipPath: `inset(0 ${100 - mark.reveal * 100}% 0 0)` }} />)
   let body
@@ -147,7 +147,7 @@ function OpView({ op, reveal, marks, aside, opRef, theme }) {
     default:
       body = null
   }
-  return <div ref={opRef} className="aha-op" data-t={op.t} data-aside={aside ? 'true' : undefined} data-op={op.id}>
+  return <div ref={opRef} className="aha-op" data-t={op.t} data-aside={aside ? 'true' : undefined} data-now={now ? 'true' : undefined} data-op={op.id}>
     {body}
     {markDecor}
   </div>
@@ -182,8 +182,14 @@ function Pencil({ target, active, stage }) {
 
 // steps: normalized board steps (may still be growing).
 // position: player position, or null to show the whole board.
-export function Board({ steps, position, theme = 'light', buffering = false, bufferingLabel = '' }) {
+// font: 'hand' (the bundled handwriting fonts) or 'standard' (the app's font).
+export function Board({ steps, position, theme = 'light', font = 'hand', buffering = false, bufferingLabel = '' }) {
   const layout = useMemo(() => layoutBoard(steps), [steps])
+  const text = useMemo(() => (font === 'hand' ? boardText(steps) : ''), [steps, font])
+  useEffect(() => {
+    if (!text || typeof document === 'undefined' || !document.fonts?.load) return
+    for (const family of ['Aha Hand Latin', 'Aha Hand']) document.fonts.load(`20px '${family}'`, text).catch(() => undefined)
+  }, [text])
   const opMeta = useMemo(() => {
     const meta = new Map()
     steps.forEach((step, stepIndex) => step.ops.forEach((op, opIndex) => meta.set(op.id, { stepIndex, opIndex, aside: step.aside === true })))
@@ -213,13 +219,28 @@ export function Board({ steps, position, theme = 'light', buffering = false, buf
     marks.set(op.ref, list)
   }))
 
+  // What the narration is talking about right now (synced steps only).
+  const nowIds = new Set(position?.now ?? [])
   const titleOp = steps.flatMap(step => step.ops).find(op => op.t === 'title' && layout.where.get(op.id)?.page === pageIndex)
   const titleReveal = titleOp ? reveal(titleOp.id) : 1
   const stage = useRef(null)
   const activeRef = useRef(null)
+
+  // Keep what is being written in view: a long page, or a narrow board that
+  // stacks its columns, can run past the bottom of the stage.
+  const followKey = activeOp ? `${activeOp.id}:${Math.round((position?.progress ?? 0) * 4)}` : ''
+  useEffect(() => {
+    const container = stage.current
+    const element = activeOp ? container?.querySelector(`[data-op="${activeOp.id}"]`) : null
+    if (!container || !element) return
+    const box = element.getBoundingClientRect()
+    const view = container.getBoundingClientRect()
+    if (box.bottom > view.bottom - 24) container.scrollTo({ top: container.scrollTop + box.bottom - view.bottom + 56, behavior: 'smooth' })
+    else if (box.top < view.top + 8) container.scrollTo({ top: Math.max(0, container.scrollTop - (view.top - box.top) - 24), behavior: 'smooth' })
+  }, [followKey, pageIndex])
   const pagesWithContent = layout.pages.map((item, index) => index).filter(index => index <= Math.max(activePage, viewPage ?? 0) || !position)
 
-  return <div className="aha-board" data-theme={theme}>
+  return <div className="aha-board" data-theme={theme} data-font={font}>
     {pagesWithContent.length > 1 ? <div className="aha-pager">
       {pagesWithContent.map(index => <button key={index} type="button" data-active={index === pageIndex} onClick={() => setViewPage(index)}>{index + 1}</button>)}
     </div> : null}
@@ -231,7 +252,7 @@ export function Board({ steps, position, theme = 'light', buffering = false, buf
             const amount = reveal(op.id)
             if (amount <= 0) return null
             const isActive = activeOp?.id === op.id && amount < 1
-            return <OpView key={op.id} op={op} reveal={amount} marks={marks.get(op.id) ?? []} aside={opMeta.get(op.id)?.aside} opRef={isActive ? activeRef : undefined} theme={theme} />
+            return <OpView key={op.id} op={op} reveal={amount} marks={marks.get(op.id) ?? []} aside={opMeta.get(op.id)?.aside} now={nowIds.has(op.id)} opRef={isActive ? activeRef : undefined} theme={theme} />
           })}
         </div>)}
       </div>

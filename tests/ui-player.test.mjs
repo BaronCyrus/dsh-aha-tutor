@@ -4,6 +4,7 @@ import { test } from 'node:test'
 import { estimateSpeechMs } from '../src/core/board-script.js'
 import { layoutBoard, reidSteps } from '../src/ui/board/layout.js'
 import { createPlayer } from '../src/ui/board/player.js'
+import { goalStates, transcriptEntries } from '../src/ui/board/sidepanel.js'
 
 function harness() {
   let time = 0
@@ -162,4 +163,49 @@ test('captions follow the spoken sentence and formulas are spoken as text', asyn
   }
   assert.deepEqual([...seen].sort(), [0, 1, 2])
   await timed.finishSpeech()
+})
+
+test('in a synced step each op waits for its sentence, and the board highlights it', async () => {
+  const say = '第一句讲公式。第二句讲负号。'
+  const steps = [{ id: 's1', say, ops: [{ id: 'o1', t: 'math', tex: 'F=-kx', at: 0 }, { id: 'o2', t: 'p', text: '负号表示方向相反', at: 1 }, { id: 'o3', t: 'mark', ref: 'o2', style: 'underline', at: 1 }] }]
+  const { player, advance, options } = harness()
+  player.setSteps(steps, { done: true })
+  player.play()
+  options[0].onSentence(0, 2)
+  await advance(5000)
+  assert.equal(player.state.op, 1, 'the second op waits for the second sentence')
+  assert.equal(player.state.progress, 0)
+  assert.deepEqual(player.state.now, ['o1'])
+  options[0].onSentence(1, 2)
+  await advance(300)
+  assert.equal(player.state.op, 1)
+  assert.ok(player.state.progress > 0, 'and starts once it is spoken')
+  await advance(5000)
+  assert.deepEqual(player.state.now, ['o2', 'o2'], 'a mark highlights the op it points at')
+
+  // Unsynced steps keep the old pacing: writing does not wait for sentences.
+  const plain = harness()
+  plain.player.setSteps([{ id: 's1', say, ops: [{ id: 'o1', t: 'p', text: '一' }, { id: 'o2', t: 'p', text: '二' }] }], { done: true })
+  plain.player.play()
+  await plain.advance(1500)
+  assert.equal(plain.player.state.op, 2, 'both ops are written without waiting for the second sentence')
+  assert.deepEqual(plain.player.state.now, [])
+})
+
+test('the side panel tracks goals and lists what was said, with questions', () => {
+  const main = [{ id: 's1', say: '开场' }, { id: 's2', say: '讲 A', goal: 0 }, { id: 's3', say: '再讲 A', goal: 0 }, { id: 's4', say: '讲 B', goal: 1 }, { id: 's5', say: '总结' }]
+  assert.deepEqual(goalStates(main, 0, 3), ['todo', 'todo', 'todo'])
+  assert.deepEqual(goalStates(main, 2, 3), ['current', 'todo', 'todo'])
+  assert.deepEqual(goalStates(main, 4, 3), ['done', 'done', 'todo'])
+  assert.deepEqual(goalStates(main, 4, 3, true), ['done', 'done', 'done'])
+  assert.equal(goalStates([{ id: 's1', say: '旧课' }], 0, 2), null, 'older boards list goals without state')
+  assert.deepEqual(goalStates(main, 0, 0), [])
+
+  const asides = [{ id: 'a1', kind: 'question', label: '为什么？', streaming: false, steps: [{ id: 'a1_s1' }] }, { id: 'a2', kind: 'question', label: '还有呢？', streaming: true, steps: [] }]
+  const merged = [main[0], main[1], { id: 'a1_s1', say: '因为……', aside: true }, main[2], main[3]]
+  const entries = transcriptEntries(merged, 3, asides)
+  assert.deepEqual(entries.map(entry => [entry.kind, entry.text, entry.stepIndex]), [
+    ['say', '开场', 0], ['say', '讲 A', 1], ['question', '为什么？', 2], ['say', '因为……', 2], ['say', '再讲 A', 3], ['question', '还有呢？', -1],
+  ])
+  assert.equal(entries.at(-1).pending, true)
 })

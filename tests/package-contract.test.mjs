@@ -6,7 +6,9 @@ import { fileURLToPath } from 'node:url'
 
 import { parse } from 'yaml'
 
+import { BOARD_FONT_FILES } from '../src/core/board-fonts.js'
 import { en, zh } from '../src/ui/i18n.js'
+import { STYLE } from '../src/ui/styles.js'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const manifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
@@ -98,4 +100,20 @@ test('every endpoint the browser calls is routed on the host', async () => {
   const missing = [...called].filter(endpoint => !(endpoint in routes) && !extra.includes(endpoint))
   assert.deepEqual(missing, [])
   assert.ok(called.size > 40)
+})
+
+test('the board fonts ship with their licenses, stay small and are all declared', () => {
+  assert.ok(manifest.files.includes('assets/fonts/*'))
+  let total = 0
+  for (const entry of BOARD_FONT_FILES) {
+    const path = join(root, 'assets', 'fonts', entry.file)
+    assert.ok(existsSync(path), `${entry.file} is missing`)
+    assert.equal(statSync(path).size, entry.bytes, `${entry.file} differs from the manifest`)
+    total += entry.bytes
+    assert.ok(STYLE.includes(`api/aha-tutor/font?f=${entry.file}`), `${entry.file} has an @font-face rule`)
+  }
+  for (const license of ['OFL-LXGWWenKaiGB.txt', 'OFL-Caveat.txt']) assert.ok(existsSync(join(root, 'assets', 'fonts', license)), `${license} ships with the fonts`)
+  assert.ok(total < 2.5 * 1024 * 1024, `the fonts add ${total} bytes`)
+  assert.deepEqual([...new Set(BOARD_FONT_FILES.map(entry => entry.family))], ['Aha Hand Latin', 'Aha Hand'])
+  assert.equal(readdirSync(join(root, 'assets', 'fonts')).filter(name => name.endsWith('.woff2')).length, BOARD_FONT_FILES.length, 'no stray font files')
 })

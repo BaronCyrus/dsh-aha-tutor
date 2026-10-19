@@ -5,7 +5,10 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { pathToFileURL } from 'node:url'
 
+import { BOARD_FONT_FILES } from '../src/core/board-fonts.js'
+import { FONT_PATH, fontRoute } from '../src/host/http.js'
 import { createJobs } from '../src/host/jobs.js'
+import { lessonPrompt, STEP_SPEC } from '../src/host/prompts.js'
 import { streamCounter } from '../src/host/generate.js'
 import { compareSemver, createPluginManager, findInstall, releaseAgeRefusal, resolveLauncher } from '../src/host/plugin-version.js'
 import { createStore, resolveDshHome } from '../src/host/store.js'
@@ -180,4 +183,33 @@ test('streamed progress counts markers even when a delta splits them', () => {
   const count = streamCounter('"estMinutes"', value => counts.push(value))
   for (const piece of ['{"est', 'Minutes":3}', ',{"estMinutes":4}', 'no marker here']) count(piece)
   assert.deepEqual(counts, [1, 2])
+})
+
+test('the font route serves only the bundled board fonts, cacheably', async () => {
+  const route = fontRoute()
+  assert.equal(route.path, FONT_PATH)
+  assert.deepEqual(route.methods, ['GET'])
+  const font = BOARD_FONT_FILES[1]
+  const response = await route.fetch(new Request(`http://dsh.local${FONT_PATH}?f=${font.file}`))
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get('content-type'), 'font/woff2')
+  assert.match(response.headers.get('cache-control'), /immutable/u)
+  assert.equal((await response.arrayBuffer()).byteLength, font.bytes)
+  for (const name of ['../../package.json', 'OFL-Caveat.txt', '', 'wenkai-gb-0.woff2']) {
+    assert.equal((await route.fetch(new Request(`http://dsh.local${FONT_PATH}?f=${encodeURIComponent(name)}`))).status, 404, name)
+  }
+})
+
+test('lesson prompts ask for sentence-timed ops and goal tags', () => {
+  assert.match(STEP_SPEC, /"at"/u)
+  const prompt = lessonPrompt({
+    course: { title: '勾股定理', summary: '' },
+    unit: { title: '单元' },
+    lecture: { title: '讲' },
+    lesson: { title: '面积', objectives: ['会用补全法', '会归纳规律'], concepts: [], estMinutes: 15 },
+    language: 'zh-CN',
+    learner: {},
+  })
+  assert.match(prompt.user, /"goal"/u)
+  assert.match(prompt.user, /0 = 会用补全法; 1 = 会归纳规律/u)
 })

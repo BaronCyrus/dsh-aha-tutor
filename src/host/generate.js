@@ -5,6 +5,7 @@
 // `llm` is the plugin's model port (see llm.js):
 //   llm.complete({ purpose, system, user, images?, maxTokens, signal }) → text
 //   llm.stream({ purpose, system, user, maxTokens, signal, onText }) → text
+//   effort: 'low' asks a reasoning model to think briefly (board writing).
 // purpose is 'teach' (course design, lessons, materials) or 'quick'
 // (grading, in-lesson questions, profile notes).
 
@@ -42,7 +43,7 @@ export async function generateJson(llm, { purpose = 'teach', prompt, maxTokens =
 
 // Streams a board. onStep(step, index) fires for each finished step, with the
 // same ids the final board will have. Returns the normalized board.
-export async function generateSteps(llm, { purpose = 'teach', prompt, maxTokens = 12000, signal, conceptIds = [], onStep, minSteps = 1, images }) {
+export async function generateSteps(llm, { purpose = 'teach', effort, prompt, maxTokens = 12000, signal, conceptIds = [], onStep, minSteps = 1, images }) {
   const raw = []
   let buffer = ''
   let emitted = 0
@@ -71,6 +72,7 @@ export async function generateSteps(llm, { purpose = 'teach', prompt, maxTokens 
   }
   const full = await llm.stream({
     purpose,
+    effort,
     system: prompt.system,
     user: prompt.user,
     images,

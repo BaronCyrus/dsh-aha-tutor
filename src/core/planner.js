@@ -57,6 +57,7 @@ export function buildPlan({ today, settings, courses = [], reviews = [], exams =
     .map(course => ({
       id: course.id,
       title: course.title,
+      emoji: course.emoji || '',
       deadline: course.deadline || null,
       priority: Number(course.priority) || 0,
       remaining: (course.lessons || []).filter(lesson => !lesson.done).map(lesson => ({
@@ -103,7 +104,7 @@ export function buildPlan({ today, settings, courses = [], reviews = [], exams =
           if (lesson.minutes <= budget || dayIsEmpty) {
             queue.remaining.shift()
             budget -= lesson.minutes
-            items.push({ kind: 'lesson', refId: lesson.id, courseId: queue.id, title: lesson.title, courseTitle: queue.title, minutes: lesson.minutes })
+            items.push({ kind: 'lesson', refId: lesson.id, courseId: queue.id, title: lesson.title, courseTitle: queue.title, courseEmoji: queue.emoji, minutes: lesson.minutes })
             if (queue.remaining.length === 0) queue.finishDay = day
             placed = true
             break

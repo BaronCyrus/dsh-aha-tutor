@@ -67,6 +67,7 @@ export function createStore({ root }) {
     course: id => join(paths.courseDir(id), 'course.json'),
     progress: id => join(paths.courseDir(id), 'progress.json'),
     intake: id => join(paths.courseDir(id), 'intake.json'),
+    proposal: id => join(paths.courseDir(id), 'proposal.json'),
     cards: id => join(paths.courseDir(id), 'cards.json'),
     boardsDir: id => join(paths.courseDir(id), 'boards'),
     practiceDir: id => join(paths.courseDir(id), 'practice'),

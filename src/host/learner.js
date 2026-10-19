@@ -106,6 +106,7 @@ export function createLearner({ store, llm, now = () => new Date(), logger }) {
       courses: active.map(({ course, progress }) => ({
         id: course.id,
         title: course.title,
+        emoji: course.emoji ?? '',
         deadline: course.settings?.deadline ?? null,
         lessons: flattenLessons(course).map(({ lesson }) => ({ id: lesson.id, title: lesson.title, minutes: lesson.estMinutes, done: progress.lessons?.[lesson.id]?.status === 'done' })),
       })),
@@ -142,10 +143,12 @@ export function createLearner({ store, llm, now = () => new Date(), logger }) {
   }
 
   // Due concept reviews → a short mixed practice session.
-  async function reviewSession({ limit = 8 } = {}) {
+  // Due reviews across all courses, or one course's only.
+  async function reviewSession({ limit = 8, courseId } = {}) {
     const at = now().getTime()
     const items = []
     for (const { course, progress } of await activeCourses()) {
+      if (courseId && course.id !== courseId) continue
       const index = conceptIndex(course)
       const due = Object.entries(progress.reviews ?? {})
         .filter(([id, card]) => index.has(id) && Date.parse(card.dueAt) <= at)
@@ -159,7 +162,7 @@ export function createLearner({ store, llm, now = () => new Date(), logger }) {
         const candidates = [
           ...(set?.items ?? []),
           ...(board?.steps ?? []).map(step => step.check).filter(Boolean),
-        ].filter(item => item.conceptIds?.includes(conceptId) && item.kind !== 'short')
+        ].filter(item => item.conceptIds?.includes(conceptId) && item.kind !== 'short' && item.kind !== 'work')
         const item = candidates[Math.floor(Math.random() * candidates.length)]
         if (item) items.push({ courseId: course.id, courseTitle: course.title, lessonId: concept.lessonId, lessonTitle: lesson?.title ?? '', conceptId, conceptName: concept.name, item })
       }

@@ -29,7 +29,7 @@ export function createApi(rpc) {
   // Aborting `signal` only stops watching: the job keeps running on the host
   // (a screen that is left must not throw away minutes of generation), and
   // returning to the screen picks it up again. cancel() stops it for real.
-  async function follow(valueOrJob, { onPartial, onProgress, signal } = {}) {
+  async function follow(valueOrJob, { onPartial, onProgress, onPreview, signal } = {}) {
     const job = valueOrJob?.job
     if (!job) return valueOrJob
     let since = 0
@@ -40,6 +40,7 @@ export function createApi(rpc) {
         since += current.partial.length
       }
       if (current.progress) onProgress?.(current.progress)
+      if (current.preview) onPreview?.(current.preview)
       if (current.status === 'done') return current.result
       if (current.status === 'cancelled' || signal?.aborted) throw new ApiError('cancelled', 'cancelled')
       if (current.status === 'failed') throw new ApiError(current.error?.code ?? current.status, current.error?.message ?? current.status)

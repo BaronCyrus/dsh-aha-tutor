@@ -44,6 +44,7 @@ export function createJobs({ logger, now = Date.now } = {}) {
       status: 'running',
       progress: { done: 0, total: 0, label: '' },
       partial: [],
+      preview: null,
       result: undefined,
       error: undefined,
       startedAt: now(),
@@ -60,6 +61,11 @@ export function createJobs({ logger, now = Date.now } = {}) {
       },
       push(item) {
         job.partial.push(item)
+      },
+      // A snapshot of the work so far that replaces the previous one (the
+      // outline of a blueprint that is still being written).
+      preview(value) {
+        job.preview = value ?? null
       },
     }
     // Cancelling settles the job at once, even if the work has not reached a
@@ -92,6 +98,7 @@ export function createJobs({ logger, now = Date.now } = {}) {
       progress: job.progress,
       partial: job.partial.slice(since),
       partialCount: job.partial.length,
+      preview: job.preview ?? undefined,
       result: job.status === 'done' ? job.result : undefined,
       error: job.error,
     }

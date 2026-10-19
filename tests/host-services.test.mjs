@@ -35,6 +35,7 @@ function fakeLlm() {
     if (user.includes('multiple-choice questions whose answers')) return JSON.stringify({ questions: [{ prompt: '你的基础？', topic: 'level', options: [{ label: '零基础' }, { label: '学过高中物理' }] }, { prompt: '目标？', options: ['考试', '兴趣'] }] })
     if (user.includes('Design the course blueprint')) return `好的，这是蓝图：\n\`\`\`json\n${JSON.stringify(blueprint)}\n\`\`\``
     if (user.includes('Apply the change request')) return JSON.stringify({ ...blueprint, title: '简谐运动（修订）' })
+    if (user.includes('Split this lesson into two')) return JSON.stringify({ lessons: [{ title: '弹簧的力（上）', concepts: ['回复力'], estMinutes: 10 }, { title: '弹簧的力（下）', concepts: ['胡克定律'], estMinutes: 10 }] })
     if (user.includes('Expand every project')) {
       const id = /"id": "(prj_[a-z0-9]+)"/u.exec(user)?.[1]
       return JSON.stringify({ projects: [{ id, title: '测量单摆周期', kind: 'code', brief: '详细说明', milestones: [{ title: '采集数据' }], rubric: [{ criterion: '数据', points: 50 }, { criterion: '结论', points: 50 }], starterFiles: [{ path: 'main.py', content: '# TODO' }, { path: '../evil.py', content: 'x' }] }] })
@@ -60,6 +61,8 @@ function fakeLlm() {
     if (user.includes('Explain the concept')) return [step('概念'), step('例子')].join('\n')
     if (user.includes('Score each rubric')) return JSON.stringify({ scores: [{ criterionId: 'r1', points: 45, comment: '好' }, { criterionId: 'r2', points: 80, comment: '超分' }], summary: '不错', strengths: ['认真'], nextSteps: ['加图'] })
     if (user.includes('Update the profile')) return JSON.stringify({ background: '物理初学者', goals: ['理解振动'], strengths: [], weaknesses: ['负号'], preferences: { style: '多举例' }, newNote: '喜欢例子' })
+    if (user.includes('went wrong somewhere')) return [step('这里少了负根'), step('记住正负')].join('\n')
+    if (user.includes('<learner_working>')) return JSON.stringify({ score: 0.5, verdict: 'partial', feedback: '只找到一个根', errorTag: '漏了负根', wrongStep: '$x=2$', why: '开平方要取正负', fix: '$x=\\pm 2$' })
     if (user.includes('<learner_answer>')) return JSON.stringify({ score: 0.5, verdict: 'partial', feedback: '方向对了', errorTag: '缺单位' })
     return '{}'
   }
@@ -114,6 +117,11 @@ test('end-to-end tutoring flow on the host', async () => {
     const drafted = await finish(jobs, intakeJob)
     assert.equal(drafted.course.status, 'blueprint')
     assert.deepEqual(jobs.get(intakeJob.id).progress, { done: 3, total: 0, label: 'blueprint' }, 'the streamed blueprint reports lessons written so far')
+    // …and the outline as it grows, for the learner to watch.
+    const outline = jobs.get(intakeJob.id).preview
+    assert.equal(outline.title, '简谐运动')
+    assert.deepEqual(outline.units[0].lectures[0].lessons, ['弹簧的力', '负号的含义'])
+    assert.equal(drafted.course.settings.size, 'auto')
     assert.equal(drafted.course.language, 'zh-CN')
     assert.equal(drafted.course.projects[0].unitId, drafted.course.units[1].id)
     const intakePrompt = llm.calls.find(call => call.user.includes('Design the course blueprint')).user
@@ -123,8 +131,23 @@ test('end-to-end tutoring flow on the host', async () => {
     assert.match(intakePrompt, /Size the course to the goal first[\s\S]*Never pad/)
     assert.match(intakePrompt, /一份讲义/)
 
+    // A revision is only proposed until the learner applies it…
     const revised = await finish(jobs, courses.revise({ courseId, instruction: '标题加上修订' }))
-    assert.equal(revised.course.title, '简谐运动（修订）')
+    assert.equal(revised.proposal.blueprint.title, '简谐运动（修订）')
+    const pending = await courses.get({ courseId })
+    assert.equal(pending.course.title, '简谐运动')
+    assert.equal(pending.proposal.instruction, '标题加上修订')
+    await courses.discardProposal({ courseId })
+    assert.equal((await courses.get({ courseId })).proposal, null, '…or discards it')
+    await finish(jobs, courses.revise({ courseId, instruction: '标题加上修订' }))
+    assert.equal((await courses.applyProposal({ courseId })).course.title, '简谐运动（修订）')
+    assert.equal((await courses.get({ courseId })).proposal, null)
+    // One lesson can be split in two (returned as an edit, not saved).
+    const toSplit = (await courses.get({ courseId })).course.units[0].lectures[0].lessons[0]
+    const split = await finish(jobs, courses.reworkLesson({ courseId, lesson: toSplit, unitTitle: '回复力', lectureTitle: '胡克定律', mode: 'split' }))
+    assert.deepEqual(split.lessons.map(lesson => lesson.title), ['弹簧的力（上）', '弹簧的力（下）'])
+    assert.ok(split.lessons.every(lesson => lesson.id !== toSplit.id))
+    assert.match(llm.calls.at(-1).user, /弹簧的力/u)
     const confirmed = await finish(jobs, courses.confirm({ courseId }))
     assert.equal(confirmed.course.status, 'ready')
     assert.deepEqual(confirmed.warnings, [])
@@ -163,6 +186,18 @@ test('end-to-end tutoring flow on the host', async () => {
     assert.equal(kept[0].steps[0].say, '这是你问题的答案')
     assert.equal(asked.aside.id, kept[0].id)
 
+    // A written-out working that went wrong is graded line by line, corrected
+    // at the board and kept with the lesson like the other asides.
+    const workGrade = await lessons.grade({ item: { kind: 'work', prompt: '解 $x^2=4$', answer: '$x=\\pm 2$' }, response: '$x=2$' })
+    assert.equal(workGrade.wrongStep, '$x=2$')
+    assert.match(workGrade.fix, /\\pm/u)
+    const corrected = await finish(jobs, lessons.correct({ scope: { kind: 'lesson', courseId, lessonId: firstLesson.id }, stepIndex: 2, item: { prompt: '解 $x^2=4$', answer: '$x=\\pm 2$' }, response: '$x=2$', grade: workGrade }))
+    assert.equal(corrected.steps[0].say, '这里少了负根')
+    assert.match(llm.calls.at(-1).user, /First wrong line: \$x=2\$/u)
+    const correction = (await lessons.get({ courseId, lessonId: firstLesson.id })).asides.at(-1)
+    assert.deepEqual([correction.kind, correction.errorTag, correction.anchorStepId], ['correction', '漏了负根', 's3'])
+    assert.equal(corrected.aside.id, correction.id)
+
     const conceptId = firstLesson.concepts[0].id
     const recorded = await lessons.record({ courseId, lessonId: firstLesson.id, conceptIds: [conceptId], evidence: { kind: 'check', score: 0, confidence: 'sure', errorTag: '方向搞反' } })
     assert.equal(recorded.recommendation.action, 'remediate')
@@ -185,6 +220,11 @@ test('end-to-end tutoring flow on the host', async () => {
     assert.ok(plan.plan.days.flatMap(day => day.items).some(item => item.kind === 'lesson'))
     const session = await learner.reviewSession()
     assert.equal(session.items.length, 0, 'the review is not due yet')
+    // Once due, a course page can review its own course only.
+    const dueLater = createLearner({ store, llm, now: () => new Date('2030-01-01T00:00:00Z') })
+    assert.ok((await dueLater.reviewSession({ courseId })).items.length > 0)
+    assert.ok((await dueLater.reviewSession({ courseId })).items.every(entry => entry.courseId === courseId))
+    assert.equal((await dueLater.reviewSession({ courseId: 'crs_another1' })).items.length, 0)
     for (let attempt = 0; attempt < 100 && !(await learner.getProfile()).background; attempt += 1) await new Promise(resolve => setTimeout(resolve, 3))
     assert.equal((await learner.getProfile()).background, '物理初学者')
 

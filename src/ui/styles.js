@@ -73,7 +73,17 @@ a.aha-btn{text-decoration:none}
 .aha-option{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--aha-border);border-radius:10px;background:var(--aha-surface);cursor:pointer;text-align:left;color:var(--aha-text)}
 .aha-option[data-active=true]{border-color:var(--aha-brand);box-shadow:0 0 0 1px var(--aha-brand) inset}
 .aha-option small{color:var(--aha-muted);font-size:12px;line-height:17px}
-.aha-tree{display:flex;flex-direction:column;gap:10px}
+.aha-tree{display:flex;flex-direction:column;gap:10px;border:0;margin:0;padding:0;min-width:0}
+.aha-tree:disabled{opacity:.6}
+.aha-proposal{border-color:var(--aha-brand)}
+.aha-diff{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px;font-size:13.5px}
+.aha-diff li{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.aha-diffTag{flex:0 0 auto;padding:0 6px;border-radius:6px;font-size:12px;line-height:18px;background:var(--aha-soft);color:var(--aha-muted)}
+.aha-diff li[data-kind=added] .aha-diffTag{background:color-mix(in srgb,var(--aha-ok) 16%,transparent);color:var(--aha-ok)}
+.aha-diff li[data-kind=removed] .aha-diffTag{background:color-mix(in srgb,var(--aha-bad) 14%,transparent);color:var(--aha-bad)}
+.aha-menuAnchor{position:relative;display:inline-flex}
+.aha-menu{position:absolute;right:0;top:110%;z-index:20;padding:6px;gap:2px;min-width:140px}
+.aha-menu .aha-btn{justify-content:flex-start}
 .aha-unit{border:1px solid var(--aha-border);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--aha-surface)}
 .aha-lecture{margin-left:10px;padding-left:12px;border-left:2px solid var(--aha-border);display:flex;flex-direction:column;gap:4px}
 .aha-lesson{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:8px}
@@ -112,7 +122,7 @@ a.aha-btn{text-decoration:none}
 .aha-line:disabled{cursor:default}
 .aha-line[data-current=true]{background:var(--aha-soft);color:var(--aha-text)}
 .aha-line[data-aside=true]{margin-left:10px;width:calc(100% - 10px);border-left:2px dashed var(--aha-ok);border-radius:0 8px 8px 0}
-.aha-line[data-kind=question],.aha-line[data-kind=reexplain]{color:var(--aha-text);font-weight:600}
+.aha-line[data-kind=question],.aha-line[data-kind=reexplain],.aha-line[data-kind=correction]{color:var(--aha-text);font-weight:600}
 .aha-lineText{flex:1;min-width:0;overflow-wrap:anywhere}
 .aha-panel .aha-askBox{flex-direction:column;align-items:stretch}
 .aha-panel .aha-askBox .aha-btn{align-self:flex-end}
@@ -129,6 +139,38 @@ a.aha-btn{text-decoration:none}
 .aha-options[data-grid=true]{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .aha-checkCard .aha-option{padding:7px 10px}
 .aha-askBox{display:flex;gap:8px;align-items:flex-end}
+.aha-buildLog{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+.aha-buildLog li{display:flex;gap:10px;align-items:center;font-size:14px;color:var(--aha-muted)}
+.aha-buildLog li[data-state=done],.aha-buildLog li[data-state=current]{color:var(--aha-text)}
+.aha-buildLog li[data-state=current]{font-weight:600}
+.aha-buildMark{flex:0 0 22px;height:22px;border-radius:50%;border:1.5px solid var(--aha-border);display:inline-flex;align-items:center;justify-content:center;font-size:12px}
+.aha-buildLog li[data-state=done] .aha-buildMark{background:var(--aha-ok);border-color:var(--aha-ok);color:#fff}
+.aha-buildLog li[data-state=current] .aha-buildMark{border-color:var(--aha-brand)}
+.aha-buildMark .aha-spinner{width:12px;height:12px}
+.aha-outlinePreview{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;align-items:start}
+.aha-outlinePreview .aha-card[data-writing=true]{border-style:dashed;border-color:var(--aha-brand)}
+.aha-outlineLessons{margin:0;padding-left:18px;font-size:13px;line-height:20px}
+.aha-itemFigure{align-self:flex-start;width:min(100%,420px);box-sizing:border-box;padding:8px;border-radius:10px;background:#fffdf8;border:1px solid var(--aha-border)}
+.aha-itemFigure svg{display:block;width:100%;height:auto;max-height:320px}
+.aha-confidence[data-nudge=true]{animation:aha-nudge .5s ease 2;border-radius:10px;outline:2px solid var(--aha-brand);outline-offset:3px}
+@keyframes aha-nudge{50%{transform:translateX(3px)}}
+@media (prefers-reduced-motion:reduce){.aha-confidence[data-nudge=true]{animation:none}}
+.aha-streak{background:color-mix(in srgb,var(--aha-ok) 14%,transparent);color:var(--aha-ok)}
+.aha-summary{gap:12px}
+.aha-stars{font-size:28px;letter-spacing:4px;color:#e0a21e;line-height:1}
+.aha-stars span{color:var(--aha-border)}
+.aha-summaryStats{gap:24px}
+.aha-summaryStats span{display:flex;flex-direction:column;font-size:12.5px;color:var(--aha-muted)}
+.aha-summaryStats b{font-size:22px;color:var(--aha-text)}
+.aha-conceptMove{gap:8px;font-size:13.5px;flex-wrap:wrap}
+.aha-level{padding:0 8px;border-radius:999px;font-size:12px;line-height:20px;background:var(--aha-soft);color:var(--aha-muted)}
+.aha-level[data-level=weak]{background:color-mix(in srgb,var(--aha-bad) 14%,transparent);color:var(--aha-bad)}
+.aha-level[data-level=learning]{background:color-mix(in srgb,#e08a1e 16%,transparent);color:#b86b0c}
+.aha-level[data-level=proficient]{background:color-mix(in srgb,var(--aha-brand) 14%,transparent);color:var(--aha-brand)}
+.aha-level[data-level=mastered]{background:color-mix(in srgb,var(--aha-ok) 16%,transparent);color:var(--aha-ok)}
+.aha-nextStep{flex-direction:row;align-items:center;gap:12px;flex-wrap:wrap;border-color:color-mix(in srgb,var(--aha-brand) 40%,var(--aha-border))}
+.aha-workPreview{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px dashed var(--aha-border);border-radius:10px;background:var(--aha-soft);font-size:13.5px}
+.aha-wrongStep{display:flex;flex-direction:column;gap:2px;margin-top:6px;padding:6px 10px;border-left:3px solid var(--aha-bad);border-radius:0 8px 8px 0;background:color-mix(in srgb,var(--aha-bad) 6%,transparent)}
 .aha-feedback{padding:8px 12px;border-radius:10px;background:var(--aha-soft);font-size:13.5px}
 .aha-feedback[data-ok=true]{background:color-mix(in srgb,var(--aha-ok) 12%,var(--aha-surface))}
 .aha-feedback[data-ok=false]{background:color-mix(in srgb,var(--aha-bad) 10%,var(--aha-surface))}

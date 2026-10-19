@@ -336,6 +336,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
       const images = await assistImages(ids)
       const board = await generateSteps(llm, {
         purpose: 'teach',
+        effort: 'low',
         prompt: assistPrompt({ mode: chosen, request: ask, language, passages: passagesFor(materials, ask, 8000), history, learner: { profile } }),
         images: images.length ? images : undefined,
         maxTokens: 10000,
@@ -381,6 +382,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
       const language = detectLanguage(subject || passages, uiLanguage())
       const board = await generateSteps(llm, {
         purpose: 'teach',
+        effort: 'low',
         prompt: shortPrompt({ topic: subject || sourceTitle, passages, language }),
         maxTokens: 8000,
         signal: api.signal,

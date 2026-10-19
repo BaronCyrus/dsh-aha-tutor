@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { Empty, ErrorLine, Spinner } from '../components.jsx'
+import { CourseLabel, Empty, ErrorLine, Spinner } from '../components.jsx'
 import { useApp, useLoad } from '../hooks.js'
 import { toDay } from '../../core/planner.js'
 
@@ -84,7 +84,7 @@ export function PlanScreen() {
       {schedule.map(day => <div key={day.day} className="aha-card">
         <div className="aha-spread"><b>{day.day === toDay(new Date()) ? t('today') : day.day} · {weekdayNames[new Date(`${day.day}T12:00:00`).getDay()]}</b><span className="aha-hint">{t('minutesUnit', { minutes: day.minutes })}</span></div>
         {day.items.map((item, index) => <div key={`${item.refId}-${index}`} className="aha-spread">
-          <span><span className="aha-tag">{item.kind === 'lesson' ? t('lessonItem') : item.kind === 'review' ? t('reviewItem') : t('examItem')}</span> {item.title}{item.courseTitle ? <span className="aha-hint"> · {item.courseTitle}</span> : null}</span>
+          <span><span className="aha-tag">{item.kind === 'lesson' ? t('lessonItem') : item.kind === 'review' ? t('reviewItem') : t('examItem')}</span> {item.title}<CourseLabel title={item.courseTitle} emoji={item.courseEmoji} /></span>
           {item.kind === 'lesson' ? <button type="button" className="aha-btn" data-size="sm" onClick={() => navigate('lesson', { courseId: item.courseId, lessonId: item.refId })}>{t('learn')}</button> : null}
         </div>)}
       </div>)}

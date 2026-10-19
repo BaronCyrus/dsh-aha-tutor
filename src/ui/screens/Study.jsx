@@ -6,6 +6,9 @@ import { useApp, useJob, useLoad } from '../hooks.js'
 import { ItemCard } from '../ItemCard.jsx'
 import { RichText } from '../markdown.jsx'
 import { TeX } from '../math.jsx'
+import { nextStepFor, sessionStats, STAGE_LABELS } from '../practice.js'
+import { conceptIndex, flattenLessons, lessonAfter, nextLesson } from '../../core/course-model.js'
+import { masteryStage, stageForPercent } from '../../core/mastery.js'
 import { dueCards } from '../../core/srs.js'
 
 // ── practice, quizzes and reviews ──────────────────────────────────────────
@@ -18,13 +21,19 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
   const [index, setIndex] = useState(0)
   const [results, setResults] = useState([])
   const [attempt, setAttempt] = useState(0)
+  // The course before this round (for "before → after" and the next step),
+  // and what each recorded answer did to mastery.
+  const [context, setContext] = useState(null)
+  const [after, setAfter] = useState({})
+  const [recommendation, setRecommendation] = useState(null)
 
   useEffect(() => {
     let live = true
     const load = async () => {
       try {
+        if (courseId && !deckId) api.call('course/get', { courseId }).then(detail => { if (live) setContext(detail) }).catch(() => undefined)
         if (review) {
-          const session = await api.call('review/session')
+          const session = await api.call('review/session', courseId ? { courseId } : {})
           if (live) setSet({ title: t('review'), items: session.items.map(entry => ({ ...entry.item, context: entry })), language: undefined })
           return
         }
@@ -60,28 +69,94 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
       lessonId: item?.context?.lessonId ?? lessonId,
       conceptIds: item?.conceptIds ?? [],
       evidence: { kind: unitId ? 'quiz' : 'practice', score: result.score, confidence: result.confidence, hintsUsed: result.hintsUsed, timeMs: result.timeMs, expectedMs: 60_000, errorTag: result.errorTag },
+    }).then(response => {
+      if (response?.mastery) setAfter(current => ({ ...current, ...response.mastery }))
+      if (response?.recommendation) setRecommendation(response.recommendation)
     }).catch(() => undefined)
   }
+  const stats = useMemo(() => sessionStats(results), [results])
 
   if (error) return <div className="aha-page"><ErrorLine error={error} /><div><button type="button" className="aha-btn" onClick={() => { setError(null); setAttempt(value => value + 1) }}>{t('retry')}</button></div></div>
   if (!set) return <div className="aha-page"><JobProgress progress={job.progress} label={t('makingPractice')} onCancel={job.running ? job.cancel : undefined} /></div>
   if (!set.items.length) return <div className="aha-page"><Empty>{review ? t('nothingToReview') : t('empty')}</Empty></div>
 
   const done = index >= set.items.length
-  const correct = results.filter(result => result.correct).length
   return <div className="aha-page" style={{ maxWidth: 760 }}>
     <div className="aha-spread">
       <h2 className="aha-title">{set.title}</h2>
-      <span className="aha-tag">{Math.min(index + 1, set.items.length)}/{set.items.length}</span>
+      <span className="aha-row" style={{ gap: 6 }}>
+        {!done && stats.streak >= 2 ? <span className="aha-tag aha-streak">{t('streakCount', { count: stats.streak })}</span> : null}
+        <span className="aha-tag">{Math.min(index + 1, set.items.length)}/{set.items.length}</span>
+      </span>
     </div>
     {item?.context ? <p className="aha-hint">{item.context.courseTitle} · {item.context.conceptName}</p> : null}
-    {!done ? <div className="aha-card"><ItemCard key={`${index}`} item={item} language={set.language} onResult={record} onContinue={() => setIndex(value => value + 1)} continueLabel={index + 1 < set.items.length ? t('continue') : t('confirm')} /></div> : <div className="aha-card">
-      <b>{t('practiceDone', { correct, total: set.items.length })}</b>
-      <div className="aha-row">
-        <button type="button" className="aha-btn" onClick={() => { setIndex(0); setResults([]) }}>{t('retry')}</button>
-        {courseId ? <button type="button" className="aha-btn" data-kind="primary" onClick={() => navigate('course', { courseId })}>{t('backToCourse')}</button> : null}
-      </div>
-    </div>}
+    {!done ? <>
+      <div className="aha-card"><ItemCard key={`${index}`} item={item} language={set.language} onResult={record} onContinue={() => setIndex(value => value + 1)} continueLabel={index + 1 < set.items.length ? t('continue') : t('confirm')} keyboard /></div>
+      <p className="aha-hint">{t('keysHint')}</p>
+    </> : <PracticeSummary set={set} stats={stats} context={context} after={after} recommendation={recommendation} courseId={courseId} lessonId={lessonId} unitId={unitId}
+      onRetry={() => { setIndex(0); setResults([]); setRecommendation(null) }} />}
+  </div>
+}
+
+// The end of a round: stars, accuracy, best streak, how each concept moved,
+// and one next step.
+function PracticeSummary({ set, stats, context, after, recommendation, courseId, lessonId, unitId, onRetry }) {
+  const { t, navigate } = useApp()
+  const course = context?.course
+  const progress = context?.progress
+  const concepts = useMemo(() => {
+    const names = course ? conceptIndex(course) : new Map()
+    const ids = [...new Set(set.items.flatMap(item => item.conceptIds ?? []))]
+    return ids.filter(id => after[id] !== undefined).map(id => ({
+      id,
+      name: names.get(id)?.name ?? set.items.find(item => item.context?.conceptId === id)?.context?.conceptName ?? id,
+      before: progress ? masteryStage(progress.concepts?.[id]) : null,
+      after: stageForPercent(after[id]),
+      percent: after[id],
+    }))
+  }, [set, course, progress, after])
+  const step = useMemo(() => {
+    if (!course) return null
+    // After a lesson's practice: the lesson after it, and its unit's quiz for
+    // a challenge. After a unit quiz: the first lesson after the unit.
+    const rows = flattenLessons(course)
+    const lessonRow = lessonId ? rows.find(row => row.lesson.id === lessonId) : null
+    const following = lessonRow ? lessonAfter(course, lessonId)?.lesson.id : unitId ? rows.find((row, index) => index > rows.findLastIndex(entry => entry.unit.id === unitId))?.lesson.id : null
+    return nextStepFor(recommendation, { lessonId, unitId: lessonRow?.unit.id ?? null, nextLessonId: following ?? nextLesson(course, progress)?.lesson.id })
+  }, [course, progress, recommendation, lessonId, unitId])
+
+  const go = {
+    relearn: () => navigate('lesson', { courseId, lessonId: step.lessonId }),
+    review: () => navigate('practice', { courseId, review: true }),
+    quiz: () => navigate('practice', { courseId, unitId: step.unitId }),
+    next: () => navigate('lesson', { courseId, lessonId: step.lessonId }),
+    course: () => navigate('course', { courseId }),
+  }
+  const stepText = step ? t({ relearn: 'nextRelearn', review: 'nextReview', quiz: 'nextQuiz', next: 'nextLessonStep', course: 'nextCourse' }[step.kind]) : ''
+  const stepButton = step ? t({ relearn: 'relearnLesson', review: 'reviewCourse', quiz: 'unitQuiz', next: 'nextLesson', course: 'backToCourse' }[step.kind]) : ''
+
+  return <div className="aha-card aha-summary">
+    <div className="aha-stars" role="img" aria-label={t('starsLabel', { count: stats.stars })}>{'★'.repeat(stats.stars)}<span>{'★'.repeat(3 - stats.stars)}</span></div>
+    <b>{t('practiceDone', { correct: stats.correct, total: set.items.length })}</b>
+    <div className="aha-row aha-summaryStats">
+      <span><b>{Math.round(stats.accuracy * 100)}%</b>{t('accuracy')}</span>
+      <span><b>{stats.bestStreak}</b>{t('bestStreak')}</span>
+    </div>
+    {concepts.length ? <div className="aha-col" style={{ gap: 4 }}>
+      <span className="aha-hint">{t('masteryChange')}</span>
+      {concepts.map(concept => <div key={concept.id} className="aha-row aha-conceptMove">
+        <span style={{ flex: 1, minWidth: 120 }}>{concept.name}</span>
+        {concept.before ? <><span className="aha-level" data-level={concept.before}>{t(STAGE_LABELS[concept.before])}</span><span aria-hidden="true">→</span></> : null}
+        <span className="aha-level" data-level={concept.after}>{t(STAGE_LABELS[concept.after])}</span>
+        <span className="aha-hint">{concept.percent}%</span>
+      </div>)}
+    </div> : null}
+    {step && courseId ? <p>{stepText}</p> : null}
+    <div className="aha-row">
+      {step && courseId ? <button type="button" className="aha-btn" data-kind="primary" onClick={go[step.kind]}>{stepButton}</button> : null}
+      <button type="button" className="aha-btn" onClick={onRetry}>{t('retry')}</button>
+      {courseId && step?.kind !== 'course' ? <button type="button" className="aha-btn" onClick={go.course}>{t('backToCourse')}</button> : null}
+    </div>
   </div>
 }
 

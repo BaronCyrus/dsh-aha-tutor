@@ -2,6 +2,26 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## Unreleased
+
+### Added
+
+- **Show your working**: a lesson with a calculation or derivation asks once for the whole working, typed with a live math preview. The grader finds the first line that goes wrong, and the teacher corrects it on the board, starting from that line. The correction stays with the lesson and appears in the transcript.
+- **Course size and a visible build**: the questionnaire asks how big the course should be (let the teacher decide, short 3–8, standard 10–20 or full 25–45 lessons). While the blueprint is written you see the steps and the outline growing unit by unit.
+- **Blueprint editing**: split a lesson in two or take it deeper with one click; deleting a unit, a chapter or a started lesson asks first; and **Edit outline** in a course's ⋯ menu reopens the editor after the course has started, with **Ask for one more unit**. Progress on lessons that stay is kept.
+- **Practice**: items can carry a figure (drawn through the SVG allow-list), a round ends with stars, accuracy, the best streak, how each concept moved and one next step, the current streak shows while you answer, and the keyboard works (1–4 to choose, Enter to submit or continue, H for a hint).
+- **Course page**: concepts show five stages (not started, weak, learning, proficient, mastered), and a **Next step** card suggests due reviews first, then the weakest concept, then the next lesson.
+
+### Fixed
+
+- **Reasoning models no longer cut lessons and shorts short.** At its default effort a reasoning model (DeepSeek through DSH or a relay, among others) could spend the whole output limit thinking, so a short stopped after two steps ("came back too short") or came back empty (`EMPTY_RESPONSE`). Boards, shorts, re-explanations and quick answers now ask for a low reasoning effort, every call leaves room for its reasoning within the model's limit, and an answer lost to reasoning is retried with more room. Model errors in the classroom and on checks now show in your language.
+
+### Changed
+
+- **AI changes to a blueprint are proposals**: the editor lists the lessons added, removed, renamed and changed, and nothing changes until you apply them.
+- Mastery meters stay empty until there is evidence; an untouched concept no longer lights a segment. **Start review** on a course page reviews that course only.
+- Plans and today's list name a course by its emoji and main title (the part before a colon), with the full title on hover.
+
 ## 1.2.0 - 2026-10-19
 
 ### Added

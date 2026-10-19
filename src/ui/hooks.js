@@ -33,7 +33,7 @@ export function useLoad(loader, deps = []) {
 // (the host finishes and saves the work); cancel() stops the job itself.
 export function useJob() {
   const { api } = useApp()
-  const [state, setState] = useState({ running: false, progress: null, error: null })
+  const [state, setState] = useState({ running: false, progress: null, preview: null, error: null })
   const controller = useRef(null)
   const jobId = useRef(null)
   useEffect(() => () => controller.current?.abort(), [])
@@ -42,21 +42,22 @@ export function useJob() {
     const local = new AbortController()
     controller.current = local
     jobId.current = existing?.id ?? null
-    setState({ running: true, progress: null, error: null })
+    setState({ running: true, progress: null, preview: null, error: null })
     try {
       const options = {
         signal: local.signal,
         onPartial,
         onProgress: progress => { if (!local.signal.aborted) setState(previous => ({ ...previous, progress })) },
+        onPreview: preview => { if (!local.signal.aborted) setState(previous => ({ ...previous, preview })) },
       }
       // `existing` resumes a job that is already running on the host.
       const first = existing ? { job: existing } : await api.call(endpoint, payload)
       if (first?.job?.id && !local.signal.aborted) jobId.current = first.job.id
       const result = await api.follow(first, options)
-      if (!local.signal.aborted) setState({ running: false, progress: null, error: null })
+      if (!local.signal.aborted) setState({ running: false, progress: null, preview: null, error: null })
       return result
     } catch (error) {
-      if (!local.signal.aborted) setState({ running: false, progress: null, error })
+      if (!local.signal.aborted) setState({ running: false, progress: null, preview: null, error })
       throw error
     }
   }, [api])
@@ -64,7 +65,7 @@ export function useJob() {
     controller.current?.abort()
     if (jobId.current) api.cancel(jobId.current)
     jobId.current = null
-    setState({ running: false, progress: null, error: null })
+    setState({ running: false, progress: null, preview: null, error: null })
   }, [api])
   return { ...state, run, cancel }
 }

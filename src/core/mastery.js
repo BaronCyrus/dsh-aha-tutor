@@ -140,6 +140,21 @@ export function masteryPercent(state) {
   return Math.round(clamp(Number(state?.pKnown) || 0, 0, 1) * 100)
 }
 
+// Five stages for display: "none" until there is any evidence at all, then
+// by the mastery thresholds above.
+export const MASTERY_STAGES = Object.freeze(['none', 'weak', 'learning', 'proficient', 'mastered'])
+
+export function masteryStage(state) {
+  if (!state || (!state.attempts && !state.history?.length)) return 'none'
+  return stageForPercent(masteryPercent(state))
+}
+
+export function stageForPercent(percent) {
+  const value = Number(percent)
+  if (!Number.isFinite(value)) return 'none'
+  return value >= 90 ? 'mastered' : value >= 70 ? 'proficient' : value >= 40 ? 'learning' : 'weak'
+}
+
 export function masteryLevel(state) {
   const p = clamp(Number(state?.pKnown) || 0, 0, 1)
   let level = MASTERY_LEVELS[0].id

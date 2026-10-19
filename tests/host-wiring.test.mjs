@@ -11,7 +11,9 @@ const BLUEPRINT = JSON.stringify({ title: '线性代数', emoji: '🧮', units: 
 function fakeLlm(calls) {
   return {
     async prepareCall(config, signal, configure) {
-      calls.push({ config, configured: typeof configure === 'function' })
+      // A reasoning model, so the port's controls (effort, room) show up.
+      const model = { reasoning: { efforts: [{ id: 'off' }, { id: 'high' }], defaultEffort: 'high' }, defaultMaxTokens: 64_000 }
+      calls.push({ config, controls: configure ? configure({ maxTokens: config.maxTokens }, model) : null })
       return {
         config: { ...config },
         inputModalities: ['text'],
@@ -109,7 +111,8 @@ test('the host row serves the browser channel, HTTP routes and the preset runtim
     assert.equal(blueprint.course.title, '线性代数')
     const teachCall = calls.find(entry => entry.config?.model === 'deepseek-pro')
     assert.ok(teachCall, 'the teaching route follows the saved preference')
-    assert.equal(teachCall.configured, false)
+    assert.equal(teachCall.controls.reasoningEffort, undefined, 'course design keeps the model\'s own effort')
+    assert.ok(teachCall.controls.maxTokens > teachCall.config.maxTokens, '…with room for its reasoning')
     assert.match(calls.find(entry => entry.request)?.request.system ?? '', /Aha/u)
 
     const upload = harness.fetchRoutes['/api/aha-tutor/upload']

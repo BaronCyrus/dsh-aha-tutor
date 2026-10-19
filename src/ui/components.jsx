@@ -3,6 +3,7 @@ import { useRef, useState } from 'react'
 import { fileToBase64 } from './api.js'
 import { useApp, useLoad } from './hooks.js'
 import { Icon } from './icons.jsx'
+import { shortCourseTitle } from '../core/course-model.js'
 
 export function Spinner({ label }) {
   return <span className="aha-row" style={{ gap: 8 }}><span className="aha-spinner" />{label ? <span className="aha-hint">{label}</span> : null}</span>
@@ -45,13 +46,18 @@ export function Confirm({ text, onConfirm, onCancel, danger = false }) {
   </>}><p>{text}</p></Modal>
 }
 
-export function ErrorLine({ error }) {
+// A host error in the learner's language when its code is known; the raw
+// message stays available on hover.
+export function errorText(t, error) {
+  const code = String(error?.code ?? '').replace(/^aha-tutor\//u, '')
+  const key = `err_${code}`
+  return code && t(key) !== key ? t(key) : t('errorGeneric', { message: error?.message ?? String(error) })
+}
+
+export function ErrorLine({ error, style }) {
   const { t } = useApp()
   if (!error) return null
-  const code = String(error.code ?? '').replace(/^aha-tutor\//u, '')
-  const key = `err_${code}`
-  const localized = code && t(key) !== key ? t(key) : null
-  return <div className="aha-error" role="alert">{localized ?? t('errorGeneric', { message: error.message ?? String(error) })}</div>
+  return <div className="aha-error" role="alert" style={style} title={error.message ?? undefined}>{errorText(t, error)}</div>
 }
 
 export function Empty({ children }) {
@@ -176,9 +182,18 @@ export function describeMaterial(item, t) {
   return parts.join(' · ')
 }
 
-export function MasteryMeter({ value }) {
-  const filled = Math.round((Number(value) || 0) / 20)
-  return <span className="aha-meter" title={`${Math.round(value ?? 0)}%`}>{[0, 1, 2, 3, 4].map(index => <i key={index} data-on={index < filled} />)}</span>
+// A course named compactly in lists (its emoji and main title); the full
+// title shows on hover.
+export function CourseLabel({ title, emoji }) {
+  if (!title) return null
+  return <span className="aha-hint" title={title}> · {emoji ? `${emoji} ` : ''}{shortCourseTitle(title)}</span>
+}
+
+// Five segments; nothing lights up until there is evidence (stage "none").
+export function MasteryMeter({ value, stage, label }) {
+  const filled = stage === 'none' ? 0 : Math.round((Number(value) || 0) / 20)
+  const title = label ? (stage === 'none' ? label : `${label} · ${Math.round(value ?? 0)}%`) : `${Math.round(value ?? 0)}%`
+  return <span className="aha-meter" title={title} aria-label={title} role="img" data-stage={stage}>{[0, 1, 2, 3, 4].map(index => <i key={index} data-on={index < filled} />)}</span>
 }
 
 export function copyText(textValue) {

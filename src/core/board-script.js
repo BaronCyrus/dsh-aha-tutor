@@ -147,6 +147,7 @@ export function normalizeBoard(raw, { conceptIds = [] } = {}) {
   const sourceSteps = Array.isArray(raw) ? raw : Array.isArray(raw?.steps) ? raw.steps : []
   const steps = []
   let opCounter = 0
+  let worked = false
   const idMap = new Map()
   for (const rawStep of sourceSteps.slice(0, BOARD_LIMITS.steps)) {
     const say = text(rawStep?.say ?? rawStep?.narration ?? rawStep?.speech, BOARD_LIMITS.say)
@@ -162,7 +163,12 @@ export function normalizeBoard(raw, { conceptIds = [] } = {}) {
       ats.push(sentenceIndex(rawOp?.at))
     }
     syncOps(ops, ats)
-    const check = rawStep?.check ? normalizeItem(rawStep.check, steps.length, conceptIds) : null
+    let check = rawStep?.check ? normalizeItem(rawStep.check, steps.length, conceptIds) : null
+    // One "show your working" check per board; later ones ask for the answer only.
+    if (check?.kind === 'work') {
+      if (worked) check = { ...check, kind: 'short' }
+      else worked = true
+    }
     if (!say && !ops.length && !check) continue
     const goal = sentenceIndex(rawStep?.goal)
     steps.push({ id: `s${steps.length + 1}`, say, ops, ...(goal !== null && goal < 12 ? { goal } : {}), ...(check && check.kind !== 'order' ? { check: { ...check, id: `k${steps.length + 1}` } } : {}) })

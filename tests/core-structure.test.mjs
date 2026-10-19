@@ -4,6 +4,10 @@ import { test } from 'node:test'
 import { boardToMarkdown, boardToPlainText, estimateSpeechMs, normalizeBoard, stepTiming } from '../src/core/board-script.js'
 import { exportCoursePack, importCoursePack, parseCoursePack } from '../src/core/coursepack.js'
 import {
+  blueprintDiff,
+  shortCourseTitle,
+  blueprintOutline,
+  diffIsEmpty,
   courseProgress,
   findLesson,
   insertLesson,
@@ -115,6 +119,54 @@ test('practice items normalize answers by id, index or text', () => {
   assert.equal(number.answer, 9.81)
   const practice = normalizePractice({ items: [{ prompt: 'explain', kind: 'short', answer: 'because', conceptIds: ['cpt_x', 'cpt_unknown'] }] }, ['cpt_x'])
   assert.deepEqual(practice.items[0].conceptIds, ['cpt_x'])
+  // A figure is kept only when it is an SVG; the client sanitizes it.
+  assert.match(normalizeItem({ kind: 'number', prompt: '面积？', answer: 12, svg: '<svg viewBox="0 0 10 10"><rect width="4" height="3"/></svg>' }).svg, /^<svg /u)
+  assert.equal(normalizeItem({ kind: 'number', prompt: '面积？', answer: 12, svg: '<img src="x">' }).svg, undefined)
+})
+
+test('lists name a course by its main title', () => {
+  assert.equal(shortCourseTitle('贝叶斯思维：一次阳性，你真的病了吗？'), '贝叶斯思维')
+  assert.equal(shortCourseTitle('Bayesian thinking: one positive test'), 'Bayesian thinking')
+  assert.equal(shortCourseTitle('简谐运动'), '简谐运动')
+  assert.equal(shortCourseTitle('：没有主标题'), '：没有主标题')
+})
+
+test('a blueprint still being written yields its outline so far', () => {
+  const partial = '好的：```json\n{"title":"配方法","units":[{"title":"认识完全平方","lectures":[{"title":"展开与配方","lessons":[{"title":"完全平方公式","estMinutes":12},{"title":"补全正方形","concepts":["配方"'
+  assert.deepEqual(blueprintOutline(extractJson(partial)), {
+    title: '配方法',
+    units: [{ title: '认识完全平方', lectures: [{ title: '展开与配方', lessons: ['完全平方公式', '补全正方形'] }] }],
+  })
+  assert.deepEqual(blueprintOutline({}), { title: '', units: [] })
+})
+
+test('a revision lists added, removed, renamed and changed lessons', () => {
+  const lesson = (id, title, estMinutes = 10) => ({ id, title, estMinutes, objectives: [], concepts: [] })
+  const before = { title: '配方法', units: [{ id: 'unt_aaaaaa1', title: '一', lectures: [{ lessons: [lesson('les_aaaaaa1', '甲'), lesson('les_aaaaaa2', '乙'), lesson('les_aaaaaa3', '丙'), lesson('les_aaaaaa4', '戊')] }] }] }
+  const after = { title: '配方法', units: [
+    { id: 'unt_aaaaaa1', title: '一', lectures: [{ lessons: [lesson('les_aaaaaa1', '甲'), lesson('les_aaaaaa2', '乙（改）'), lesson('les_aaaaaa3', '丙', 20), lesson('les_bbbbbb1', '丁')] }] },
+    { id: 'unt_bbbbbb1', title: '二', lectures: [] },
+  ] }
+  const diff = blueprintDiff(before, after)
+  assert.deepEqual(diff.added, [{ title: '丁', unit: '一' }])
+  assert.deepEqual(diff.removed, [{ title: '戊', unit: '一' }])
+  assert.deepEqual(diff.renamed, [{ from: '乙', to: '乙（改）', unit: '一' }])
+  assert.deepEqual(diff.changed, [{ title: '丙', unit: '一' }])
+  assert.deepEqual([diff.unitsAdded, diff.unitsRemoved, diff.title], [['二'], [], null])
+  assert.equal(diffIsEmpty(diff), false)
+  assert.equal(diffIsEmpty(blueprintDiff(before, before)), true)
+})
+
+test('a board keeps one written-working check and asks later ones for the answer only', () => {
+  const work = normalizeItem({ kind: 'work', prompt: '配方解 $x^2+6x=7$', answer: '$x^2+6x+9=16$\n$(x+3)^2=16$\n$x=1$ 或 $x=-7$', rubric: ['两边加 9', '开平方取正负'] })
+  assert.equal(work.kind, 'work')
+  assert.deepEqual(work.rubric, ['两边加 9', '开平方取正负'])
+  assert.match(work.answer, /\(x\+3\)\^2=16/u)
+  const board = normalizeBoard({ steps: [
+    { say: '例题。', ops: [{ t: 'p', text: '例' }], check: { kind: 'work', prompt: '自己解一题', answer: '过程' } },
+    { say: '再来。', ops: [{ t: 'p', text: '再' }], check: { kind: 'work', prompt: '再解一题', answer: '过程' } },
+  ] })
+  assert.deepEqual(board.steps.map(step => step.check.kind), ['work', 'short'])
 })
 
 test('cheatsheet normalization requires sections with items', () => {
@@ -166,7 +218,7 @@ test('planner spreads lessons over study days, keeps review time and flags deadl
   const plan = buildPlan({
     today,
     settings: { weeklyMinutes: 150, studyDays: [1, 3, 5] },
-    courses: [{ id: 'crs_a', title: 'A', deadline: '2026-10-23', lessons: Array.from({ length: 6 }, (_, index) => ({ id: `l${index}`, title: `L${index}`, minutes: 25 })) }],
+    courses: [{ id: 'crs_a', title: 'A', emoji: '🎲', deadline: '2026-10-23', lessons: Array.from({ length: 6 }, (_, index) => ({ id: `l${index}`, title: `L${index}`, minutes: 25 })) }],
     reviews: [{ id: 'r1', title: 'review', dueDay: today, minutes: 10 }],
     exams: [{ id: 'e1', title: 'midterm', day: '2026-10-30' }],
   })
@@ -177,6 +229,7 @@ test('planner spreads lessons over study days, keeps review time and flags deadl
   assert.equal(plan.warnings[0].kind, 'deadline-at-risk')
   assert.ok(plan.warnings[0].neededWeeklyMinutes > 150)
   assert.ok(plan.days.some(day => day.items.some(item => item.kind === 'exam')))
+  assert.deepEqual(plan.days.flatMap(day => day.items).find(item => item.kind === 'lesson')?.courseEmoji, '🎲', 'lessons carry the course emoji for compact labels')
   assert.equal(addDays('2026-12-31', 1), '2027-01-01')
   assert.equal(daysBetween('2026-03-01', '2026-03-31'), 30)
   assert.equal(toDay(new Date(2026, 0, 5)), '2026-01-05')

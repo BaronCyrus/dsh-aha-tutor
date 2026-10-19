@@ -93,7 +93,8 @@ export const STEP_SPEC = `Each output line is ONE teaching step:
 Write the board in time with your voice: give every op "at", the 0-based index of the sentence in "say" during which you write it, so each item appears while the sentence about it is spoken (sentences end at 。！？；.!?;). "at" never goes down within a step: {"say":"先看这个公式。它说明力与位移方向相反。","ops":[{"t":"math","tex":"F=-kx","at":0},{"t":"p","text":"负号 = 方向相反","at":1}]}
 
 A check is a short question asked right after the step, to see whether the idea landed:
-{"kind":"choice|multi|blank|number|short","prompt":"…","options":["…","…"],"answer":<option index (0-based) for choice, list of indexes for multi, accepted strings for blank, a number for number, a model answer for short>,"tolerance":<number, for number>,"explanation":"why the answer is right, in one or two sentences","conceptIds":["<ids from the concept list>"]}
+{"kind":"choice|multi|blank|number|short|work","prompt":"…","options":["…","…"],"answer":<option index (0-based) for choice, list of indexes for multi, accepted strings for blank, a number for number, a model answer for short, the full model working for work>,"tolerance":<number, for number>,"rubric":["…"],"explanation":"why the answer is right, in one or two sentences","conceptIds":["<ids from the concept list>"]}
+A "work" check has the learner write out a whole calculation or derivation: "answer" is the model working, one step per line with inline math $…$, and "rubric" lists the 2–4 steps a correct working must contain. Use "work" only where the instructions ask for it.
 Make wrong options plausible (common mistakes), never trick questions.`
 
 // ── course crafting ─────────────────────────────────────────────────────────
@@ -112,9 +113,14 @@ Return {"questions":[{"prompt":"…","topic":"purpose|level|timeline|style|focus
   }
 }
 
-// The pace bounds a broad subject; a narrow goal or a stated time budget sets
-// the size itself, so a twenty-minute question never becomes a semester.
-function sizeGuidance(timeline) {
+const SIZE_RANGES = Object.freeze({ short: [3, 8, '1–2'], standard: [10, 20, '2–4'], full: [25, 45, '4–8'] })
+
+// A size the learner picked is a hard range. Otherwise the pace bounds a broad
+// subject, and a narrow goal or a stated time budget sets the size itself, so
+// a twenty-minute question never becomes a semester.
+function sizeGuidance(timeline, size) {
+  const range = SIZE_RANGES[size]
+  if (range) return `The learner chose the course size: ${range[0]}–${range[1]} lessons in the whole course, in ${range[2]} units. Count every lesson across all units before you answer: never more than ${range[1]}; if the subject seems to need more, merge closely related lessons. The pace only spreads the lessons over the weeks. Never pad with filler lessons.`
   const broad = timeline === 'intensive'
     ? 'Intensive pace: for a broad subject, up to 4–6 units and 18–30 lessons, focused on what matters most for the goal.'
     : timeline === 'relaxed'
@@ -123,7 +129,7 @@ function sizeGuidance(timeline) {
   return `Size the course to the goal first. When the goal is a single idea or names a time budget ("in 20 minutes", "one evening", "this weekend"), fit it: one unit with a single lecture of 1–4 lessons can be the whole course. Never pad with filler lessons. ${broad}`
 }
 
-export function blueprintPrompt({ goal, language, intake, materialsSummary, profile, timeline, weeklyMinutes }) {
+export function blueprintPrompt({ goal, language, intake, materialsSummary, profile, timeline, size, weeklyMinutes }) {
   return {
     system: join(PERSONA, `You design personal courses with the care of an experienced curriculum designer: clear prerequisites first, one new idea per lesson, frequent practice, and applied projects that make the knowledge usable. ${languageRule(language)}`, JSON_ONLY),
     user: join(
@@ -132,7 +138,7 @@ export function blueprintPrompt({ goal, language, intake, materialsSummary, prof
       block('materials', materialsSummary),
       learnerBlock({ profile }),
       `Design the course blueprint.
-- ${sizeGuidance(timeline)}${weeklyMinutes ? ` The learner can study about ${weeklyMinutes} minutes per week.` : ''}
+- ${sizeGuidance(timeline, size)}${weeklyMinutes ? ` The learner can study about ${weeklyMinutes} minutes per week.` : ''}
 - Structure: units → lectures (1–5 per unit) → lessons (1–5 per lecture). Each lesson takes 10–25 minutes and teaches one coherent idea.
 - Order lessons so every prerequisite comes first. Start from where the learner is, not from zero if they already know the basics.
 - If materials were provided, follow their scope and order where sensible.
@@ -156,6 +162,24 @@ export function revisePrompt({ blueprint, instruction, language }) {
   }
 }
 
+const ITEM_FIGURE = 'When a figure makes a question clearer (a shape to measure, a graph to read, a circuit, a diagram to label), give the item "svg": a small diagram following the same rules as the board\'s svg op (viewBox at most 480×320). Most items need no figure.'
+
+// One lesson of a blueprint, rewritten on its own: split in two, or deepened.
+export function reworkPrompt({ outline, unitTitle, lectureTitle, lesson, mode, language }) {
+  return {
+    system: join(PERSONA, `You design personal courses with the care of an experienced curriculum designer: clear prerequisites first, one new idea per lesson. ${languageRule(language)}`, JSON_ONLY),
+    user: join(
+      block('course_outline', outline),
+      block('position', `Unit: ${unitTitle}\nLecture: ${lectureTitle}`),
+      block('lesson', lesson),
+      mode === 'split'
+        ? 'Split this lesson into two consecutive lessons that together cover everything it covers. Each teaches one coherent idea in 10–20 minutes, and the first prepares the second. Stay consistent with the rest of the course.'
+        : 'Rewrite this lesson to go deeper. Keep its topic and its place in the course, but aim at why it works, its edge cases and its connections to the rest of the course; adjust the objectives, concepts and minutes (at most 25) to match.',
+      'Return {"lessons":[{"title":"…","summary":"…","objectives":["…"],"concepts":["…"],"estMinutes":15}]}',
+    ),
+  }
+}
+
 export function practicePrompt({ course, lecture, lessons, language, passages }) {
   const lessonLines = lessons.map(lesson => `- [${lesson.id}] ${lesson.title}: ${lesson.objectives.join('; ')} | concepts: ${lesson.concepts.map(concept => `${concept.id}=${concept.name}`).join(', ')}`).join('\n')
   return {
@@ -165,9 +189,9 @@ export function practicePrompt({ course, lecture, lessons, language, passages })
       block('lecture', lecture.title),
       block('lessons', lessonLines),
       block('source_passages', passages),
-      `For EACH lesson write 4–6 practice items. Mix kinds: "choice" (4 options), "multi", "blank" (short exact answer; list accepted spellings), "number" (with tolerance), "short" (a sentence or two, with a model answer and 2–3 rubric points). At least one item per lesson asks the learner to apply the idea to a new situation. Give each item 1–2 hints that nudge without giving the answer, an explanation, a difficulty 1–3, and the conceptIds it tests (use the ids given).
+      `For EACH lesson write 4–6 practice items. Mix kinds: "choice" (4 options), "multi", "blank" (short exact answer; list accepted spellings), "number" (with tolerance), "short" (a sentence or two, with a model answer and 2–3 rubric points). At least one item per lesson asks the learner to apply the idea to a new situation. Give each item 1–2 hints that nudge without giving the answer, an explanation, a difficulty 1–3, and the conceptIds it tests (use the ids given). ${ITEM_FIGURE}
 
-Return {"lessons":{"<lesson id>":{"items":[{"kind":"choice","prompt":"…","options":["…"],"answer":0,"hints":["…"],"explanation":"…","difficulty":1,"conceptIds":["…"]}]}}}`,
+Return {"lessons":{"<lesson id>":{"items":[{"kind":"choice","prompt":"…","options":["…"],"answer":0,"hints":["…"],"explanation":"…","difficulty":1,"conceptIds":["…"],"svg":"<svg …>…</svg> (optional)"}]}}}`,
     ),
   }
 }
@@ -211,6 +235,7 @@ export function lessonPrompt({ course, unit, lecture, lesson, language, learner,
 - Build intuition before formalism; then make it precise; then work at least one example fully on the board.
 - Draw a diagram or chart whenever a picture makes the idea click.
 - Put 2–4 checks after the key ideas, plus one at the end; every check must name its conceptIds.
+- If the lesson works through a calculation or a derivation, make exactly one check a "work" check, right after the key worked example: a similar problem the learner solves alone, writing every step. A lesson without a calculation or derivation gets no "work" check.
 - If source passages are given, stay consistent with them and mention the page when you lean on one.
 - Close with a recap step: a "key" note with the 2–3 takeaways, and say what comes next.
 - Give each step that works towards one of the objectives "goal": its 0-based index in the objectives above (${lesson.objectives.map((objective, index) => `${index} = ${objective}`).join('; ') || 'none'}); leave it out for the hook and the recap. Cover the objectives in order.
@@ -253,15 +278,45 @@ export function reexplainPrompt({ lesson, language, step, boardSoFar, style }) {
   }
 }
 
+const GRADE_FIELDS = '"score":<0 to 1>,"verdict":"correct|partial|incorrect","feedback":"2–3 encouraging sentences: what is right, what is missing, how to fix it","errorTag":"<3–6 word label of the main mistake, or empty>","misconception":<true if the answer shows a confident wrong belief rather than a gap>'
+
+// A "work" item is a written-out working: the grader also finds the first
+// line that goes wrong, so the teacher can correct exactly that line.
 export function gradePrompt({ item, response, language }) {
+  const work = item.kind === 'work'
   return {
-    system: join(PERSONA, `You grade open answers fairly: credit correct ideas expressed in the learner's own words, ignore spelling and phrasing, and pinpoint the exact gap. ${languageRule(language)}`, JSON_ONLY),
+    system: join(PERSONA, `You grade open answers fairly: credit correct ideas expressed in the learner's own words, ignore spelling and phrasing, and pinpoint the exact gap.${work ? ' For a written working, follow it line by line and find the first line that goes wrong; a different but valid route is not a mistake, and a slip carried forward counts once.' : ''} ${languageRule(language)}`, JSON_ONLY),
     user: join(
       block('question', item.prompt),
-      block('model_answer', item.answer),
+      block(work ? 'model_working' : 'model_answer', item.answer),
       block('rubric', (item.rubric ?? []).join('\n')),
-      block('learner_answer', response),
-      'Return {"score":<0 to 1>,"verdict":"correct|partial|incorrect","feedback":"2–3 encouraging sentences: what is right, what is missing, how to fix it","errorTag":"<3–6 word label of the main mistake, or empty>","misconception":<true if the answer shows a confident wrong belief rather than a gap>}',
+      block(work ? 'learner_working' : 'learner_answer', response),
+      work
+        ? `Return {${GRADE_FIELDS},"wrongStep":"the first wrong line of the learner's working, copied exactly, or empty when every line is right","why":"one sentence: what is wrong in that line","fix":"that line written correctly, with inline math $…$"}`
+        : `Return {${GRADE_FIELDS}}`,
+    ),
+  }
+}
+
+// The learner's written working went wrong: correct it at the board.
+export function correctionPrompt({ course, lesson, language, boardSoFar, item, response, grade }) {
+  const notes = [
+    grade.wrongStep ? `First wrong line: ${grade.wrongStep}` : '',
+    grade.why ? `What is wrong: ${grade.why}` : '',
+    grade.fix ? `Corrected line: ${grade.fix}` : '',
+    grade.feedback ? `Feedback already shown: ${grade.feedback}` : '',
+  ].filter(Boolean).join('\n')
+  return {
+    system: join(PERSONA, BOARD_SPEC, STEP_SPEC, languageRule(language), JSONL_ONLY),
+    user: join(
+      block('course', course ? course.title : ''),
+      block('lesson', lesson ? `${lesson.title}: ${lesson.objectives?.join('; ') ?? ''}` : ''),
+      block('board_so_far', boardSoFar),
+      block('problem', item.prompt),
+      block('model_working', item.answer),
+      block('learner_working', response),
+      block('grader_notes', notes),
+      'The learner just wrote out their working for this problem and went wrong somewhere. Correct it at the board in 2–3 steps, continuing on the current board: (1) write the learner\'s wrong line as they wrote it, in an op with an "id", then {"t":"mark","ref":"<that id>","style":"box"}, and say kindly what went wrong there and why; (2) write the corrected line and carry the working on to the right answer; (3) end with a short {"t":"note","tone":"key","text":"…"} holding the rule to remember. Speak to the learner directly and keep it brief. Add no check, and do not continue the lesson itself.',
     ),
   }
 }
@@ -315,7 +370,7 @@ export function quizPrompt({ scopeTitle, outline, concepts, language, count = 10
       block('scope', scopeTitle),
       block('outline', outline),
       block('concepts', concepts),
-      `Write a ${count}-question quiz across the whole scope: about 30% recall, 50% application, 20% harder transfer questions. Mix choice, multi, blank, number and short items, each with explanation, difficulty and conceptIds (use the ids given).
+      `Write a ${count}-question quiz across the whole scope: about 30% recall, 50% application, 20% harder transfer questions. Mix choice, multi, blank, number and short items, each with explanation, difficulty and conceptIds (use the ids given). ${ITEM_FIGURE}
 
 Return {"items":[…same item shape as practice items…]}`,
     ),

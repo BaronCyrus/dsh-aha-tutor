@@ -9,7 +9,7 @@ import { applyEvidence, createConceptState, masteryPercent, recommendNext } from
 import { createCard, gradeFromScore, review } from '../core/srs.js'
 import { masteryFor, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
 import { generateJson, generateSteps, TutorError } from './generate.js'
-import { askPrompt, cheatsheetPrompt, flashcardsPrompt, gradePrompt, lessonPrompt, quizPrompt, reexplainPrompt } from './prompts.js'
+import { askPrompt, cheatsheetPrompt, correctionPrompt, flashcardsPrompt, gradePrompt, lessonPrompt, quizPrompt, reexplainPrompt } from './prompts.js'
 
 const EVENTS_KEPT = 200
 // Questions and re-explanations kept per lesson, replayed where they were asked.
@@ -74,6 +74,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     })
     return generateSteps(llm, {
       purpose: 'teach',
+      effort: 'low',
       prompt,
       maxTokens: 14000,
       signal,
@@ -190,6 +191,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       const step = boardToPlainText({ steps: [board.steps[index]] }, { maxChars: 3000 })
       const answer = await generateSteps(llm, {
         purpose: 'teach',
+        effort: 'low',
         prompt: reexplainPrompt({ lesson, language, step, boardSoFar: boardToPlainText(board, { uptoStep: index, maxChars: 5000 }), style }),
         maxTokens: 6000,
         signal: api.signal,
@@ -235,23 +237,57 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }
   }
 
+  // Open answers. A "work" item (a written-out working) also gets the first
+  // wrong line and its fix, for the correction at the board.
   async function grade({ item, response, language = 'zh-CN' }) {
     if (!item?.prompt) throw new TutorError('invalid', 'Missing question')
+    const work = item.kind === 'work'
     const answer = text(response, 4000)
-    if (!answer) return { score: 0, verdict: 'incorrect', feedback: '', errorTag: '', misconception: false }
+    if (!answer) return { score: 0, verdict: 'incorrect', feedback: '', errorTag: '', misconception: false, ...(work ? { wrongStep: '', why: '', fix: '' } : {}) }
     const result = await generateJson(llm, {
       purpose: 'quick',
-      prompt: gradePrompt({ item: { prompt: text(item.prompt, 2000), answer: text(item.answer, 3000), rubric: Array.isArray(item.rubric) ? item.rubric.map(entry => text(entry, 300)) : [] }, response: answer, language }),
-      maxTokens: 1200,
+      prompt: gradePrompt({ item: { kind: work ? 'work' : 'short', prompt: text(item.prompt, 2000), answer: text(item.answer, 3000), rubric: Array.isArray(item.rubric) ? item.rubric.map(entry => text(entry, 300)) : [] }, response: answer, language }),
+      maxTokens: work ? 1800 : 1200,
       normalize: raw => ({
         score: Math.min(1, Math.max(0, Number(raw?.score) || 0)),
         verdict: ['correct', 'partial', 'incorrect'].includes(raw?.verdict) ? raw.verdict : Number(raw?.score) >= 0.8 ? 'correct' : Number(raw?.score) >= 0.4 ? 'partial' : 'incorrect',
         feedback: text(raw?.feedback, 1200),
         errorTag: text(raw?.errorTag, 80),
         misconception: raw?.misconception === true,
+        ...(work ? { wrongStep: text(raw?.wrongStep, 400), why: text(raw?.why, 400), fix: text(raw?.fix, 400) } : {}),
       }),
     })
     return result
+  }
+
+  // A written-out working went wrong: the teacher corrects it at the board,
+  // and the correction stays with the lesson like an answer to a raised hand.
+  function correct({ scope, stepIndex = 0, anchorStepId, item, response, grade: graded }) {
+    const working = text(response, 4000)
+    if (!item?.prompt || !working) throw new TutorError('invalid', 'Nothing to correct')
+    const notes = graded && typeof graded === 'object' ? graded : {}
+    return jobs.start('lesson/correct', async api => {
+      const { course, lesson, board, language } = await scopeBoard(scope)
+      const boardSoFar = board ? boardToPlainText(board, { uptoStep: Number(stepIndex) || 0, maxChars: 5000 }) : ''
+      const answer = await generateSteps(llm, {
+        purpose: 'quick',
+        prompt: correctionPrompt({
+          course,
+          lesson,
+          language,
+          boardSoFar,
+          item: { prompt: text(item.prompt, 2000), answer: text(item.answer, 3000) },
+          response: working,
+          grade: { feedback: text(notes.feedback, 1200), wrongStep: text(notes.wrongStep, 400), why: text(notes.why, 400), fix: text(notes.fix, 400) },
+        }),
+        maxTokens: 4000,
+        signal: api.signal,
+        conceptIds: lesson?.concepts?.map(concept => concept.id) ?? [],
+        onStep: step => api.push(step),
+      })
+      const aside = await keepAside(scope, { kind: 'correction', errorTag: text(notes.errorTag, 80), anchorStepId: anchorFor(board, stepIndex, anchorStepId), steps: answer.steps })
+      return { steps: answer.steps, aside }
+    })
   }
 
   async function savePosition({ courseId, lessonId, stepIndex = 0 }) {
@@ -442,7 +478,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }).catch(() => undefined)
   }
 
-  return Object.freeze({ get, prepare, ask, reexplain, record, grade, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, flashcards, reviewCard })
+  return Object.freeze({ get, prepare, ask, reexplain, record, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, flashcards, reviewCard })
 }
 
 function pushEvent(progress, event) {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { applyEvidence, createConceptState, masteryLevel, masteryPercent, recommendNext, summarizeForPrompt } from '../src/core/mastery.js'
+import { applyEvidence, createConceptState, masteryLevel, masteryPercent, masteryStage, recommendNext, stageForPercent, summarizeForPrompt } from '../src/core/mastery.js'
 import { createCard, dueCards, gradeFromScore, review } from '../src/core/srs.js'
 import { gradeObjective, normalizeAnswerText } from '../src/core/grading.js'
 
@@ -55,6 +55,16 @@ test('history is bounded and the prompt summary lists weakest concepts first', (
   const summary = summarizeForPrompt([strong, weak])
   assert.equal(summary[0].concept, 'weak')
   assert.throws(() => applyEvidence(weak, { score: 'abc' }), /score/)
+})
+
+test('five display stages start at "none" until there is any evidence', () => {
+  assert.equal(masteryStage(undefined), 'none')
+  const fresh = createConceptState('cpt_a', '配方')
+  assert.equal(masteryStage(fresh), 'none', 'an untouched concept is not shown as weak')
+  const once = applyEvidence(fresh, { kind: 'practice', score: 1, confidence: 'sure' })
+  assert.notEqual(masteryStage(once), 'none')
+  assert.equal(masteryStage(applyEvidence(fresh, { kind: 'self', rating: 1 })), 'weak', 'a self rating counts as evidence')
+  assert.deepEqual([10, 40, 70, 90].map(stageForPercent), ['weak', 'learning', 'proficient', 'mastered'])
 })
 
 test('SM-2 review intervals grow with good answers and reset on again', () => {

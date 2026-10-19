@@ -210,9 +210,33 @@ export function normalizeBlueprint(raw, { language } = {}) {
   }
 }
 
+// The main title of "主标题：副标题" / "Title: subtitle", for compact labels.
+export function shortCourseTitle(title) {
+  const value = text(title, 200)
+  const cut = value.search(/[：:]/u)
+  return cut > 0 ? value.slice(0, cut).trim() : value
+}
+
+// The titles of a blueprint that is still being written (repaired from a
+// truncated stream), so the learner can watch the outline grow.
+export function blueprintOutline(raw) {
+  const units = list(raw?.units, LIMITS.units, unit => {
+    const title = text(unit?.title, 120)
+    if (!title) return null
+    const lectures = list(unit?.lectures, LIMITS.lecturesPerUnit, lecture => {
+      const lessons = strings(lecture?.lessons, LIMITS.lessonsPerLecture, 120)
+      const name = text(lecture?.title, 120)
+      return name || lessons.length ? { title: name, lessons } : null
+    })
+    return { title, lectures }
+  })
+  return { title: text(raw?.title, 120), units }
+}
+
 // ── practice, checks, cards, sheets ─────────────────────────────────────────
 
-const ITEM_KINDS = ['choice', 'multi', 'blank', 'number', 'short', 'order']
+// "short" and "work" (a written-out working) are graded by the model.
+const ITEM_KINDS = ['choice', 'multi', 'blank', 'number', 'short', 'work', 'order']
 
 export function normalizeItem(raw, index = 0, conceptIds = []) {
   const kind = ITEM_KINDS.includes(raw?.kind) ? raw.kind : raw?.options ? 'choice' : 'short'
@@ -227,6 +251,9 @@ export function normalizeItem(raw, index = 0, conceptIds = []) {
     difficulty: Math.min(3, Math.max(1, Math.round(Number(raw?.difficulty) || 2))),
     conceptIds: (Array.isArray(raw?.conceptIds) ? raw.conceptIds : []).filter(id => conceptIds.includes(id)).slice(0, 4),
   }
+  // An optional figure; the client draws it only through the SVG allow-list.
+  const figure = text(raw?.svg ?? raw?.figure, 16000)
+  if (/^<svg[\s>]/iu.test(figure)) item.svg = figure
   if (kind === 'choice' || kind === 'multi' || kind === 'order') {
     item.options = list(raw?.options, LIMITS.options4, (option, optionIndex) => {
       const label = text(typeof option === 'string' ? option : option?.text ?? option?.label, 400)
@@ -318,6 +345,44 @@ export function flattenLessons(course) {
     }
   }
   return rows
+}
+
+// What a revision changes, lesson by lesson: lessons the teacher left alone
+// keep their ids, so anything without a match was added or removed.
+export function blueprintDiff(before, after) {
+  const lessonsOf = course => {
+    const map = new Map()
+    for (const unit of course?.units ?? []) for (const lecture of unit.lectures ?? []) for (const lesson of lecture.lessons ?? []) map.set(lesson.id, { lesson, unit: unit.title })
+    return map
+  }
+  const shape = lesson => JSON.stringify([lesson.summary ?? '', lesson.objectives ?? [], lesson.estMinutes ?? 0, (lesson.concepts ?? []).map(concept => concept.name)])
+  const old = lessonsOf(before)
+  const next = lessonsOf(after)
+  const added = []
+  const renamed = []
+  const changed = []
+  for (const [id, entry] of next) {
+    const was = old.get(id)
+    if (!was) added.push({ title: entry.lesson.title, unit: entry.unit })
+    else if (was.lesson.title !== entry.lesson.title) renamed.push({ from: was.lesson.title, to: entry.lesson.title, unit: entry.unit })
+    else if (shape(was.lesson) !== shape(entry.lesson) || was.unit !== entry.unit) changed.push({ title: entry.lesson.title, unit: entry.unit })
+  }
+  const removed = [...old].filter(([id]) => !next.has(id)).map(([, entry]) => ({ title: entry.lesson.title, unit: entry.unit }))
+  const beforeUnits = new Set((before?.units ?? []).map(unit => unit.id))
+  const afterUnits = new Set((after?.units ?? []).map(unit => unit.id))
+  return {
+    title: (before?.title ?? '') !== (after?.title ?? '') ? { from: before?.title ?? '', to: after?.title ?? '' } : null,
+    unitsAdded: (after?.units ?? []).filter(unit => !beforeUnits.has(unit.id)).map(unit => unit.title),
+    unitsRemoved: (before?.units ?? []).filter(unit => !afterUnits.has(unit.id)).map(unit => unit.title),
+    added,
+    removed,
+    renamed,
+    changed,
+  }
+}
+
+export function diffIsEmpty(diff) {
+  return !diff.title && !diff.unitsAdded.length && !diff.unitsRemoved.length && !diff.added.length && !diff.removed.length && !diff.renamed.length && !diff.changed.length
 }
 
 export function findLesson(course, lessonId) {

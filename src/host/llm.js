@@ -3,10 +3,18 @@
 // (grading, in-class questions, notes) — from the plugin preferences, falling
 // back to the DSH default model. Direct calls are single attempts in DSH, so
 // transient failures are retried here (only before any text was streamed).
+//
+// Reasoning counts against the output limit: a model thinking at its default
+// effort can spend a whole 8k budget before writing a word. So 'quick' calls
+// think least, board writing asks for a low effort ({ effort: 'low' }), and
+// every call gets room for its reasoning on top of the tokens it needs.
 
 import { TutorError } from './generate.js'
 
 const RETRYABLE = new Set(['EMPTY_RESPONSE', 'RATE_LIMIT', 'SERVER', 'TIMEOUT', 'TRANSPORT'])
+// Extra output tokens for reasoning, by effort id (unknown ids get 'high').
+const REASONING_ROOM = Object.freeze({ off: 0, none: 0, minimal: 4000, low: 8000, medium: 16000, high: 24000, xhigh: 48000, max: 48000 })
+const STOPPED_AT_LIMIT = new Set(['max-tokens', 'length'])
 const CALL_TIMEOUT_MS = 6 * 60_000
 const MAX_RETRIES = 2
 
@@ -21,6 +29,7 @@ const USER_ERRORS = Object.freeze({
   CONTEXT_WINDOW_EXCEEDED: ['llm-context', 'The material is too long for this model. Pick fewer materials or a model with a larger context.'],
   NO_ADAPTER: ['llm-unavailable', 'The selected model is not available. Pick another model in Aha settings.'],
   TIMEOUT: ['llm-timeout', 'The model took too long to respond. Try again.'],
+  EMPTY_RESPONSE: ['llm-empty', 'The model returned nothing this time. Try again.'],
   ABORTED: ['cancelled', 'Cancelled'],
 })
 
@@ -28,6 +37,23 @@ function toTutorError(code, fallback) {
   const known = USER_ERRORS[code]
   if (known) return new TutorError(known[0], known[1])
   return new TutorError('llm-failed', `The model call failed${code ? ` (${code})` : ''}${fallback ? `: ${fallback}` : ''}`)
+}
+
+// 'lowest' (quick calls) or 'low' (board writing; else the lightest effort
+// that still reasons); undefined keeps the model's default.
+export function pickEffort(efforts, wanted) {
+  if (!efforts?.length || !wanted) return undefined
+  if (wanted === 'lowest') return efforts[0].id
+  return (efforts.find(effort => effort.id === wanted) ?? efforts.find(effort => effort.id !== 'off' && effort.id !== 'none') ?? efforts[0]).id
+}
+
+// The output limit to ask for: what the call needs plus room for reasoning,
+// never above the model's own limit (left alone when that is unknown).
+export function outputBudget(maxTokens, effort, model) {
+  const cap = Number(model?.defaultMaxTokens) || 0
+  if (!cap || !model?.reasoning) return maxTokens
+  const room = REASONING_ROOM[effort ?? model.reasoning.defaultEffort] ?? REASONING_ROOM.high
+  return Math.max(Math.min(maxTokens, cap), Math.min(maxTokens + room, cap))
 }
 
 const sleep = (ms, signal) => new Promise((resolve, reject) => {
@@ -76,7 +102,7 @@ export function createLlmPort({ getLlm, getDefault, getAttachments, prefs, logge
     return blocks
   }
 
-  async function attempt({ purpose, system, user, images, maxTokens, signal, onText }) {
+  async function attempt({ purpose, effort, system, user, images, maxTokens, signal, onText }) {
     const llm = getLlm()
     if (!llm) throw new TutorError('llm-unavailable', 'DSH has no model service in this profile.')
     const target = route(purpose)
@@ -84,12 +110,10 @@ export function createLlmPort({ getLlm, getDefault, getAttachments, prefs, logge
     const fused = signal ? AbortSignal.any([signal, timeout]) : timeout
     let prepared
     try {
-      prepared = await llm.prepareCall({ ...target, maxTokens }, fused, purpose === 'quick'
-        ? (controls, model) => {
-            const lowest = model?.reasoning?.efforts?.[0]
-            return lowest ? { ...controls, reasoningEffort: lowest.id } : controls
-          }
-        : undefined)
+      prepared = await llm.prepareCall({ ...target, maxTokens }, fused, (controls, model) => {
+        const chosen = pickEffort(model?.reasoning?.efforts, purpose === 'quick' ? 'lowest' : effort)
+        return { ...controls, ...(chosen ? { reasoningEffort: chosen } : {}), maxTokens: outputBudget(maxTokens, chosen, model) }
+      })
     } catch (error) {
       if (signal?.aborted) throw signal.reason ?? error
       throw Object.assign(toTutorError(error?.code, error?.message), { retryable: false })
@@ -115,19 +139,23 @@ export function createLlmPort({ getLlm, getDefault, getAttachments, prefs, logge
       const code = timeout.aborted ? 'TIMEOUT' : finish.kind === 'aborted' ? 'ABORTED' : finish.failure?.code
       throw Object.assign(toTutorError(code, finish.failure?.message), { retryable: RETRYABLE.has(code), retryAfterMs: finish.failure?.providerRetryAfterMs, streamed: textValue.length > 0 })
     }
-    if (!textValue.trim()) throw Object.assign(toTutorError('EMPTY_RESPONSE'), { retryable: true, streamed: false })
+    // Reasoning that used up the whole limit leaves no answer: try again with more room.
+    if (!textValue.trim()) throw Object.assign(toTutorError('EMPTY_RESPONSE'), { retryable: true, streamed: false, grow: STOPPED_AT_LIMIT.has(finish?.kind) })
     return textValue
   }
 
   async function call(options) {
     let lastError
+    let current = options
     for (let tries = 0; tries <= MAX_RETRIES; tries += 1) {
       try {
-        return await attempt(options)
+        return await attempt(current)
       } catch (error) {
         lastError = error
         if (options.signal?.aborted || !error?.retryable || error?.streamed || tries === MAX_RETRIES) throw error
-        await sleep(Math.min(20_000, Number(error.retryAfterMs) || 1500 * (tries + 1)), options.signal)
+        // More room needs no wait; anything else backs off first.
+        if (error.grow) current = { ...current, maxTokens: current.maxTokens * 2 }
+        else await sleep(Math.min(20_000, Number(error.retryAfterMs) || 1500 * (tries + 1)), options.signal)
       }
     }
     throw lastError

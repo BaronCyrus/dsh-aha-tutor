@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { Empty, ErrorLine, MaterialPicker, Progress, Spinner } from '../components.jsx'
+import { CourseLabel, Empty, ErrorLine, MaterialPicker, Progress, Spinner } from '../components.jsx'
 import { useApp, useLoad } from '../hooks.js'
 import { Icon } from '../icons.jsx'
 import { toDay } from '../../core/planner.js'
@@ -105,7 +105,7 @@ export function HomeScreen() {
       {plan.loading && !plan.value ? <Spinner /> : today.length ? <div className="aha-col" style={{ gap: 6 }}>
         {today.map((item, index) => <div key={`${item.refId}-${index}`} className="aha-card" style={{ flexDirection: 'row', alignItems: 'center', padding: '10px 14px' }}>
           <span className="aha-tag">{item.kind === 'lesson' ? t('lessonItem') : item.kind === 'review' ? t('reviewItem') : t('examItem')}</span>
-          <span style={{ flex: 1 }}>{item.title}{item.courseTitle ? <span className="aha-hint"> · {item.courseTitle}</span> : null}</span>
+          <span style={{ flex: 1 }}>{item.title}<CourseLabel title={item.courseTitle} emoji={item.courseEmoji} /></span>
           {item.minutes ? <span className="aha-hint">{t('minutesUnit', { minutes: item.minutes })}</span> : null}
           {item.kind === 'lesson' ? <button type="button" className="aha-btn" data-size="sm" onClick={() => navigate('lesson', { courseId: item.courseId, lessonId: item.refId })}>{t('learn')}</button> : null}
           {item.kind === 'review' ? <button type="button" className="aha-btn" data-size="sm" onClick={() => navigate('practice', { review: true })}>{t('review')}</button> : null}

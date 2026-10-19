@@ -208,4 +208,7 @@ test('the side panel tracks goals and lists what was said, with questions', () =
     ['say', '开场', 0], ['say', '讲 A', 1], ['question', '为什么？', 2], ['say', '因为……', 2], ['say', '再讲 A', 3], ['question', '还有呢？', -1],
   ])
   assert.equal(entries.at(-1).pending, true)
+
+  const corrected = transcriptEntries([main[0], { id: 'a3_s1', say: '这里错了', aside: true }], 1, [{ id: 'a3', kind: 'correction', label: '订正：漏了负根', streaming: false, steps: [{ id: 'a3_s1' }] }])
+  assert.deepEqual(corrected.map(entry => [entry.kind, entry.text]), [['say', '开场'], ['correction', '订正：漏了负根'], ['say', '这里错了']])
 })

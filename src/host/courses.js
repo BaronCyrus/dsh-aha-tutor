@@ -3,12 +3,14 @@
 
 import { exportCoursePack, importCoursePack } from '../core/coursepack.js'
 import {
+  blueprintOutline,
   COURSE_SCHEMA_VERSION,
   courseProgress,
   flattenLessons,
   intakeSummary,
   nextLesson,
   normalizeBlueprint,
+  normalizeLesson,
   normalizePractice,
   normalizeProject,
   normalizeQuestionnaire,
@@ -16,11 +18,32 @@ import {
   text,
 } from '../core/course-model.js'
 import { assertId, newId } from '../core/ids.js'
+import { extractJson } from '../core/json-extract.js'
 import { emptyProgress, materialImages, materialsSummary, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
 import { generateJson, streamCounter, TutorError } from './generate.js'
-import { blueprintPrompt, detectLanguage, practicePrompt, projectsPrompt, questionnairePrompt, revisePrompt } from './prompts.js'
+import { blueprintPrompt, detectLanguage, practicePrompt, projectsPrompt, questionnairePrompt, revisePrompt, reworkPrompt } from './prompts.js'
 
 const TIMELINES = ['intensive', 'balanced', 'relaxed']
+const SIZES = ['auto', 'short', 'standard', 'full']
+
+// The blueprint streams: count the lessons written so far (there is no total
+// yet) and, at each new lesson, repair the text so far into an outline the
+// learner can watch grow.
+function outlineStream(api) {
+  let soFar = ''
+  const counter = streamCounter('"estMinutes"', count => {
+    api.progress(count, 0, 'blueprint')
+    try {
+      api.preview(blueprintOutline(extractJson(soFar)))
+    } catch {
+      // not parseable yet; the next lesson will be
+    }
+  })
+  return delta => {
+    soFar += String(delta ?? '')
+    counter(delta)
+  }
+}
 
 export function createCourses({ store, llm, jobs, now = () => new Date() }) {
   const stamp = () => now().toISOString()
@@ -64,7 +87,7 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
 
   async function get({ courseId }) {
     const course = await readCourse(courseId)
-    const [progress, intake] = await Promise.all([readProgress(store, courseId), store.readJson(store.paths.intake(courseId), null)])
+    const [progress, intake, proposal] = await Promise.all([readProgress(store, courseId), store.readJson(store.paths.intake(courseId), null), store.readJson(store.paths.proposal(courseId), null)])
     const boards = new Set(await store.listIds(store.paths.boardsDir(courseId), 'les'))
     const practice = new Set(await store.listIds(store.paths.practiceDir(courseId), 'les'))
     const sheets = new Set(await store.listIds(store.paths.sheetsDir(courseId), 'unt'))
@@ -72,6 +95,7 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
       course,
       progress,
       intake,
+      proposal,
       jobs: {
         questions: jobs.running(`questions:${courseId}`),
         blueprint: jobs.running(`blueprint:${courseId}`),
@@ -124,21 +148,22 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
   }
 
   // Step 2: answers → blueprint.
-  function submitIntake({ courseId, answers = {}, timeline = 'balanced', weeklyMinutes, deadline }) {
+  function submitIntake({ courseId, answers = {}, timeline = 'balanced', size = 'auto', weeklyMinutes, deadline }) {
     assertId(courseId, 'crs')
     return jobs.start('craft/blueprint', async api => {
       const course = await readCourse(courseId)
       const intake = (await store.readJson(store.paths.intake(courseId), null)) ?? { questionnaire: null, answers: {} }
       const cleanAnswers = sanitizeAnswers(intake.questionnaire, answers)
       await store.writeJson(store.paths.intake(courseId), { ...intake, answers: cleanAnswers, at: stamp() })
+      if (course.materialIds?.length) api.progress(0, 0, 'materials')
       const materials = await readMaterials(store, course.materialIds ?? [])
       const profile = await readProfile(store)
       const settings = {
         timeline: TIMELINES.includes(timeline) ? timeline : 'balanced',
+        size: SIZES.includes(size) ? size : 'auto',
         weeklyMinutes: clampMinutes(weeklyMinutes),
         deadline: /^\d{4}-\d{2}-\d{2}$/u.test(String(deadline ?? '')) ? deadline : null,
       }
-      // The blueprint streams: report the lessons written so far (no total yet).
       api.progress(0, 0, 'blueprint')
       const blueprint = await generateJson(llm, {
         purpose: 'teach',
@@ -149,12 +174,13 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
           materialsSummary: materialsSummary(materials),
           profile,
           timeline: settings.timeline,
+          size: settings.size,
           weeklyMinutes: settings.weeklyMinutes,
         }),
         images: llm.supportsImages?.('teach') ? await materialImages(store, materials) : undefined,
         maxTokens: 16000,
         signal: api.signal,
-        onText: streamCounter('"estMinutes"', count => api.progress(count, 0, 'blueprint')),
+        onText: outlineStream(api),
         normalize: raw => attachProjectUnits(raw, normalizeBlueprint(raw, { language: course.language })),
       })
       const next = { ...course, ...blueprint, language: course.language, status: 'blueprint', settings }
@@ -179,10 +205,58 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
         onText: streamCounter('"estMinutes"', count => api.progress(count, 0, 'blueprint')),
         normalize: raw => attachProjectUnits(raw, normalizeBlueprint(raw, { language: course.language })),
       })
-      const next = { ...course, ...revised, language: course.language, status: course.status === 'ready' ? 'ready' : 'blueprint' }
-      await saveCourse(next)
-      return { course: next }
+      // A revision is only proposed: the learner sees what changes first.
+      const proposal = { instruction: request, at: stamp(), blueprint: revised }
+      await store.writeJson(store.paths.proposal(courseId), proposal)
+      return { course, proposal }
     }, { key: `blueprint:${courseId}`, meta: { courseId } })
+  }
+
+  async function applyProposal({ courseId }) {
+    const course = await readCourse(courseId)
+    const proposal = await store.readJson(store.paths.proposal(courseId), null)
+    if (!proposal?.blueprint?.units) throw new TutorError('not-found', 'There is no proposed change')
+    // Lessons the revision kept have the same ids, so their progress stays.
+    const next = { ...course, ...proposal.blueprint, language: course.language, status: course.status === 'ready' ? 'ready' : 'blueprint' }
+    await saveCourse(next)
+    await store.removeDir(store.paths.proposal(courseId))
+    return { course: next }
+  }
+
+  async function discardProposal({ courseId }) {
+    assertId(courseId, 'crs')
+    await store.removeDir(store.paths.proposal(courseId))
+    return { ok: true }
+  }
+
+  // One lesson split in two or taken deeper. Nothing is saved: the editor
+  // shows the result as an unsaved edit.
+  function reworkLesson({ courseId, lesson: raw, unitTitle, lectureTitle, mode }) {
+    const split = mode === 'split'
+    const lesson = normalizeLesson(raw)
+    if (!lesson) throw new TutorError('invalid', 'Unknown lesson')
+    return jobs.start('craft/rework', async api => {
+      const course = await readCourse(courseId)
+      const lessons = await generateJson(llm, {
+        purpose: 'teach',
+        prompt: reworkPrompt({
+          outline: outlineForPrompt(course, { maxChars: 4000 }),
+          unitTitle: text(unitTitle, 120),
+          lectureTitle: text(lectureTitle, 120),
+          lesson: { title: lesson.title, summary: lesson.summary, objectives: lesson.objectives, concepts: lesson.concepts.map(concept => concept.name), estMinutes: lesson.estMinutes },
+          mode: split ? 'split' : 'deepen',
+          language: course.language,
+        }),
+        maxTokens: 3000,
+        signal: api.signal,
+        normalize: value => {
+          const list = (Array.isArray(value?.lessons) ? value.lessons : [value]).map(entry => normalizeLesson({ ...entry, id: undefined })).filter(Boolean).slice(0, split ? 3 : 1)
+          if (split ? list.length < 2 : !list.length) throw new Error('no usable lessons')
+          return list
+        },
+      })
+      return { lessons }
+    }, { key: `rework:${courseId}:${lesson.id}`, meta: { courseId } })
   }
 
   // Manual edits from the blueprint editor.
@@ -205,7 +279,7 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
       prompt: practicePrompt({ course, lecture, lessons, language: course.language, passages: passagesFor(sources, query, 5000) }),
       // 4–6 items per lesson with hints and explanations: room for all of them,
       // so the last lessons of a long lecture are not cut off.
-      maxTokens: Math.min(16000, 3000 + lessons.length * 2200),
+      maxTokens: Math.min(16000, 3000 + lessons.length * 2600),
       signal,
       normalize: raw => raw?.lessons ?? raw,
     })
@@ -335,7 +409,7 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
     return summary(course.id)
   }
 
-  return Object.freeze({ list, get, summary, readCourse, saveCourse, startCraft, submitIntake, revise, saveBlueprint, writeLecturePractice, confirm, update, remove, exportPack, importPack })
+  return Object.freeze({ list, get, summary, readCourse, saveCourse, startCraft, submitIntake, revise, applyProposal, discardProposal, reworkLesson, saveBlueprint, writeLecturePractice, confirm, update, remove, exportPack, importPack })
 }
 
 function sanitizeAnswers(questionnaire, answers) {

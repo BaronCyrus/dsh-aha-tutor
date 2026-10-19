@@ -5,15 +5,15 @@ import { captionSentences } from './board/inline.js'
 import { reidSteps } from './board/layout.js'
 import { createPlayer } from './board/player.js'
 import { goalStates, transcriptEntries } from './board/sidepanel.js'
-import { Spinner } from './components.jsx'
+import { ErrorLine, Spinner } from './components.jsx'
 import { useApp, useDarkMode, usePersistentState } from './hooks.js'
 import { ItemCard } from './ItemCard.jsx'
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2]
 const STYLES = [['analogy', 'styleAnalogy'], ['visual', 'styleVisual'], ['example', 'styleExample'], ['simpler', 'styleSimpler'], ['deeper', 'styleDeeper']]
 
-// An aside (the answer to a raised hand, or a re-explanation) is played right
-// after the step it was asked at.
+// An aside (the answer to a raised hand, a re-explanation, or the correction
+// of a written-out working) is played right after the step it was asked at.
 function asideEntry({ id, kind, label, anchorId, steps = [], streaming = false }) {
   return { id, kind, label, anchorId, streaming, steps: reidSteps(steps, `${id}_`).map(step => ({ ...step, anchorId })) }
 }
@@ -28,11 +28,12 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   const dark = useDarkMode()
   const boardTheme = settings.boardTheme === 'dark' || (settings.boardTheme !== 'light' && dark) ? 'dark' : 'light'
   const styleLabel = style => t(STYLES.find(([value]) => value === style)?.[1] ?? 'reexplain')
+  const correctionLabel = tag => (tag ? t('correctionOf', { tag }) : t('correction'))
   const [main, setMain] = useState(initialSteps)
   const [asides, setAsides] = useState(() => savedAsides.map(aside => asideEntry({
     id: aside.id,
     kind: aside.kind,
-    label: aside.kind === 'question' ? aside.question : t('reexplainedAs', { style: styleLabel(aside.style) }),
+    label: aside.kind === 'question' ? aside.question : aside.kind === 'correction' ? correctionLabel(aside.errorTag) : t('reexplainedAs', { style: styleLabel(aside.style) }),
     anchorId: aside.anchorStepId,
     steps: aside.steps ?? [],
   })))
@@ -46,6 +47,9 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   const [asking, setAsking] = useState(false)
   const [question, setQuestion] = useState('')
   const [pendingAside, setPendingAside] = useState(null)
+  const [checkResult, setCheckResult] = useState(null)
+  const [correcting, setCorrecting] = useState(null)
+  const correctionStarted = useRef(new Set())
   const [styleMenu, setStyleMenu] = useState(false)
   const [error, setError] = useState(null)
   const asideCounter = useRef(0)
@@ -107,7 +111,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
       onStreamDone?.(result)
     }).catch(failure => {
       if (controller.signal.aborted) return
-      setError(failure.message)
+      setError(failure)
       setComplete(true)
     })
     return () => controller.abort()
@@ -178,7 +182,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
 
   // Ask the host for an aside and put its steps on the board as they are
   // written; the lesson continues once the whole answer is there.
-  async function runAside({ endpoint, payload, kind, label, anchorIndex, onStarted }) {
+  async function runAside({ endpoint, payload, kind, label, anchorIndex, onStarted, onAdded, onFailed }) {
     const anchorId = anchorOf(anchorIndex)
     asideCounter.current += 1
     const id = `a${asideCounter.current}`
@@ -193,11 +197,14 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
         setPendingAside(entry.steps[0].id)
       }
     }
+    let added = false
     setError(null)
     try {
       const { job } = await api.call(endpoint, { ...payload, scope, stepIndex: mainIndexOf(anchorIndex), anchorStepId: anchorId })
       onStarted?.()
       setAsides(current => [...current, asideEntry({ id, kind, label, anchorId, streaming: true })])
+      added = true
+      onAdded?.(id)
       const written = []
       const result = await api.follow({ job }, { signal, onPartial: partial => { written.push(...partial); show([...written]) } })
       show(result?.steps?.length ? result.steps : written)
@@ -209,7 +216,8 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
       setAsking(false)
       // Nothing was answered: give the question back for another try.
       if (kind === 'question' && !shown) setQuestion(current => current || label)
-      setError(failure.message)
+      if (!added) onFailed?.()
+      setError(failure)
     }
   }
 
@@ -228,6 +236,27 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
     setAsking('reexplaining')
     await runAside({ endpoint: 'lesson/reexplain', payload: { style }, kind: 'reexplain', label: t('reexplainedAs', { style: styleLabel(style) }), anchorIndex: Math.max(0, Math.min(index, steps.length - 1)) })
   }
+
+  // A written-out working that went wrong is corrected at the board. The
+  // check closes only once the correction is registered, so the lesson moves
+  // straight into it; if it cannot start, the lesson simply goes on.
+  async function startCorrection(item, result) {
+    setAsking('correcting')
+    await runAside({
+      endpoint: 'lesson/correct',
+      payload: { item: { prompt: item.prompt, answer: item.answer }, response: result.response, grade: { feedback: result.feedback, errorTag: result.errorTag, wrongStep: result.wrongStep, why: result.why, fix: result.fix } },
+      kind: 'correction',
+      label: correctionLabel(result.errorTag),
+      anchorIndex: index,
+      onAdded: asideId => setCorrecting({ checkId: item.id, asideId }),
+      onFailed: () => player.answer(item.id),
+    })
+  }
+  useEffect(() => {
+    if (!correcting || !asides.some(aside => aside.id === correcting.asideId)) return
+    setCorrecting(null)
+    player.answer(correcting.checkId)
+  }, [asides, correcting, player])
 
   // Raising a hand pauses the lesson and puts the cursor in the ask box.
   function raiseHand() {
@@ -253,6 +282,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   const caption = captionLines[Math.min(snapshot?.sentence ?? 0, captionLines.length - 1)] ?? ''
 
   function onCheckResult(result) {
+    setCheckResult({ checkId: check?.id, result })
     if (!recordChecks || scope.kind !== 'lesson') return
     api.call('lesson/record', {
       courseId: scope.courseId,
@@ -267,11 +297,24 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   const total = steps.length + (complete ? 0 : 1)
   const writing = asides.find(aside => aside.streaming)
   const bufferingLabel = asking === 'answering' || writing?.kind === 'question' ? t('answering')
-    : asking === 'reexplaining' || writing ? t('generating')
-      : steps.length ? t('bufferingLesson') : t('preparingLesson')
+    : asking === 'correcting' || writing?.kind === 'correction' ? t('correcting')
+      : asking === 'reexplaining' || writing ? t('generating')
+        : steps.length ? t('bufferingLesson') : t('preparingLesson')
 
   const doneGoals = goals ? goals.filter(state => state === 'done').length : 0
-  const writingAside = Boolean(writing) || asking === 'answering' || asking === 'reexplaining'
+  const writingAside = Boolean(writing) || asking === 'answering' || asking === 'reexplaining' || asking === 'correcting'
+
+  const needsCorrection = check?.kind === 'work' && checkResult?.checkId === check.id && !checkResult.result.correct && Boolean(checkResult.result.response?.trim())
+  function continueCheck() {
+    if (!check) return
+    if (needsCorrection) {
+      if (correctionStarted.current.has(check.id)) return
+      correctionStarted.current.add(check.id)
+      startCorrection(check, checkResult.result)
+      return
+    }
+    player.answer(check.id)
+  }
 
   return <div className="aha-class" data-panel={panelOpen ? 'open' : 'closed'}>
     <div className="aha-classBar">
@@ -288,11 +331,11 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
             buffering={buffering || Boolean(asking)} bufferingLabel={bufferingLabel} />
           {check ? <div className="aha-checkCard">
             <div className="aha-spread"><b>{t('checkTitle')}</b></div>
-            <ItemCard item={check} language={language} onResult={onCheckResult} onContinue={() => player.answer(check.id)} />
+            <ItemCard item={check} language={language} onResult={onCheckResult} onContinue={continueCheck} continueLabel={needsCorrection ? t('seeCorrection') : undefined} keyboard />
           </div> : null}
         </div>
         {captions && caption ? <div className="aha-caption"><Inline text={caption} /></div> : <div className="aha-caption" />}
-        {error ? <div className="aha-error" style={{ textAlign: 'center' }}>{t('errorGeneric', { message: error })}</div> : null}
+        <ErrorLine error={error} style={{ textAlign: 'center' }} />
         <div className="aha-controls">
           <button type="button" className="aha-btn" data-kind="ghost" onClick={() => player.prev()} title={t('prevStep')} aria-label={t('prevStep')}>⏮</button>
           <button type="button" className="aha-btn" data-kind="primary" onClick={() => player.toggle()} disabled={!steps.length} aria-label={status === 'playing' ? t('pause') : t('play')}>{status === 'playing' ? '⏸' : '▶'} {status === 'playing' ? t('pause') : t('play')}</button>
@@ -331,7 +374,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
         <div ref={transcriptBox} className="aha-transcript" role="list">
           {entries.map(entry => <button key={entry.key} type="button" role="listitem" className="aha-line" data-kind={entry.kind} data-aside={entry.aside ? 'true' : undefined} data-current={entry.stepIndex === index ? 'true' : undefined}
             disabled={entry.stepIndex < 0} onClick={() => player.seek(entry.stepIndex)}>
-            {entry.kind === 'question' ? <span className="aha-lineTag">✋</span> : entry.kind === 'reexplain' ? <span className="aha-lineTag">🔄</span> : null}
+            {entry.kind === 'question' ? <span className="aha-lineTag">✋</span> : entry.kind === 'reexplain' ? <span className="aha-lineTag">🔄</span> : entry.kind === 'correction' ? <span className="aha-lineTag">✏️</span> : null}
             <span className="aha-lineText"><Inline text={entry.text} /></span>
             {entry.pending ? <Spinner /> : null}
           </button>)}

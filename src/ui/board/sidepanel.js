@@ -23,10 +23,11 @@ export function goalStates(steps, mainIndex, count, ended = false) {
 
 // steps: everything on the board in playing order, asides included; upto: the
 // furthest step reached; asides: { id, kind, label, streaming, steps }.
-// Entries: { key, kind: 'say' | 'question' | 'reexplain', text, stepIndex,
-// aside, pending } — stepIndex is where clicking the entry jumps to.
+// Entries: { key, kind: 'say' | 'question' | 'reexplain' | 'correction', text,
+// stepIndex, aside, pending } — stepIndex is where clicking the entry jumps to.
 export function transcriptEntries(steps, upto, asides = []) {
   const entries = []
+  const kindOf = aside => (aside.kind === 'question' || aside.kind === 'correction' ? aside.kind : 'reexplain')
   const started = new Set()
   const owner = id => asides.find(aside => id.startsWith(`${aside.id}_`))
   steps.forEach((step, stepIndex) => {
@@ -35,14 +36,14 @@ export function transcriptEntries(steps, upto, asides = []) {
       const aside = owner(step.id)
       if (aside && !started.has(aside.id)) {
         started.add(aside.id)
-        entries.push({ key: `${aside.id}:ask`, kind: aside.kind === 'question' ? 'question' : 'reexplain', text: aside.label, stepIndex, aside: true })
+        entries.push({ key: `${aside.id}:ask`, kind: kindOf(aside), text: aside.label, stepIndex, aside: true })
       }
     }
     if (step.say) entries.push({ key: step.id, kind: 'say', text: step.say, stepIndex, aside: step.aside === true })
   })
   // A question whose answer has not started yet still shows, as pending.
   for (const aside of asides) {
-    if (aside.streaming && !aside.steps.length) entries.push({ key: `${aside.id}:ask`, kind: aside.kind === 'question' ? 'question' : 'reexplain', text: aside.label, stepIndex: -1, aside: true, pending: true })
+    if (aside.streaming && !aside.steps.length) entries.push({ key: `${aside.id}:ask`, kind: kindOf(aside), text: aside.label, stepIndex: -1, aside: true, pending: true })
   }
   return entries
 }

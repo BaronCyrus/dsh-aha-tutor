@@ -5,10 +5,54 @@ import { DOMParser } from 'linkedom'
 
 import { createApi } from '../src/ui/api.js'
 import { chartSvg, escapeXml, niceTicks } from '../src/ui/charts.js'
+import { courseNextStep, lessonStage, nextStepFor, sessionStats } from '../src/ui/practice.js'
+import { STYLE } from '../src/ui/styles.js'
 import { animationDocument, sanitizeSvg } from '../src/ui/sanitize.js'
 import { splitSentences } from '../src/ui/speech.js'
 import { syncedStarts, themedSvg, wrap } from '../src/ui/video.js'
 import { captionSentences, inlinePlain, parseInline, sliceInline, spokenText, texToText } from '../src/ui/board/inline.js'
+
+test('a practice round is summed up in stars, accuracy and streaks, with one next step', () => {
+  const round = sessionStats([{ score: 1, correct: true }, { score: 1, correct: true }, { score: 0.5, correct: false }, { score: 1, correct: true }])
+  assert.deepEqual(round, { answered: 4, correct: 3, accuracy: 0.875, stars: 2, streak: 1, bestStreak: 2 })
+  assert.equal(sessionStats([{ score: 1, correct: true }]).stars, 3)
+  assert.equal(sessionStats([]).stars, 1, 'finishing earns a star')
+  assert.deepEqual(nextStepFor({ action: 'remediate' }, { lessonId: 'les_a' }), { kind: 'relearn', lessonId: 'les_a' })
+  assert.deepEqual(nextStepFor({ action: 'review' }), { kind: 'review' })
+  assert.deepEqual(nextStepFor({ action: 'challenge' }, { unitId: 'unt_a', nextLessonId: 'les_b' }), { kind: 'quiz', unitId: 'unt_a' })
+  assert.deepEqual(nextStepFor({ action: 'challenge' }, { nextLessonId: 'les_b' }), { kind: 'next', lessonId: 'les_b' })
+  assert.deepEqual(nextStepFor(null, {}), { kind: 'course' })
+})
+
+test('a course page suggests due reviews, then the weakest concept, then the next lesson', () => {
+  const concept = (id, name) => ({ id, name })
+  const course = { units: [{ id: 'unt_a', lectures: [{ lessons: [
+    { id: 'les_a', title: '配方', concepts: [concept('cpt_a', '补全平方'), concept('cpt_b', '开方')] },
+    { id: 'les_b', title: '公式法', concepts: [concept('cpt_c', '判别式')] },
+  ] }] }] }
+  const seen = (pKnown, attempts = 2) => ({ pKnown, attempts, history: [{}] })
+  const now = Date.parse('2026-10-20T00:00:00Z')
+  assert.deepEqual(courseNextStep(course, { lessons: {}, concepts: {} }, { now }), { kind: 'lesson', lessonId: 'les_a', title: '配方' })
+  const weak = { lessons: { les_a: { status: 'done' } }, concepts: { cpt_a: seen(0.3), cpt_b: seen(0.2) } }
+  assert.deepEqual(courseNextStep(course, weak, { now }), { kind: 'practice', lessonId: 'les_a', concept: '开方' })
+  const due = { ...weak, reviews: { cpt_a: { dueAt: '2026-10-19T00:00:00Z' }, cpt_z: { dueAt: '2026-10-19T00:00:00Z' } } }
+  assert.deepEqual(courseNextStep(course, due, { now }), { kind: 'review', count: 1 }, 'only this course\'s concepts count')
+  const finished = { lessons: { les_a: { status: 'done' }, les_b: { status: 'done' } }, concepts: {} }
+  assert.deepEqual(courseNextStep(course, finished, { now }), { kind: 'done', unitId: 'unt_a' })
+
+  assert.deepEqual(lessonStage(course.units[0].lectures[0].lessons[0], { concepts: {} }), { stage: 'none', percent: 0 }, 'an untouched lesson lights nothing')
+  assert.deepEqual(lessonStage(course.units[0].lectures[0].lessons[0], { concepts: { cpt_a: seen(0.9) } }), { stage: 'learning', percent: 55 })
+})
+
+test('each top-level class rule is defined once, so a new component cannot restyle an old one', () => {
+  const counts = new Map()
+  for (const line of STYLE.split('\n')) {
+    const match = /^(\.[a-zA-Z][\w-]*)\{/u.exec(line.trim())
+    if (match) counts.set(match[1], (counts.get(match[1]) ?? 0) + 1)
+  }
+  assert.ok(counts.size > 100)
+  assert.deepEqual([...counts].filter(([, count]) => count > 1), [])
+})
 
 test('svg sanitizer keeps drawing markup and strips anything active or external', () => {
   const dirty = `<svg viewBox="0 0 100 100" onload="alert(1)">

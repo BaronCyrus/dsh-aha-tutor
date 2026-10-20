@@ -8,6 +8,7 @@ import { goalStates, transcriptEntries } from './board/sidepanel.js'
 import { ErrorLine, Spinner } from './components.jsx'
 import { useApp, useDarkMode, usePersistentState } from './hooks.js'
 import { ItemCard } from './ItemCard.jsx'
+import { PrepProgress } from './PrepProgress.jsx'
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2]
 const STYLES = [['analogy', 'styleAnalogy'], ['visual', 'styleVisual'], ['example', 'styleExample'], ['simpler', 'styleSimpler'], ['deeper', 'styleDeeper']]
@@ -92,7 +93,9 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   }, [speech, muted, settings.voiceEngine, settings.voiceId, language])
   useEffect(() => { player.setRate(settings.voiceRate ?? 1) }, [player, settings.voiceRate])
 
-  // Stream steps from a generating lesson.
+  // Stream steps from a generating lesson. A lesson board's job also says
+  // what the teacher is doing (prep), shown while the lesson waits for it.
+  const [prep, setPrep] = useState(null)
   useEffect(() => {
     if (!stream) return undefined
     const controller = new AbortController()
@@ -104,13 +107,16 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
         const fresh = partial.filter(step => !known.has(step.id))
         return fresh.length ? [...current, ...fresh] : current
       }),
+      onPreview: (preview, job) => setPrep(preview?.phase ? { ...preview, elapsedMs: job?.elapsedMs ?? 0, receivedAt: performance.now() } : null),
     }).then(result => {
       const board = result?.board ?? result?.item?.board ?? result
       if (board?.steps?.length) setMain(board.steps)
+      setPrep(null)
       setComplete(true)
       onStreamDone?.(result)
     }).catch(failure => {
       if (controller.signal.aborted) return
+      setPrep(null)
       setError(failure)
       setComplete(true)
     })
@@ -301,6 +307,8 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
       : asking === 'reexplaining' || writing ? t('generating')
         : steps.length ? t('bufferingLesson') : t('preparingLesson')
 
+  // The lesson itself is still being written (not an answer or a correction).
+  const preparing = buffering && !asking && !writing && prep && !complete
   const doneGoals = goals ? goals.filter(state => state === 'done').length : 0
   const writingAside = Boolean(writing) || asking === 'answering' || asking === 'reexplaining' || asking === 'correcting'
 
@@ -328,7 +336,8 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
       <div className="aha-classMain">
         <div className={`aha-stage ${stageClass ?? ''}`}>
           <Board steps={steps} position={snapshot ? { index: snapshot.index, op: snapshot.op, progress: snapshot.progress, now: snapshot.now } : { index: 0, op: 0, progress: 0 }} theme={boardTheme} font={settings.boardFont === 'standard' ? 'standard' : 'hand'}
-            buffering={buffering || Boolean(asking)} bufferingLabel={bufferingLabel} />
+            buffering={(buffering || Boolean(asking)) && !preparing} bufferingLabel={bufferingLabel} />
+          {preparing ? <PrepProgress prep={prep} label={bufferingLabel} first={!steps.length} hand={settings.boardFont !== 'standard'} /> : null}
           {check ? <div className="aha-checkCard">
             <div className="aha-spread"><b>{t('checkTitle')}</b></div>
             <ItemCard item={check} language={language} onResult={onCheckResult} onContinue={continueCheck} continueLabel={needsCorrection ? t('seeCorrection') : undefined} keyboard />

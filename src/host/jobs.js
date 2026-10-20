@@ -99,6 +99,9 @@ export function createJobs({ logger, now = Date.now } = {}) {
       partial: job.partial.slice(since),
       partialCount: job.partial.length,
       preview: job.preview ?? undefined,
+      // How long the job has run, measured here so a browser with another
+      // clock still counts the same seconds.
+      elapsedMs: (job.finishedAt ?? now()) - job.startedAt,
       result: job.status === 'done' ? job.result : undefined,
       error: job.error,
     }

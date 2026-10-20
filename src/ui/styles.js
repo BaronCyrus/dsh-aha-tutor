@@ -250,6 +250,17 @@ a.aha-btn{text-decoration:none}
 .aha-pager{position:absolute;right:12px;top:10px;display:flex;gap:6px;z-index:4}
 .aha-pager button{width:26px;height:26px;border-radius:7px;border:1px solid var(--ink-soft);background:var(--paper);color:var(--ink);cursor:pointer;font-size:12px}
 .aha-pager button[data-active=true]{background:var(--ink);color:var(--paper)}
+.aha-prep{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(440px,calc(100% - 28px));display:flex;flex-direction:column;gap:8px;padding:14px 16px;border-radius:14px;background:var(--aha-surface);border:1px solid var(--aha-border);box-shadow:0 14px 40px rgba(0,0,0,.18);color:var(--aha-text);z-index:4}
+.aha-prepStages{display:flex;gap:6px;margin:0;padding:0;list-style:none;counter-reset:prep}
+.aha-prepStages li{counter-increment:prep;display:flex;align-items:center;gap:6px;flex:1;padding:4px 10px;border-radius:999px;background:var(--aha-soft);color:var(--aha-muted);font-size:12.5px}
+.aha-prepStages li::before{content:counter(prep);display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:var(--aha-border);color:var(--aha-surface);font-size:11px;font-weight:600}
+.aha-prepStages li[data-state=now]{background:color-mix(in srgb,var(--aha-brand) 14%,transparent);color:var(--aha-text);font-weight:600}
+.aha-prepStages li[data-state=now]::before{background:var(--aha-brand)}
+.aha-prepStages li[data-state=done]{color:var(--aha-text)}
+.aha-prepStages li[data-state=done]::before{content:'✓';background:var(--aha-ok)}
+.aha-prepNow{font-size:14px;line-height:22px}
+.aha-prepHint{font-size:15px}
+.aha-prepHint[data-hand=true]{font-family:${BOARD_FONT};font-size:16px}
 .aha-buffering{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:12px;background:var(--aha-surface);border:1px solid var(--aha-border);color:var(--aha-text);font-family:inherit;z-index:4}
 @container board (max-width:640px){.aha-cols{grid-template-columns:1fr}.aha-boardScroll{padding:16px}}
 /* Board pages laid out off screen for PDF and PNG exports (capture.js). */

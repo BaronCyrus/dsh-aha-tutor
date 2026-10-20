@@ -102,7 +102,7 @@ export function createLlmPort({ getLlm, getDefault, getAttachments, prefs, logge
     return blocks
   }
 
-  async function attempt({ purpose, effort, system, user, images, maxTokens, signal, onText }) {
+  async function attempt({ purpose, effort, system, user, images, maxTokens, signal, onText, onReasoning }) {
     const llm = getLlm()
     if (!llm) throw new TutorError('llm-unavailable', 'DSH has no model service in this profile.')
     const target = route(purpose)
@@ -126,6 +126,9 @@ export function createLlmPort({ getLlm, getDefault, getAttachments, prefs, logge
         if (chunk.type === 'text-delta' && typeof chunk.text === 'string') {
           textValue += chunk.text
           onText?.(chunk.text)
+        } else if (chunk.type === 'reasoning-delta' && typeof chunk.text === 'string') {
+          // Only its length is used, to show that the model is thinking.
+          onReasoning?.(chunk.text)
         } else if (chunk.type === 'finish') {
           finish = chunk.reason
         }
@@ -162,7 +165,7 @@ export function createLlmPort({ getLlm, getDefault, getAttachments, prefs, logge
   }
 
   return Object.freeze({
-    complete: options => call({ ...options, onText: undefined }),
+    complete: options => call({ ...options, onText: undefined, onReasoning: undefined }),
     stream: options => call(options),
     route,
     // Synchronous answer used by prompt builders; refreshed by refreshCapabilities.

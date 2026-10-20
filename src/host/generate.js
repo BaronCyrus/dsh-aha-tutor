@@ -41,12 +41,49 @@ export async function generateJson(llm, { purpose = 'teach', prompt, maxTokens =
   }
 }
 
+// What the step being written is about, from the unfinished JSON of that
+// step: its first heading, or else the first sentence of what the teacher
+// will say. Empty until either has begun.
+export function writingHint(partial) {
+  const textValue = String(partial ?? '')
+  const start = textValue.lastIndexOf('"say"')
+  if (start < 0) return ''
+  const step = textValue.slice(start)
+  const heading = /"t"\s*:\s*"(?:title|h)"[^{}]*?"text"\s*:\s*"((?:[^"\\]|\\.)*)/u.exec(step)?.[1]
+  const said = /^"say"\s*:\s*"((?:[^"\\]|\\.)*)/u.exec(step)?.[1]
+  const source = heading ?? said ?? ''
+  let value
+  try {
+    value = JSON.parse(`"${source.replace(/\\(?:u[0-9a-fA-F]{0,3})?$/u, '')}"`)
+  } catch {
+    value = source
+  }
+  if (!heading) value = value.split(/(?<=[。！？!?；;])/u)[0]
+  value = value.replace(/\s+/gu, ' ').trim()
+  return [...value].length > 40 ? `${[...value].slice(0, 40).join('')}…` : value
+}
+
+const PROGRESS_EVERY_MS = 250
+
 // Streams a board. onStep(step, index) fires for each finished step, with the
-// same ids the final board will have. Returns the normalized board.
-export async function generateSteps(llm, { purpose = 'teach', effort, prompt, maxTokens = 12000, signal, conceptIds = [], onStep, minSteps = 1, images }) {
+// same ids the final board will have. onProgress({ phase, thinking, chars,
+// steps, current }) reports what the model is doing: 'starting' before
+// anything arrives, 'thinking' while it reasons, 'writing' with the step
+// being written and its hint. Returns the normalized board.
+export async function generateSteps(llm, { purpose = 'teach', effort, prompt, maxTokens = 12000, signal, conceptIds = [], onStep, onProgress, progressEveryMs = PROGRESS_EVERY_MS, minSteps = 1, images }) {
   const raw = []
   let buffer = ''
   let emitted = 0
+  const status = { phase: 'starting', thinking: 0, chars: 0 }
+  let reported = 0
+  const report = force => {
+    if (!onProgress) return
+    const at = Date.now()
+    if (!force && at - reported < progressEveryMs) return
+    reported = at
+    onProgress({ ...status, steps: emitted, current: status.phase === 'writing' ? writingHint(buffer) : '' })
+  }
+  report(true)
   const emit = () => {
     if (!raw.length) return
     let board
@@ -55,10 +92,12 @@ export async function generateSteps(llm, { purpose = 'teach', effort, prompt, ma
     } catch {
       return
     }
+    const before = emitted
     while (emitted < board.steps.length) {
       onStep?.(board.steps[emitted], emitted)
       emitted += 1
     }
+    if (emitted > before) report(true)
   }
   const take = final => {
     const { items, rest } = parseJsonLines(buffer, { final })
@@ -80,7 +119,15 @@ export async function generateSteps(llm, { purpose = 'teach', effort, prompt, ma
     signal,
     onText: delta => {
       buffer += delta
+      status.phase = 'writing'
+      status.chars += delta.length
       if (buffer.includes('\n')) take(false)
+      report(false)
+    },
+    onReasoning: delta => {
+      if (status.phase !== 'writing') status.phase = 'thinking'
+      status.thinking += delta.length
+      report(false)
     },
   })
   take(true)

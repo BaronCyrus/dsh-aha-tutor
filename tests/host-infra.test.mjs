@@ -10,7 +10,7 @@ import { FONT_PATH, fontRoute } from '../src/host/http.js'
 import { createJobs } from '../src/host/jobs.js'
 import { createLlmPort, outputBudget, pickEffort } from '../src/host/llm.js'
 import { blueprintPrompt, correctionPrompt, gradePrompt, lessonPrompt, STEP_SPEC } from '../src/host/prompts.js'
-import { streamCounter } from '../src/host/generate.js'
+import { generateSteps, streamCounter, writingHint } from '../src/host/generate.js'
 import { compareSemver, createPluginManager, findInstall, releaseAgeRefusal, resolveLauncher } from '../src/host/plugin-version.js'
 import { createStore, resolveDshHome } from '../src/host/store.js'
 import { checkEndpoint, createTts, splitForTts, TtsError } from '../src/host/tts.js'
@@ -66,6 +66,19 @@ test('jobs report progress and partial results, dedupe by key and cancel', async
   const failing = jobs.start('fail', async () => { throw new Error('secret internal detail') })
   await new Promise(resolve => setTimeout(resolve, 5))
   assert.equal(jobs.get(failing.id).error.message, 'Generation failed')
+
+  // A job says how long it has run, by the host's clock, and stops counting when done.
+  let clock = 10_000
+  const timed = createJobs({ now: () => clock })
+  let finish
+  const timedJob = timed.start('lesson', () => new Promise(resolve => { finish = resolve }))
+  await new Promise(resolve => setImmediate(resolve))
+  clock += 2500
+  assert.equal(timed.get(timedJob.id).elapsedMs, 2500)
+  finish('ok')
+  await new Promise(resolve => setTimeout(resolve, 5))
+  clock += 9000
+  assert.equal(timed.get(timedJob.id).elapsedMs, 2500)
 
   // Regenerating replaces a running job: a cancelled job is never reused.
   const first = jobs.start('board', api => new Promise((_, reject) => api.signal.addEventListener('abort', () => reject(new Error('stop')))), { key: 'board:y' })
@@ -232,6 +245,44 @@ function fakeDshLlm(model, script) {
     },
   }
 }
+
+test('writing a board reports thinking, then each step being written and what it is about', async () => {
+  const model = { reasoning: { efforts: [{ id: 'off' }, { id: 'low' }], defaultEffort: 'low' }, defaultMaxTokens: 64_000 }
+  const step1 = '{"say":"先看一道陷阱题。很多人会丢根。","ops":[{"t":"h","text":"零积性质","at":0},{"t":"p","text":"$ab=0$","at":1}]}'
+  const step2 = '{"say":"再试一个例子。","ops":[{"t":"p","text":"例：$x^2=5x$","at":0}]}'
+  const chunks = [
+    { type: 'reasoning-delta', text: '先想想' },
+    { type: 'reasoning-delta', text: '怎么讲。' },
+    { type: 'text-delta', text: step1.slice(0, 22) },
+    { type: 'text-delta', text: step1.slice(22, 60) },
+    { type: 'text-delta', text: `${step1.slice(60)}\n` },
+    { type: 'text-delta', text: `${step2}\n` },
+    { type: 'finish', reason: { kind: 'stop' } },
+  ]
+  const dsh = fakeDshLlm(model, () => chunks)
+  const llm = createLlmPort({ getLlm: () => dsh, getDefault: () => ({ provider: 'deepseek', model: 'flash' }), getAttachments: () => null, prefs: { read: () => ({}) } })
+  const reports = []
+  const board = await generateSteps(llm, { prompt: { system: 's', user: 'u' }, effort: 'low', onProgress: info => reports.push(info), progressEveryMs: 0 })
+  assert.equal(board.steps.length, 2)
+  assert.deepEqual(reports[0], { phase: 'starting', thinking: 0, chars: 0, steps: 0, current: '' })
+  assert.deepEqual(reports.filter(report => report.phase === 'thinking').map(report => report.thinking), [3, 7])
+  const writing = reports.filter(report => report.phase === 'writing')
+  assert.deepEqual(writing.map(report => report.current).filter(Boolean), ['先看一道陷阱题。', '零积性质'], 'the first sentence until the heading arrives')
+  assert.equal(writing.at(-1).steps, 2)
+  assert.equal(writing.at(-1).chars, step1.length + step2.length + 2)
+  assert.equal(writing.at(-1).thinking, 7, 'thinking stops counting once writing starts')
+
+  // Only the length of the reasoning is used, and complete() never streams it.
+  const seen = []
+  await llm.stream({ purpose: 'teach', system: 's', user: 'u', maxTokens: 100, onText: () => {}, onReasoning: delta => seen.push(delta) })
+  assert.deepEqual(seen, ['先想想', '怎么讲。'])
+
+  assert.equal(writingHint('{"say":"好","ops":[{"t":"title","at":0,"text":"ab=0 的秘密"}'), 'ab=0 的秘密')
+  assert.equal(writingHint('{"say":"line \\u4e2'), 'line', 'a cut-off escape is dropped')
+  assert.equal(writingHint('[{"say":"one"},{"say":"two, and more'), 'two, and more', 'the last step, when a model sends one document')
+  assert.equal(writingHint(`{"say":"${'很长'.repeat(30)}`), `${'很长'.repeat(20)}…`)
+  assert.equal(writingHint('no step yet'), '')
+})
 
 test('model calls leave room for reasoning, think briefly for boards and grow after an empty answer', async () => {
   const model = { reasoning: { efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }, { id: 'max' }], defaultEffort: 'high' }, defaultMaxTokens: 256_000 }

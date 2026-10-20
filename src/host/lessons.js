@@ -50,7 +50,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }
   }
 
-  async function buildBoard({ course, row, signal, onStep, directive, style }) {
+  async function buildBoard({ course, row, signal, onStep, onProgress, directive, style }) {
     const progress = await readProgress(store, course.id)
     const profile = await readProfile(store)
     const materials = await readMaterials(store, course.materialIds ?? [])
@@ -80,6 +80,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       signal,
       conceptIds: row.lesson.concepts.map(concept => concept.id),
       onStep,
+      onProgress,
       minSteps: 3,
     })
   }
@@ -103,7 +104,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }
     const job = jobs.start('lesson/board', async api => {
       api.progress(0, 1, 'writing')
-      const board = await buildBoard({ course, row, signal: api.signal, onStep: step => api.push(step), style: text(style, 300) || undefined })
+      const board = await buildBoard({ course, row, signal: api.signal, onStep: step => api.push(step), onProgress: info => api.preview(info), style: text(style, 300) || undefined })
       const saved = { ...board, title: board.title || row.lesson.title, lessonId, createdAt: stamp() }
       await store.writeJson(store.paths.board(courseId, lessonId), saved)
       api.progress(1, 1, 'done')
@@ -122,7 +123,9 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     store.exists(store.paths.board(course.id, next.lesson.id)).then(exists => {
       if (exists || jobs.running(key)) return
       jobs.start('lesson/prefetch', async api => {
-        const board = await buildBoard({ course, row: next, signal: api.signal, onStep: step => api.push(step) })
+        // Opening the lesson while it is prefetched follows this job, so it
+        // reports progress too.
+        const board = await buildBoard({ course, row: next, signal: api.signal, onStep: step => api.push(step), onProgress: info => api.preview(info) })
         const saved = { ...board, title: board.title || next.lesson.title, lessonId: next.lesson.id, createdAt: stamp() }
         await store.writeJson(store.paths.board(course.id, next.lesson.id), saved)
         return { board: saved }

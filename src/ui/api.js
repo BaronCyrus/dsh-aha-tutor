@@ -40,7 +40,7 @@ export function createApi(rpc) {
         since += current.partial.length
       }
       if (current.progress) onProgress?.(current.progress)
-      if (current.preview) onPreview?.(current.preview)
+      if (current.preview) onPreview?.(current.preview, current)
       if (current.status === 'done') return current.result
       if (current.status === 'cancelled' || signal?.aborted) throw new ApiError('cancelled', 'cancelled')
       if (current.status === 'failed') throw new ApiError(current.error?.code ?? current.status, current.error?.message ?? current.status)

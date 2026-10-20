@@ -60,6 +60,28 @@ export async function fetchSpeech(api, text) {
   return { base64: result.base64, mime: result.mime }
 }
 
+// The full page's screen, remembered across visits. crashed() marks the
+// route on show when its screen crashes: that route is forgotten, so a reload
+// or the next visit opens the home page instead of the crash. Any route set
+// later, a retry's copy of the same one included, is remembered again.
+export function useRoute() {
+  const [route, setRoute] = usePersistentState('route', { screen: 'home', params: {} })
+  const [crashedRoute, setCrashedRoute] = useState(null)
+  useEffect(() => {
+    if (crashedRoute === route) forgetRoute()
+  }, [crashedRoute, route])
+  const crashed = useCallback(() => setCrashedRoute(route), [route])
+  return { route, setRoute, crashed }
+}
+
+export function forgetRoute() {
+  try {
+    window.localStorage.removeItem(ROUTE_KEY)
+  } catch {
+    // storage unavailable
+  }
+}
+
 // Ask the full page to show a screen (from a conversation card).
 export function openMainScreen(dsh, screen, params = {}) {
   const route = { screen, params }

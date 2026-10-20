@@ -20,6 +20,7 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 - A board could stop in the middle of a step when the model's reasoning used up the output limit (DeepSeek at low effort once thought 40,000 characters before a lesson). A low effort now gets 16k tokens of room for its reasoning instead of 8k.
 - On a narrow board, the small "preparing" notice stays on one line instead of breaking after a few characters.
 - **Formulas render as KaTeX meant them again.** The plugin bundled KaTeX 0.16 while DSH 0.2.1 styles formulas with KaTeX 0.18.7's stylesheet, which renamed its layout classes, so superscripts and subscripts were drawn at full size and stacked symbols such as ≠ came apart. The bundled KaTeX is now 0.18.7, and a test keeps the two in step.
+- **A crash no longer blanks the plugin.** Anything that went wrong while showing a screen left the whole plugin page blank, and because the plugin reopens the last screen, it stayed blank after a reload, with no way to reach Settings. The screen now shows a short notice with **Retry** and **Back to home** while the navigation keeps working, and the next visit starts at home instead of reopening it. The board tab and the cards in a conversation show the notice with **Retry** in place of the part that failed, instead of DSH swapping them out until it reloads.
 - Dashed lines in board figures (guide lines, heights) stay dashed after they are drawn instead of turning solid.
 - A highlight may contain a single "=", so `==乘积 = 0==` is highlighted instead of showing its marks.
 

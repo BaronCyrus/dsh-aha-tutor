@@ -13,7 +13,9 @@ const ALLOWED = new Set(['react', 'react/jsx-runtime', 'react-dom', '@deepseek-a
 
 function stubRequire(id) {
   if (!ALLOWED.has(id)) throw new Error(`client bundle required an undeclared module: ${id}`)
-  return new Proxy({}, { get: (_target, key) => (key === '__esModule' ? false : () => ({})) })
+  // Plain functions rather than arrows, so that a class can extend one as it
+  // extends React.Component.
+  return new Proxy({}, { get: (_target, key) => (key === '__esModule' ? false : function stub() { return {} }) })
 }
 
 test('the client bundle loads through DSH\'s module loader and registers its surfaces', { skip: existsSync(bundlePath) ? false : 'lib/client.js is not built yet' }, () => {

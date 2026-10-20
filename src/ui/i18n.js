@@ -362,6 +362,10 @@ export const zh = {
   aboutScan: '用手机扫一扫上面的码',
 
   errorGeneric: '出了点问题：{message}',
+  crashPage: '这一页出了点问题，没能显示出来。',
+  crashPageHint: '可以重试一次，或者先回到首页。',
+  crashPart: '这部分内容出了点问题，没能显示出来。',
+  backHome: '回到首页',
   loading: '加载中…',
   empty: '这里还什么都没有。',
   copied: '已复制',
@@ -867,6 +871,10 @@ export const en = {
   aboutScan: 'Scan a code with your phone',
 
   errorGeneric: 'Something went wrong: {message}',
+  crashPage: 'This page ran into a problem and could not be shown.',
+  crashPageHint: 'Try again, or go back to the home page.',
+  crashPart: 'This part ran into a problem and could not be shown.',
+  backHome: 'Back to home',
   loading: 'Loading…',
   empty: 'Nothing here yet.',
   copied: 'Copied',

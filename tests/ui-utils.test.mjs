@@ -9,7 +9,7 @@ import { courseNextStep, lessonStage, nextStepFor, sessionStats } from '../src/u
 import { PREP_DELAY_MS, prepStages } from '../src/ui/prep.js'
 import { STYLE } from '../src/ui/styles.js'
 import { animationDocument, sanitizeSvg } from '../src/ui/sanitize.js'
-import { splitSentences } from '../src/ui/speech.js'
+import { createSpeech, splitSentences } from '../src/ui/speech.js'
 import { syncedStarts, themedSvg, wrap } from '../src/ui/video.js'
 import { captionSentences, inlinePlain, parseInline, sliceInline, spokenText, texToText } from '../src/ui/board/inline.js'
 
@@ -102,6 +102,41 @@ test('narration is split into short sentences for every speech engine', () => {
   assert.deepEqual(splitSentences('第一句。第二句！Third one? last'), ['第一句。', '第二句！', 'Third one?', 'last'])
   const long = splitSentences('长'.repeat(400))
   assert.ok(long.length >= 3 && long.every(part => part.length <= 160))
+})
+
+test('cloud voice plays the host\'s audio, reports a failed request and stops when cancelled', async () => {
+  const players = []
+  globalThis.Audio = class {
+    constructor() { players.push(this) }
+    play() { return Promise.resolve() }
+    pause() { this.paused = true }
+  }
+  try {
+    const speech = createSpeech({
+      fetchAudio: async textValue => {
+        if (textValue === '没有密钥') throw new Error('No key saved for this TTS provider')
+        if (textValue === '还在合成') return new Promise(() => undefined)
+        return { blob: new Blob(['mp3'], { type: 'audio/mpeg' }) }
+      },
+    })
+    speech.configure({ engine: 'cloud' })
+    const spoken = speech.speak('你好')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    assert.match(players.at(-1).src, /^blob:/u)
+    players.at(-1).onended()
+    assert.deepEqual(await spoken.done, { completed: true })
+    const failed = await speech.speak('没有密钥').done
+    assert.equal(failed.completed, false)
+    assert.equal(failed.error, 'No key saved for this TTS provider')
+    const first = speech.speak('还在合成')
+    const second = speech.speak('还在合成')
+    assert.deepEqual(await first.done, { completed: false }, 'a new sentence cancels the one still loading')
+    speech.cancel()
+    assert.deepEqual(await second.done, { completed: false })
+    assert.equal(players.at(-1).paused, true)
+  } finally {
+    delete globalThis.Audio
+  }
 })
 
 test('video captions never start a line with closing punctuation', () => {

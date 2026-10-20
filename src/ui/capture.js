@@ -6,6 +6,8 @@
 // KaTeX's rules and strokes) and draws it on a canvas. It covers the CSS the
 // board uses, not CSS at large.
 
+import { fitFormula } from './board/fit.js'
+
 const SVG_NS = 'http://www.w3.org/2000/svg'
 const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'TEMPLATE', 'IFRAME', 'BUTTON', 'INPUT', 'TEXTAREA', 'SELECT'])
 const SIDES = ['Top', 'Right', 'Bottom', 'Left']
@@ -102,14 +104,11 @@ export async function settleFonts(root, { timeoutMs = 10000 } = {}) {
   await Promise.race([Promise.all([...wanted, fonts.ready]), new Promise(resolve => { setTimeout(resolve, timeoutMs) })])
 }
 
-// A formula or a table wider than its column scrolls on the board; on a
-// page it shrinks to fit instead.
+// Fit the pages once their fonts are in: formulas by the board's own rule
+// (board/fit.js) at the page's column width, and a table wider than its
+// column, which scrolls on the board, shrinks to fit.
 export function fitSheets(root) {
-  for (const element of root.querySelectorAll('.aha-op-math')) {
-    if (element.scrollWidth <= element.clientWidth + 1 || !element.clientWidth) continue
-    const size = Number.parseFloat(getComputedStyle(element).fontSize) || 20
-    element.style.fontSize = `${(size * element.clientWidth * 0.98) / element.scrollWidth}px`
-  }
+  for (const element of root.querySelectorAll('.aha-op-math')) fitFormula(element)
   for (const table of root.querySelectorAll('.aha-op-table')) {
     const room = table.closest('.aha-op')?.clientWidth ?? 0
     if (!room || table.offsetWidth <= room + 1) continue

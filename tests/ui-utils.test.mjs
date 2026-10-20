@@ -333,6 +333,40 @@ test('captions split narration into sentences without breaking formulas', () => 
   assert.equal(texToText('\\sqrt{x^2+y^2}'), '√(x²+y²)')
 })
 
+test('a formula read aloud or drawn as text says what it shows, never a command name', () => {
+  const read = {
+    // Formulas the model wrote that came out as "mid", "frac6.63…", "tfrac52", "DeltapH".
+    'P(A\\mid B)=\\frac{P(A\\cap B)}{P(B)}': 'P(A| B)=(P(A∩ B))/(P(B))',
+    'E=\\frac{hc}{\\lambda}=\\frac{6.63\\times10^{-34}\\times3.00\\times10^{8}}{6.80\\times10^{-7}}': 'E=(hc)/λ=(6.63×10⁻³⁴×3.00×10⁸)/(6.80×10⁻⁷)',
+    'x=-\\tfrac52\\ \\text{或}\\ x=\\tfrac52': 'x=-5/2 或 x=5/2',
+    '\\Delta p = 2.3\\frac{RT}{F}\\Delta\\mathrm{pH}': 'Δ p = 2.3(RT)/FΔpH',
+    'ab=0\\iff a=0': 'ab=0⇔ a=0',
+    'N_A=6.02\\times10^{23}\\ \\mathrm{mol^{-1}}': 'NA=6.02×10²³ mol⁻¹',
+    'P(\\text{患病}\\mid\\text{阳性})=\\frac{99}{1098}\\approx 9\\%': 'P(患病|阳性)=99/1098≈ 9%',
+    '\\{2, 4, 6\\}': '{2, 4, 6}',
+    // A condition over an arrow or an equals sign follows it in brackets.
+    '6CO_2 + 6H_2O \\xrightarrow{\\text{光、叶绿体}} C_6H_{12}O_6 + 6O_2': '6CO₂ + 6H₂O →(光、叶绿体) C₆H₁₂O₆ + 6O₂',
+    '2C_3 \\xrightarrow[\\text{ATP、NADPH}]{酶} (CH_2O) + C_5 \\tag{2}': '2C₃ →(酶, ATP、NADPH) (CH₂O) + C₅ (2)',
+    '2H_2 + O_2 \\overset{\\text{点燃}}{=} 2H_2O': '2H₂ + O₂ =(点燃) 2H₂O',
+    '2H_2O \\xrightarrow{通电} 2H_2\\uparrow + O_2\\uparrow': '2H₂O →(通电) 2H₂↑ + O₂↑',
+    'N_2 + 3H_2 \\rightleftharpoons 2NH_3': 'N₂ + 3H₂ ⇌ 2NH₃',
+    // Marks stay on their letters; rows go apart by semicolons, cells by commas.
+    'P(+\\mid \\bar D)': 'P(+| D̄)',
+    '\\vec{v} + \\bar{x} + \\hat{y}': 'v⃗ + x̄ + ŷ',
+    'f(x) = \\begin{cases} x, & x \\ge 0 \\\\ -x, & x < 0 \\end{cases}': 'f(x) = x, x ≥ 0; -x, x < 0',
+    '\\begin{aligned} f(x) &= (x+1)^2 \\\\ &= x^2 + 2x + 1 \\end{aligned}': 'f(x) = (x+1)²; = x² + 2x + 1',
+    'A = \\begin{pmatrix} 1 & 2 \\\\ 3 & 4 \\end{pmatrix}': 'A = (1, 2; 3, 4)',
+    // Function names read as words; an unknown command is left out.
+    '\\lim_{x\\to 0}\\frac{\\sin x}{x}=1': 'limₓ→₀(sin x)/x=1',
+    '\\sin\\theta + \\log_2 8': 'sin θ + log₂ 8',
+    'x \\in \\mathbb{R},\\ \\sqrt[3]{8}=2,\\ a \\not= b': 'x ∈ ℝ, ³√8=2, a ≠ b',
+    '\\left.\\frac{dy}{dx}\\right|_{x=0}': '(dy)/(dx)|ₓ₌₀',
+    '\\unknown{x} + \\constructor': 'x +',
+  }
+  for (const [tex, text] of Object.entries(read)) assert.equal(texToText(tex), text, tex)
+  assert.equal(spokenText('光合作用：$6CO_2 + 6H_2O \\xrightarrow{光} C_6H_{12}O_6 + 6O_2$。'), '光合作用：6CO₂ + 6H₂O →(光) C₆H₁₂O₆ + 6O₂。')
+})
+
 test('exported videos write synced ops when their sentence starts', () => {
   const step = { say: '一二三四。五六七八。', ops: [{ t: 'p', text: 'a', at: 0 }, { t: 'p', text: 'b', at: 1 }] }
   assert.deepEqual(syncedStarts(step, [500, 500], 8000), [0, 4000])

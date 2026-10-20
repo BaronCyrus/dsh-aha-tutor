@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { chartSvg } from '../charts.js'
 import { TeX } from '../math.jsx'
 import { animationDocument, sanitizeSvg } from '../sanitize.js'
+import { fitFormula, formulaLines, writtenPart } from './fit.js'
 import { inlineLength, parseInline, sliceInline } from './inline.js'
 import { boardText, layoutBoard } from './layout.js'
 
@@ -97,6 +98,47 @@ function Animation({ op, reveal, theme }) {
   </div>
 }
 
+// A display formula fitted to its column (fit.js): again when the column
+// changes width and when fonts arrive, since both move KaTeX's layout. It is
+// written line by line; data-pen tells the pencil where.
+function Formula({ tex, reveal }) {
+  const box = useRef(null)
+  const [lines, setLines] = useState([])
+  useLayoutEffect(() => {
+    const element = box.current
+    if (!element) return undefined
+    let width = -1
+    const layout = () => {
+      width = element.clientWidth
+      fitFormula(element)
+      setLines(formulaLines(element))
+    }
+    layout()
+    // A new font size changes only the height, so width alone says the column
+    // moved. Fitting resizes the formula, which the observer must not see
+    // while it is still delivering (the browser reports a loop), so it waits
+    // for the next frame.
+    let frame = 0
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(() => {
+      if (element.clientWidth === width) return
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(layout)
+    }) : null
+    observer?.observe(element)
+    const fonts = typeof document !== 'undefined' ? document.fonts : null
+    fonts?.addEventListener?.('loadingdone', layout)
+    return () => {
+      observer?.disconnect()
+      cancelAnimationFrame(frame)
+      fonts?.removeEventListener?.('loadingdone', layout)
+    }
+  }, [tex])
+  const { clip, pen } = writtenPart(lines, reveal)
+  return <div ref={box} className="aha-op-math" style={clip ? { clipPath: clip } : undefined} data-pen={pen ? `${Math.round(pen.x)} ${Math.round(pen.y)}` : undefined}>
+    <TeX tex={tex} display />
+  </div>
+}
+
 // Exports cannot run an animation: they show its poster, or a labelled frame.
 function AnimationStill({ op, label }) {
   if (op.poster) return <DrawnSvg markup={op.poster} reveal={1} caption={op.caption} />
@@ -104,7 +146,6 @@ function AnimationStill({ op, label }) {
 }
 
 function OpView({ op, reveal, marks, aside, now, opRef, theme, still = false, animationLabel = '' }) {
-  const style = { '--reveal': `${Math.round(reveal * 1000) / 10}%` }
   const markDecor = marks.map(mark => <span key={mark.id} className={mark.style === 'circle' ? 'aha-markRing' : mark.style === 'box' ? 'aha-markBox' : 'aha-markLine'} style={{ opacity: mark.reveal, clipPath: `inset(0 ${100 - mark.reveal * 100}% 0 0)` }} />)
   let body
   switch (op.t) {
@@ -115,7 +156,7 @@ function OpView({ op, reveal, marks, aside, now, opRef, theme, still = false, an
       body = <div className="aha-op-p"><Inline text={op.text} reveal={reveal} /></div>
       break
     case 'math':
-      body = <div className="aha-op-math aha-reveal" style={style}><TeX tex={op.tex} display /></div>
+      body = <Formula tex={op.tex} reveal={reveal} />
       break
     case 'list': {
       const total = op.items.reduce((sum, item) => sum + inlineLength(parseInline(item)), 0)
@@ -175,17 +216,28 @@ function Pencil({ target, active, stage }) {
     }
     const box = element.getBoundingClientRect()
     const base = container.getBoundingClientRect()
-    const spans = element.querySelectorAll('span,strong,mark,li,td,pre,.katex')
+    // Text is cut where the pencil is; a formula is drawn whole and clipped,
+    // so it names the spot itself.
+    const formula = element.querySelector('.aha-op-math')
+    const spans = formula ? [] : element.querySelectorAll('span,strong,mark,li,td,pre')
     const last = spans[spans.length - 1]
     const lastBox = last?.getBoundingClientRect()
-    const x = lastBox && lastBox.width ? lastBox.right : box.left + box.width * active.progress
-    const y = lastBox && lastBox.height ? lastBox.bottom - 4 : box.top + box.height / 2
-    const next = { left: Math.round(x - base.left + container.scrollLeft), top: Math.round(y - base.top + container.scrollTop) }
+    let x = lastBox && lastBox.width ? lastBox.right : box.left + box.width * active.progress
+    let y = lastBox && lastBox.height ? lastBox.bottom - 4 : box.top + box.height / 2
+    if (formula?.dataset.pen) {
+      const [penX, penY] = formula.dataset.pen.split(' ').map(Number)
+      const at = formula.getBoundingClientRect()
+      x = at.left + penX
+      y = at.top + penY - 4
+    }
+    // The pencil glides from letter to letter; along a formula it moves every
+    // frame, and a glide restarted every frame would never get anywhere.
+    const next = { left: Math.round(x - base.left + container.scrollLeft), top: Math.round(y - base.top + container.scrollTop), glide: !formula }
     // Same spot: keep the old object so React skips the re-render.
-    setPoint(previous => (previous && previous.left === next.left && previous.top === next.top ? previous : next))
+    setPoint(previous => (previous && previous.left === next.left && previous.top === next.top && previous.glide === next.glide ? previous : next))
   })
   if (!point) return null
-  return <svg className="aha-pencil" style={point} viewBox="0 0 24 24" aria-hidden="true">
+  return <svg className="aha-pencil" style={{ left: point.left, top: point.top }} data-glide={point.glide} viewBox="0 0 24 24" aria-hidden="true">
     <path d="M3 21l3.5-1 11-11-2.5-2.5-11 11L3 21z" fill="var(--pencil)" stroke="var(--ink)" strokeWidth="1.2" strokeLinejoin="round" />
     <path d="M14.5 6.5l2.5 2.5 2-2a1.77 1.77 0 0 0-2.5-2.5l-2 2z" fill="var(--accent)" stroke="var(--ink)" strokeWidth="1.2" />
   </svg>

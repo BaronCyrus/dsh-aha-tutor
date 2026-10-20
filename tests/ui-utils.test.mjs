@@ -8,6 +8,7 @@ import { chartSvg, escapeXml, niceTicks } from '../src/ui/charts.js'
 import { en, format, zh } from '../src/ui/i18n.js'
 import { courseNextStep, lessonStage, nextStepFor, sessionStats } from '../src/ui/practice.js'
 import { PREP_DELAY_MS, prepStages } from '../src/ui/prep.js'
+import { revealTop } from '../src/ui/scroll.js'
 import { STYLE } from '../src/ui/styles.js'
 import { animationDocument, sanitizeSvg } from '../src/ui/sanitize.js'
 import { afterNarration, createSpeech, splitSentences } from '../src/ui/speech.js'
@@ -54,6 +55,55 @@ test('each top-level class rule is defined once, so a new component cannot resty
   }
   assert.ok(counts.size > 100)
   assert.deepEqual([...counts].filter(([, count]) => count > 1), [])
+})
+
+// The rules inside `@container <query>{…}` lines, by selector.
+function containerRules(query) {
+  const head = `@container ${query}{`
+  const rules = new Map()
+  for (const line of STYLE.split('\n')) {
+    if (!line.startsWith(head)) continue
+    for (const [, selector, body] of line.slice(head.length, -1).matchAll(/([^{}]+)\{([^{}]*)\}/gu)) rules.set(selector, body)
+  }
+  return rules
+}
+
+test('in one column, instant answers and shorts scroll as a whole instead of squeezing the classroom', () => {
+  const narrow = containerRules('aha (max-width:1060px)')
+  assert.match(narrow.get('.aha-split'), /grid-template-columns:1fr;height:auto/u)
+  assert.match(narrow.get('.aha-page[data-wide=true]:has(>.aha-split)'), /height:auto/u)
+  assert.match(narrow.get('.aha-split .aha-class'), /height:auto/u)
+  // A lesson's narrow classroom fills the window; on a page that scrolls that would push the panel down a screen.
+  assert.match(narrow.get('.aha-split .aha-classMain'), /min-height:0/u)
+  assert.match(narrow.get('.aha-split .aha-stage'), /flex:0 0 auto;min-height:0;height:clamp\(300px,60vh,640px\)/u)
+  assert.match(narrow.get('.aha-split .aha-transcript'), /max-height:260px/u)
+  // Shorts are no longer boxed into 16:9, which hid the captions, the controls and the panel.
+  assert.doesNotMatch(STYLE, /aha-shortStage/u)
+})
+
+test('a classroom opened out of sight scrolls to the top of the page, only where the page scrolls', () => {
+  const page = ({ scrollTop = 0, scrollHeight = 2400, clientHeight = 844, top = 0 } = {}) => {
+    const calls = []
+    return { calls, scrollTop, scrollHeight, clientHeight, getBoundingClientRect: () => ({ top }), scrollTo: options => calls.push(options) }
+  }
+  const classroom = (main, top) => ({ closest: selector => (selector === '.aha-main' ? main : null), getBoundingClientRect: () => ({ top }) })
+
+  // Opened from the history at the bottom: the classroom sits at the top of the page, 1200px up.
+  const fromHistory = page({ scrollTop: 1200 })
+  assert.equal(revealTop(classroom(fromHistory, -1188), { reducedMotion: false }), true)
+  assert.deepEqual(fromHistory.calls, [{ top: 0, behavior: 'smooth' }])
+  // A new short opens under the form; the page itself starts below DSH's own header.
+  const newShort = page({ top: 40 })
+  assert.equal(revealTop(classroom(newShort, 279), { reducedMotion: true }), true)
+  assert.deepEqual(newShort.calls, [{ top: 227, behavior: 'auto' }])
+
+  const inPlace = page()
+  assert.equal(revealTop(classroom(inPlace, 12)), false)
+  const wide = page({ scrollHeight: 844 })
+  assert.equal(revealTop(classroom(wide, 300)), false, 'a wide layout does not scroll')
+  assert.equal(revealTop(classroom(null, 300)), false, 'the board beside a conversation is not on the plugin page')
+  assert.equal(revealTop(null), false)
+  assert.deepEqual([...inPlace.calls, ...wide.calls], [])
 })
 
 test('svg sanitizer keeps drawing markup and strips anything active or external', () => {

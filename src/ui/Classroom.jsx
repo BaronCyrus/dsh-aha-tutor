@@ -12,6 +12,7 @@ import { useApp, useDarkMode, useLasting, usePersistentState } from './hooks.js'
 import { ItemCard } from './ItemCard.jsx'
 import { PREP_DELAY_MS } from './prep.js'
 import { PrepProgress } from './PrepProgress.jsx'
+import { revealTop } from './scroll.js'
 import { afterNarration } from './speech.js'
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2]
@@ -28,7 +29,8 @@ function asideEntry({ id, kind, label, anchorId, steps = [], streaming = false }
 // asides: the lesson's saved questions and re-explanations (lesson/get);
 // objectives: the lesson's goals, shown with progress in the side panel.
 // startIndex and onPosition count the board's own steps, not asides.
-export function Classroom({ scope, title, crumb, steps: initialSteps = [], stream = null, asides: savedAsides = [], objectives = [], language, startIndex = 0, autoplay = true, onPosition, onEnded, onStreamDone, header, stageClass, recordChecks = true }) {
+// reveal: a new value brings the classroom into view again, as opening it does.
+export function Classroom({ scope, title, crumb, steps: initialSteps = [], stream = null, asides: savedAsides = [], objectives = [], language, startIndex = 0, autoplay = true, onPosition, onEnded, onStreamDone, header, stageClass, recordChecks = true, reveal }) {
   const { api, t, speech, settings, dsh } = useApp()
   const dark = useDarkMode()
   const boardTheme = settings.boardTheme === 'dark' || (settings.boardTheme !== 'light' && dark) ? 'dark' : 'light'
@@ -43,6 +45,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
     steps: aside.steps ?? [],
   })))
   const [panelOpen, setPanelOpen] = usePersistentState('classPanel', true)
+  const root = useRef(null)
   const askField = useRef(null)
   const transcriptBox = useRef(null)
   const [complete, setComplete] = useState(!stream)
@@ -67,6 +70,8 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   const followers = useRef(null)
   if (!followers.current) followers.current = new AbortController()
   useEffect(() => () => followers.current.abort(), [])
+  // A classroom opened from below (a page that scrolls as a whole) comes into view.
+  useEffect(() => { revealTop(root.current) }, [reveal])
 
   const steps = useMemo(() => {
     const out = []
@@ -361,7 +366,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   const voiceNote = !voiceDown || voiceDown.dismissed ? null
     : voiceDown.engine === 'cloud' ? t('voiceDownCloud', { reason: errorText(t, voiceDown) }) : t('voiceDownSystem', { reason: errorText(t, voiceDown) })
 
-  return <div className="aha-class" data-panel={panelOpen ? 'open' : 'closed'}>
+  return <div ref={root} className="aha-class" data-panel={panelOpen ? 'open' : 'closed'}>
     <div className="aha-classBar">
       <div className="aha-col" style={{ gap: 0 }}>
         {crumb ? <span className="aha-crumb">{crumb}</span> : null}

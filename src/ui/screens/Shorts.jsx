@@ -36,7 +36,8 @@ export function ShortsScreen({ draftTopic, draftUrl, token }) {
   async function open(id) {
     try {
       const { item } = await api.call('items/get', { kind: 'shorts', id })
-      setCurrent({ id: item.id, title: item.title, steps: item.board.steps, stream: null, language: item.language, key: `${item.id}:open` })
+      // Opening the short on screen again keeps its place and only brings it into view.
+      setCurrent({ id: item.id, title: item.title, steps: item.board.steps, stream: null, language: item.language, key: `${item.id}:open`, opened: Date.now() })
     } catch (failure) {
       setError(failure)
     }
@@ -52,15 +53,13 @@ export function ShortsScreen({ draftTopic, draftUrl, token }) {
           <button type="button" className="aha-btn" data-kind="primary" disabled={!topic.trim() && !url.trim()} onClick={make}>{t('makeShort')}</button>
         </div>
         <ErrorLine error={error} />
-        {current ? <div className="aha-shortStage">
-          <Classroom key={current.key} scope={{ kind: 'short', id: current.id }} title={current.title} steps={current.steps} stream={current.stream} language={current.language} recordChecks={false}
-            onStreamDone={result => { setCurrent(previous => ({ ...previous, steps: result?.item?.board?.steps ?? previous.steps, title: result?.item?.title ?? previous.title, stream: null })); list.reload() }}
-            header={({ steps }) => <>
-              <BoardExport steps={steps} title={current.title} kind={null} />
-              {video.exporting ? <><Spinner label={t('exporting', { percent: video.exporting.percent })} /><button type="button" className="aha-btn" data-size="sm" onClick={video.cancel}>{t('cancel')}</button></>
-                : <button type="button" className="aha-btn" data-size="sm" disabled={!current.steps.length} onClick={() => video.start({ steps: current.steps, title: current.title })}>{t('exportVideo')}</button>}
-            </>} />
-        </div> : null}
+        {current ? <Classroom key={current.key} scope={{ kind: 'short', id: current.id }} title={current.title} steps={current.steps} stream={current.stream} language={current.language} recordChecks={false} reveal={current.opened}
+          onStreamDone={result => { setCurrent(previous => ({ ...previous, steps: result?.item?.board?.steps ?? previous.steps, title: result?.item?.title ?? previous.title, stream: null })); list.reload() }}
+          header={({ steps }) => <>
+            <BoardExport steps={steps} title={current.title} kind={null} />
+            {video.exporting ? <><Spinner label={t('exporting', { percent: video.exporting.percent })} /><button type="button" className="aha-btn" data-size="sm" onClick={video.cancel}>{t('cancel')}</button></>
+              : <button type="button" className="aha-btn" data-size="sm" disabled={!current.steps.length} onClick={() => video.start({ steps: current.steps, title: current.title })}>{t('exportVideo')}</button>}
+          </>} /> : null}
         {current && !video.cloud ? <p className="aha-hint">{t('exportNeedsCloud')}</p> : null}
       </div>
       <aside className="aha-col" style={{ minHeight: 0, overflow: 'auto' }}>

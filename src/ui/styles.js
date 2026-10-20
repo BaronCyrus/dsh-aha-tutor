@@ -101,7 +101,9 @@ a.aha-btn{text-decoration:none}
 .aha-toast{position:fixed;right:20px;bottom:20px;z-index:1001;padding:10px 14px;border-radius:10px;background:var(--aha-primary-bg);color:var(--aha-primary-fg);font-size:13px;max-width:420px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
 .aha-markdown{font-size:14px;line-height:23px}
 .aha-split{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:14px;min-height:0;height:100%}
-@container aha (max-width:1060px){.aha-split{grid-template-columns:1fr}.aha-nav{width:56px;flex-basis:56px}.aha-navItem span,.aha-brand small,.aha-brand span{display:none}}
+@container aha (max-width:1060px){.aha-nav{width:56px;flex-basis:56px}.aha-navItem span,.aha-brand small,.aha-brand span{display:none}}
+/* One column: a page with a side list (instant answers, shorts) scrolls as a whole, the list last. Its classroom takes its natural height, with a board of about 60% of the screen, so nothing under it can squeeze the controls. */
+@container aha (max-width:1060px){.aha-split{grid-template-columns:1fr;height:auto}.aha-page[data-wide=true]:has(>.aha-split){height:auto}.aha-split .aha-class{height:auto}.aha-split .aha-classMain{min-height:0}.aha-split .aha-stage{flex:0 0 auto;min-height:0;height:clamp(300px,60vh,640px)}.aha-split .aha-transcript{max-height:260px}}
 
 /* ── classroom ─────────────────────────────────────────────────────────── */
 .aha-class{display:flex;flex-direction:column;gap:10px;height:100%;min-height:0;container-type:inline-size;container-name:classroom}
@@ -292,7 +294,4 @@ a.aha-btn{text-decoration:none}
 .aha-flash[data-flipped=true] .aha-flashInner{transform:rotateY(180deg)}
 .aha-flashFace{position:absolute;inset:0;backface-visibility:hidden;display:flex;align-items:center;justify-content:center;text-align:center;padding:26px;border:1px solid var(--aha-border);border-radius:16px;background:var(--aha-surface);font-size:18px;line-height:28px}
 .aha-flashBack{transform:rotateY(180deg)}
-
-/* ── shorts ────────────────────────────────────────────────────────────── */
-.aha-shortStage{position:relative;width:100%;max-width:960px;aspect-ratio:16/9;margin:0 auto;border-radius:16px;overflow:hidden;border:1px solid var(--aha-border);display:flex;flex-direction:column}
 `

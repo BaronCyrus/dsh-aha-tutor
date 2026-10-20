@@ -17,6 +17,9 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 
 ### Fixed
 
+- **Long formulas fit their board column.** A display formula wider than its column was cut off at the column's edge, the rest hidden behind a scroll bar macOS does not show (the overall equation of photosynthesis ended at "C₆H"). It now shrinks onto one line when that keeps at least 70 % of its size, and otherwise breaks after its =, + and → like a teacher carrying on below; only a piece that cannot break, such as a bracket or a matrix, shrinks further. A formula on several lines is written one line at a time. PDF and PNG pages follow the same rule at their own column width.
+- While a formula is written, the pencil follows the writing instead of waiting at the formula's end, which for a long formula was over the other column.
+- An equation number such as (1) follows its formula instead of covering the formula's last characters, on the board and in exports.
 - A board could stop in the middle of a step when the model's reasoning used up the output limit (DeepSeek at low effort once thought 40,000 characters before a lesson). A low effort now gets 16k tokens of room for its reasoning instead of 8k.
 - On a narrow board, the small "preparing" notice stays on one line instead of breaking after a few characters.
 - **Formulas render as KaTeX meant them again.** The plugin bundled KaTeX 0.16 while DSH 0.2.1 styles formulas with KaTeX 0.18.7's stylesheet, which renamed its layout classes, so superscripts and subscripts were drawn at full size and stacked symbols such as ≠ came apart. The bundled KaTeX is now 0.18.7, and a test keeps the two in step.

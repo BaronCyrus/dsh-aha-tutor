@@ -226,6 +226,10 @@ a.aha-btn{text-decoration:none}
 .aha-op mark{background:var(--marker);color:inherit;border-radius:3px;padding:0 2px}
 .aha-op-math{display:flex;justify-content:safe center;font-size:1.06em;overflow-x:auto;overflow-y:hidden;font-family:inherit}
 .aha-op-math .katex{font-size:1.15em}
+/* Too long for one line even at 70 %: break after =, + and → as inline math does (board/fit.js). */
+.aha-op-math[data-fit=wrap] .katex-display>.katex{white-space:normal}
+/* An equation number follows its formula instead of covering the formula's end. */
+.aha-op-math .katex-display>.katex>.katex-html>.katex-tag{position:static;display:inline-block;margin-left:1em}
 .aha-op-list{margin:0;padding-left:1.3em}.aha-op-list li{margin:2px 0}
 .aha-op-note{border:2px solid var(--note-line);background:var(--note);border-radius:12px;padding:8px 12px}
 .aha-op-note[data-tone=warn]{--note-line:var(--accent)}.aha-op-note[data-tone=tip]{--note-line:var(--accent2)}
@@ -241,12 +245,12 @@ a.aha-btn{text-decoration:none}
 .aha-op-code{margin:0;padding:10px 12px;border-radius:10px;background:rgba(0,0,0,.05);font:13.5px/20px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre;overflow:auto;color:var(--ink)}
 .aha-board[data-theme=dark] .aha-op-code{background:rgba(255,255,255,.06)}
 .aha-op-anim{width:100%;border:0;border-radius:10px;background:transparent}
-.aha-reveal{clip-path:inset(0 calc(100% - var(--reveal,100%)) 0 0)}
 .aha-op[data-aside=true]{padding-left:10px;border-left:3px dashed var(--accent2)}
 .aha-markRing{position:absolute;inset:-6px -10px;border:2.4px solid var(--accent);border-radius:40% 45% 42% 48%;pointer-events:none;opacity:.85}
 .aha-markLine{position:absolute;left:0;right:0;bottom:-2px;height:3px;background:var(--accent);border-radius:3px;pointer-events:none}
 .aha-markBox{position:absolute;inset:-4px -6px;border:2.4px solid var(--accent);border-radius:6px;pointer-events:none}
 .aha-pencil{position:absolute;width:26px;height:26px;pointer-events:none;transform:translate(-3px,-22px) rotate(8deg);transition:left .06s linear,top .06s linear;z-index:3;filter:drop-shadow(0 2px 2px rgba(0,0,0,.2))}
+.aha-pencil[data-glide=false]{transition:none}
 .aha-pager{position:absolute;right:12px;top:10px;display:flex;gap:6px;z-index:4}
 .aha-pager button{width:26px;height:26px;border-radius:7px;border:1px solid var(--ink-soft);background:var(--paper);color:var(--ink);cursor:pointer;font-size:12px}
 .aha-pager button[data-active=true]{background:var(--ink);color:var(--paper)}

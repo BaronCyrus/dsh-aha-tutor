@@ -2,6 +2,8 @@
 // and `page` ops are honored; when the model forgets them, estimated heights
 // break columns and pages automatically so nothing runs off the board.
 
+import { texToText } from './inline.js'
+
 const COLUMN_CAPACITY = 26
 
 function lines(textValue, perLine) {
@@ -16,8 +18,13 @@ export function estimateHeight(op) {
       return 1.4
     case 'p':
       return lines(op.text, 26) * 1.05
-    case 'math':
-      return 2
+    case 'math': {
+      // A formula stays on one line while shrinking fits it (fit.js); past
+      // about 40 characters it breaks into lines of about 28 in a column of
+      // a 1440 px wide window.
+      const length = [...texToText(op.tex)].length
+      return length <= 40 ? 2 : 2 + (Math.ceil(length / 28) - 1) * 1.2
+    }
     case 'list':
       return op.items.reduce((sum, item) => sum + lines(item, 24), 0) * 1.05
     case 'note':

@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import katex from 'katex'
+import { DOMParser } from 'linkedom'
+
 import { estimateSpeechMs } from '../src/core/board-script.js'
-import { layoutBoard, reidSteps } from '../src/ui/board/layout.js'
+import { FIT_FLOOR, fitFormula, fitPlan, groupLines, writtenPart } from '../src/ui/board/fit.js'
+import { estimateHeight, layoutBoard, reidSteps } from '../src/ui/board/layout.js'
 import { createPlayer } from '../src/ui/board/player.js'
 import { goalStates, transcriptEntries } from '../src/ui/board/sidepanel.js'
+import { STYLE } from '../src/ui/styles.js'
 
 function harness() {
   let time = 0
@@ -137,6 +142,99 @@ test('a script column break right after an overflow break does not turn the page
   assert.equal(where.get('f3').column, 1, 'overflow moved writing right')
   assert.equal(pages.length, 1, 'the script col did not open a new page')
   assert.equal(where.get('after').column, 1)
+})
+
+test('a long formula shrinks a little, then breaks into lines, and takes the room of its lines', () => {
+  // At a 294 px column (a 1440 px window), the sizes the board measured.
+  assert.deepEqual(fitPlan({ room: 294, natural: 260 }), { mode: 'fit', scale: 1 })
+  assert.deepEqual(fitPlan({ room: 294, natural: 294 }), { mode: 'fit', scale: 1 })
+  const equation = fitPlan({ room: 294, natural: 412, widest: 170 })
+  assert.equal(equation.mode, 'shrink', 'the overall equation of photosynthesis stays on one line')
+  assert.ok(equation.scale >= FIT_FLOOR && equation.scale < 0.72)
+  assert.deepEqual(fitPlan({ room: 294, natural: 684, widest: 160 }), { mode: 'wrap', scale: 1 }, 'past 70 % it breaks into lines at full size')
+  const unbreakable = fitPlan({ room: 294, natural: 706, widest: 377 })
+  assert.equal(unbreakable.mode, 'wrap')
+  assert.equal(unbreakable.scale, 294 / 377, 'a piece too wide to break shrinks until it fits')
+  assert.deepEqual(fitPlan({ room: 294, natural: 615, widest: 590 }), { mode: 'shrink', scale: 294 / 615 }, 'a wide matrix keeps its "A =" on its line')
+  assert.deepEqual(fitPlan({ room: 294, natural: 552, widest: 552 }), { mode: 'shrink', scale: 294 / 552 }, 'one piece that cannot break')
+  assert.deepEqual(fitPlan({ room: 0, natural: 500 }), { mode: 'fit', scale: 1 }, 'nothing is fitted before the column has a width')
+
+  // fitFormula starts from the formula's own size every time, so fitting
+  // again (a resized window, fonts arriving) lands in the same place, and it
+  // takes off the pixels that do not scale with the font (KaTeX rounds some
+  // sizes). The stand-in lays a formula out as the browser would.
+  const formula = ({ room, natural, pieces }) => {
+    const scale = element => (element.style.fontSize ? Number.parseFloat(element.style.fontSize) / 20 : 1)
+    const element = {
+      clientWidth: room,
+      style: { fontSize: '' },
+      dataset: {},
+      removeAttribute(name) { if (name === 'data-fit') delete this.dataset.fit },
+      get scrollWidth() { return this.dataset.fit === 'wrap' ? Math.ceil(Math.max(room, Math.max(...pieces) * scale(this))) : Math.ceil(natural * scale(this)) + 4 },
+      querySelectorAll: () => pieces.map(width => ({ getBoundingClientRect: () => ({ width: width * scale(element) }) })),
+    }
+    return element
+  }
+  const computed = globalThis.getComputedStyle
+  globalThis.getComputedStyle = () => ({ fontSize: '20px' })
+  try {
+    const shrunk = formula({ room: 294, natural: 412, pieces: [86, 170, 112, 44] })
+    assert.equal(fitFormula(shrunk), 'shrink')
+    assert.ok(shrunk.scrollWidth <= shrunk.clientWidth, `no pixel over, so no scroll bar (${shrunk.scrollWidth})`)
+    const size = shrunk.style.fontSize
+    fitFormula(shrunk)
+    assert.equal(shrunk.style.fontSize, size)
+    const wrapped = formula({ room: 294, natural: 706, pieces: [70, 377, 259] })
+    assert.equal(fitFormula(wrapped), 'wrap')
+    assert.equal(wrapped.dataset.fit, 'wrap')
+    assert.ok(Math.abs(Number.parseFloat(wrapped.style.fontSize) - (20 * 294) / 377) < 0.1, wrapped.style.fontSize)
+    assert.ok(wrapped.scrollWidth <= wrapped.clientWidth)
+    const short = formula({ room: 294, natural: 120, pieces: [120] })
+    short.dataset.fit = 'wrap'
+    short.style.fontSize = '9px'
+    assert.equal(fitFormula(short), 'fit', 'a column that grew lets the formula back to its size')
+    assert.deepEqual([short.dataset.fit, short.style.fontSize], [undefined, ''])
+  } finally {
+    globalThis.getComputedStyle = computed
+  }
+
+  // The pieces fit.js measures: KaTeX splits display math after its top-level
+  // operators and keeps an equation number apart, and the board's styles let
+  // those pieces wrap and put the number after them.
+  const html = katex.renderToString('6CO_2 + 6H_2O \\xrightarrow{光、叶绿体} C_6H_{12}O_6 + 6O_2 \\tag{1}', { displayMode: true, throwOnError: false, strict: 'ignore', trust: false, output: 'html' })
+  const document = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html')
+  assert.equal(document.querySelectorAll('.katex-html > .katex-base').length, 4)
+  assert.equal(document.querySelectorAll('.katex-html > .katex-tag').length, 1)
+  assert.ok(STYLE.includes('.aha-op-math[data-fit=wrap] .katex-display>.katex{white-space:normal}'))
+  assert.ok(STYLE.includes('.aha-op-math .katex-display>.katex>.katex-html>.katex-tag{position:static;'))
+
+  // A formula that will break into lines takes more of its column, so a page
+  // of them spills into the next column instead of running off the board.
+  const expansion = '(a+b)^{10} = a^{10} + 10a^9b + 45a^8b^2 + 120a^7b^3 + 210a^6b^4 + 252a^5b^5 + 210a^4b^6 + 120a^3b^7 + 45a^2b^8 + 10ab^9 + b^{10}'
+  assert.equal(estimateHeight({ t: 'math', tex: 'F=-kx' }), 2)
+  assert.ok(Math.abs(estimateHeight({ t: 'math', tex: expansion }) - 5.6) < 1e-9, 'four lines')
+  const { where } = layoutBoard([{ ops: Array.from({ length: 6 }, (_, index) => ({ id: `m${index}`, t: 'math', tex: expansion })) }])
+  assert.deepEqual(Array.from({ length: 6 }, (_, index) => where.get(`m${index}`).column), [0, 0, 0, 0, 1, 1])
+})
+
+test('a formula is written line by line, with the pencil where the writing is', () => {
+  // Pieces flow left to right; one that starts back at the left opens a line.
+  const lines = groupLines([
+    { left: 20, right: 110, top: 10, bottom: 40 },
+    { left: 110, right: 270, top: 0, bottom: 44 },
+    { left: 0, right: 0, top: 0, bottom: 0 },
+    { left: 60, right: 180, top: 50, bottom: 80 },
+    { left: 180, right: 230, top: 52, bottom: 80 },
+  ])
+  assert.deepEqual(lines, [{ left: 20, right: 270, top: 0, bottom: 44 }, { left: 60, right: 230, top: 50, bottom: 80 }])
+
+  // 250 + 170 px to write. Halfway is 210 px into the first line, whose band
+  // runs from the top to midway between the lines.
+  assert.deepEqual(writtenPart(lines, 0.5), { clip: 'polygon(0 0, 100% 0, 100% 0, 230px 0, 230px 47px, 0 47px)', pen: { x: 230, y: 44 } })
+  // At 90 % the first line is done and the second is 128 px along.
+  assert.deepEqual(writtenPart(lines, 0.9), { clip: 'polygon(0 0, 100% 0, 100% 47px, 188px 47px, 188px 100%, 0 100%)', pen: { x: 188, y: 80 } })
+  assert.deepEqual(writtenPart(lines, 1), { clip: '', pen: null })
+  assert.deepEqual(writtenPart([], 0.25), { clip: 'inset(0 75% 0 0)', pen: null }, 'before it is laid out, a plain wipe')
 })
 
 test('captions follow the spoken sentence and formulas are spoken as text', async () => {

@@ -6,8 +6,9 @@ import { reidSteps } from './board/layout.js'
 import { createPlayer } from './board/player.js'
 import { goalStates, transcriptEntries } from './board/sidepanel.js'
 import { ErrorLine, Spinner } from './components.jsx'
-import { useApp, useDarkMode, usePersistentState } from './hooks.js'
+import { useApp, useDarkMode, useLasting, usePersistentState } from './hooks.js'
 import { ItemCard } from './ItemCard.jsx'
+import { PREP_DELAY_MS } from './prep.js'
 import { PrepProgress } from './PrepProgress.jsx'
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2]
@@ -308,7 +309,9 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
         : steps.length ? t('bufferingLesson') : t('preparingLesson')
 
   // The lesson itself is still being written (not an answer or a correction).
-  const preparing = buffering && !asking && !writing && prep && !complete
+  // The card replaces the small pill only when that wait goes on.
+  const waitingForLesson = buffering && !asking && !writing && !complete
+  const preparing = useLasting(waitingForLesson, PREP_DELAY_MS) && Boolean(prep)
   const doneGoals = goals ? goals.filter(state => state === 'done').length : 0
   const writingAside = Boolean(writing) || asking === 'answering' || asking === 'reexplaining' || asking === 'correcting'
 

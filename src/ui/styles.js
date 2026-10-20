@@ -261,7 +261,7 @@ a.aha-btn{text-decoration:none}
 .aha-prepNow{font-size:14px;line-height:22px}
 .aha-prepHint{font-size:15px}
 .aha-prepHint[data-hand=true]{font-family:${BOARD_FONT};font-size:16px}
-.aha-buffering{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:12px;background:var(--aha-surface);border:1px solid var(--aha-border);color:var(--aha-text);font-family:inherit;z-index:4}
+.aha-buffering{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:max-content;max-width:calc(100% - 28px);display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:12px;background:var(--aha-surface);border:1px solid var(--aha-border);color:var(--aha-text);font-family:inherit;z-index:4}
 @container board (max-width:640px){.aha-cols{grid-template-columns:1fr}.aha-boardScroll{padding:16px}}
 /* Board pages laid out off screen for PDF and PNG exports (capture.js). */
 .aha-exportPages{position:fixed;left:-40000px;top:0;display:flex;flex-direction:column;align-items:flex-start;gap:24px;pointer-events:none}

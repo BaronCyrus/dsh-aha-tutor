@@ -1,16 +1,15 @@
 // While a lesson board is being written: what the teacher is doing (reaching
 // the model, thinking the lesson through, writing step N and what that step
 // is about) and how much is ready. The host reports it through the board
-// job's preview. Before the first step it also shows the two stages and the
-// seconds so far; when the lesson has caught up with the writing it shows
-// only the step being written.
+// job's preview. Before the first step it also shows the seconds so far and,
+// for a model that thinks first, the two stages; when the lesson has caught
+// up with the writing it shows only the step being written.
 
 import { useEffect, useState } from 'react'
 
 import { Inline } from './board/Board.jsx'
 import { useApp } from './hooks.js'
-
-const STAGES = [['thinking', 'prepThinking'], ['writing', 'prepWriting']]
+import { prepStages } from './prep.js'
 
 // hand: the board writes in the handwriting font (Settings → board font).
 export function PrepProgress({ prep, label, first, hand = true }) {
@@ -22,15 +21,15 @@ export function PrepProgress({ prep, label, first, hand = true }) {
     return () => clearInterval(timer)
   }, [first])
   const phase = prep.phase ?? 'starting'
-  const stage = STAGES.findIndex(([name]) => name === phase)
+  const stages = first ? prepStages(prep) : null
   const seconds = Math.max(0, Math.round(((prep.elapsedMs ?? 0) + now - (prep.receivedAt ?? now)) / 1000))
   return <div className="aha-prep" role="status" aria-live="polite">
     <div className="aha-spread">
       <span className="aha-row" style={{ gap: 8, flexWrap: 'nowrap' }}><span className="aha-spinner" /><b>{label}</b></span>
       {first ? <span className="aha-hint">{t('prepSeconds', { seconds })}</span> : null}
     </div>
-    {first ? <ol className="aha-prepStages">
-      {STAGES.map(([name, key], index) => <li key={name} data-state={index < stage ? 'done' : index === stage ? 'now' : 'next'}>{t(key)}</li>)}
+    {stages ? <ol className="aha-prepStages">
+      {stages.map(stage => <li key={stage.name} data-state={stage.state}>{t(stage.key)}</li>)}
     </ol> : null}
     <div className="aha-prepNow">
       {phase === 'writing'

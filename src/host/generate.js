@@ -5,7 +5,8 @@
 // `llm` is the plugin's model port (see llm.js):
 //   llm.complete({ purpose, system, user, images?, maxTokens, signal }) → text
 //   llm.stream({ purpose, system, user, maxTokens, signal, onText }) → text
-//   effort: 'low' asks a reasoning model to think briefly (board writing).
+//   effort: 'lowest' asks a reasoning model not to think, or as little as
+//   it can (board writing).
 // purpose is 'teach' (course design, lessons, materials) or 'quick'
 // (grading, in-lesson questions, profile notes).
 
@@ -60,7 +61,10 @@ export function writingHint(partial) {
   }
   if (!heading) value = value.split(/(?<=[。！？!?；;])/u)[0]
   value = value.replace(/\s+/gu, ' ').trim()
-  return [...value].length > 40 ? `${[...value].slice(0, 40).join('')}…` : value
+  const cut = [...value].length > 40 ? `${[...value].slice(0, 40).join('')}…` : value
+  // A formula cut off in the middle would show its opening dollar sign.
+  const open = (cut.match(/(?<!\\)\$/gu) ?? []).length % 2 === 1
+  return open ? `${cut.slice(0, cut.lastIndexOf('$')).trimEnd()}…` : cut
 }
 
 const PROGRESS_EVERY_MS = 250

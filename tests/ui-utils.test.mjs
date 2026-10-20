@@ -6,6 +6,7 @@ import { DOMParser } from 'linkedom'
 import { createApi } from '../src/ui/api.js'
 import { chartSvg, escapeXml, niceTicks } from '../src/ui/charts.js'
 import { courseNextStep, lessonStage, nextStepFor, sessionStats } from '../src/ui/practice.js'
+import { PREP_DELAY_MS, prepStages } from '../src/ui/prep.js'
 import { STYLE } from '../src/ui/styles.js'
 import { animationDocument, sanitizeSvg } from '../src/ui/sanitize.js'
 import { splitSentences } from '../src/ui/speech.js'
@@ -146,6 +147,17 @@ test('formulas inside a highlight or bold keep rendering as math', () => {
   assert.deepEqual(parseInline('只有 ==乘积 = 0== 时'), [{ kind: 'text', text: '只有 ' }, { kind: 'mark', text: '乘积 = 0' }, { kind: 'text', text: ' 时' }])
   assert.equal(inlinePlain('==以 $a$ 为边=='), '以 a 为边')
   assert.deepEqual(sliceInline(parseInline('==以 $a$ 为边=='), 2), [{ kind: 'mark', text: '以 ' }])
+})
+
+test('the preparation card waits a moment and shows the thinking stage only when the model thought', () => {
+  // A model that writes at once starts a lesson within a second or two, before the card would show.
+  assert.equal(PREP_DELAY_MS, 3000)
+  assert.equal(prepStages({ phase: 'starting', thinking: 0 }), null)
+  assert.equal(prepStages({ phase: 'writing', thinking: 0, steps: 1 }), null, 'nothing is ticked that never happened')
+  assert.equal(prepStages(null), null)
+  const states = prep => prepStages(prep).map(stage => `${stage.key}:${stage.state}`)
+  assert.deepEqual(states({ phase: 'thinking', thinking: 1200 }), ['prepThinking:now', 'prepWriting:next'])
+  assert.deepEqual(states({ phase: 'writing', thinking: 27_000, steps: 0 }), ['prepThinking:done', 'prepWriting:now'])
 })
 
 test('leaving a screen stops watching a job without cancelling it', async () => {

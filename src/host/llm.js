@@ -6,14 +6,18 @@
 //
 // Reasoning counts against the output limit: a model thinking at its default
 // effort can spend a whole 8k budget before writing a word. So 'quick' calls
-// think least, board writing asks for a low effort ({ effort: 'low' }), and
+// and board writing ({ effort: 'lowest' }) think least — not at all where the
+// model can turn reasoning off, since a learner waits for every board — and
 // every call gets room for its reasoning on top of the tokens it needs.
 
 import { TutorError } from './generate.js'
 
 const RETRYABLE = new Set(['EMPTY_RESPONSE', 'RATE_LIMIT', 'SERVER', 'TIMEOUT', 'TRANSPORT'])
 // Extra output tokens for reasoning, by effort id (unknown ids get 'high').
-const REASONING_ROOM = Object.freeze({ off: 0, none: 0, minimal: 4000, low: 8000, medium: 16000, high: 24000, xhigh: 48000, max: 48000 })
+// DeepSeek at 'low' has thought 40k characters before a lesson board.
+const REASONING_ROOM = Object.freeze({ off: 0, none: 0, minimal: 4000, low: 16000, medium: 16000, high: 24000, xhigh: 48000, max: 48000 })
+// Effort ids from lightest to heaviest, for lists in another order.
+const EFFORT_ORDER = ['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 const STOPPED_AT_LIMIT = new Set(['max-tokens', 'length'])
 const CALL_TIMEOUT_MS = 6 * 60_000
 const MAX_RETRIES = 2
@@ -39,11 +43,15 @@ function toTutorError(code, fallback) {
   return new TutorError('llm-failed', `The model call failed${code ? ` (${code})` : ''}${fallback ? `: ${fallback}` : ''}`)
 }
 
-// 'lowest' (quick calls) or 'low' (board writing; else the lightest effort
-// that still reasons); undefined keeps the model's default.
+// 'lowest' (quick calls and boards): no reasoning when the model offers
+// that, else its lightest effort. Another id is used when offered, else the
+// lightest effort that still reasons; undefined keeps the model's default.
 export function pickEffort(efforts, wanted) {
   if (!efforts?.length || !wanted) return undefined
-  if (wanted === 'lowest') return efforts[0].id
+  if (wanted === 'lowest') {
+    const rank = effort => (EFFORT_ORDER.includes(effort.id) ? EFFORT_ORDER.indexOf(effort.id) : EFFORT_ORDER.length)
+    return efforts.reduce((lightest, effort) => (rank(effort) < rank(lightest) ? effort : lightest)).id
+  }
   return (efforts.find(effort => effort.id === wanted) ?? efforts.find(effort => effort.id !== 'off' && effort.id !== 'none') ?? efforts[0]).id
 }
 

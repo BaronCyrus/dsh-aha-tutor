@@ -74,7 +74,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     })
     return generateSteps(llm, {
       purpose: 'teach',
-      effort: 'low',
+      effort: 'lowest',
       prompt,
       maxTokens: 14000,
       signal,
@@ -194,7 +194,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       const step = boardToPlainText({ steps: [board.steps[index]] }, { maxChars: 3000 })
       const answer = await generateSteps(llm, {
         purpose: 'teach',
-        effort: 'low',
+        effort: 'lowest',
         prompt: reexplainPrompt({ lesson, language, step, boardSoFar: boardToPlainText(board, { uptoStep: index, maxChars: 5000 }), style }),
         maxTokens: 6000,
         signal: api.signal,

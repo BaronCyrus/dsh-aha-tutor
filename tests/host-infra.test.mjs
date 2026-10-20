@@ -281,25 +281,36 @@ test('writing a board reports thinking, then each step being written and what it
   assert.equal(writingHint('{"say":"line \\u4e2'), 'line', 'a cut-off escape is dropped')
   assert.equal(writingHint('[{"say":"one"},{"say":"two, and more'), 'two, and more', 'the last step, when a model sends one document')
   assert.equal(writingHint(`{"say":"${'很长'.repeat(30)}`), `${'很长'.repeat(20)}…`)
+  // A formula cut off by the stream or the length limit is left out, not shown with a lone "$".
+  assert.equal(writingHint('{"say":"补上 9，就变成 $(x+3'), '补上 9，就变成…')
+  assert.equal(writingHint('{"say":"上节课我们用补全正方形看懂了配方的样子：$x^2+6x$ 再补上 9，就变成 $(x+3)^2$。"'), '上节课我们用补全正方形看懂了配方的样子：$x^2+6x$ 再补上 9，就变成…')
+  assert.equal(writingHint('{"say":"先看 $x^2=4$ 的两个根。"'), '先看 $x^2=4$ 的两个根。')
   assert.equal(writingHint('no step yet'), '')
 })
 
-test('model calls leave room for reasoning, think briefly for boards and grow after an empty answer', async () => {
+test('model calls leave room for reasoning, skip it for boards where they can and grow after an empty answer', async () => {
   const model = { reasoning: { efforts: [{ id: 'off' }, { id: 'low' }, { id: 'high' }, { id: 'max' }], defaultEffort: 'high' }, defaultMaxTokens: 256_000 }
   const answer = [{ type: 'text-delta', text: 'ok' }, { type: 'finish', reason: { kind: 'stop' } }]
   const port = dsh => createLlmPort({ getLlm: () => dsh, getDefault: () => ({ provider: 'deepseek', model: 'flash' }), getAttachments: () => null, prefs: { read: () => ({}) } })
   const request = { system: 's', user: 'u', maxTokens: 8000, onText: () => {} }
 
   const dsh = fakeDshLlm(model, () => answer)
+  await port(dsh).stream({ ...request, purpose: 'teach', effort: 'lowest' })
   await port(dsh).stream({ ...request, purpose: 'teach', effort: 'low' })
   await port(dsh).stream({ ...request, purpose: 'teach' })
   await port(dsh).complete({ ...request, purpose: 'quick', maxTokens: 1200 })
-  assert.deepEqual(dsh.calls, [{ maxTokens: 16_000, reasoningEffort: 'low' }, { maxTokens: 32_000 }, { maxTokens: 1200, reasoningEffort: 'off' }])
+  assert.deepEqual(dsh.calls, [{ maxTokens: 8000, reasoningEffort: 'off' }, { maxTokens: 24_000, reasoningEffort: 'low' }, { maxTokens: 32_000 }, { maxTokens: 1200, reasoningEffort: 'off' }])
+
+  // A model that cannot stop reasoning writes boards at its lightest effort,
+  // with room for that reasoning.
+  const claudeLike = fakeDshLlm({ reasoning: { efforts: [{ id: 'low' }, { id: 'medium' }, { id: 'high' }, { id: 'max' }], defaultEffort: 'high' }, defaultMaxTokens: 128_000 }, () => answer)
+  await port(claudeLike).stream({ ...request, purpose: 'teach', effort: 'lowest' })
+  assert.deepEqual(claudeLike.calls, [{ maxTokens: 24_000, reasoningEffort: 'low' }])
 
   // Thinking that used up the limit leaves no answer: the next try gets more room.
   const thinker = fakeDshLlm(model, n => (n === 1 ? [{ type: 'reasoning-delta', text: '…' }, { type: 'finish', reason: { kind: 'max-tokens' } }] : answer))
   assert.equal(await port(thinker).stream({ ...request, purpose: 'teach', effort: 'low' }), 'ok')
-  assert.deepEqual(thinker.calls.map(controls => controls.maxTokens), [16_000, 24_000])
+  assert.deepEqual(thinker.calls.map(controls => controls.maxTokens), [24_000, 32_000])
   // Still nothing after the retries is reported in its own words.
   const silent = fakeDshLlm(model, () => [{ type: 'finish', reason: { kind: 'max-tokens' } }])
   await assert.rejects(port(silent).complete({ ...request, purpose: 'quick' }), error => error.code === 'llm-empty')
@@ -308,6 +319,9 @@ test('model calls leave room for reasoning, think briefly for boards and grow af
   assert.equal(outputBudget(8000, undefined, {}), 8000, 'a model without reasoning or a known limit gets what the call needs')
   assert.equal(outputBudget(8000, 'high', { reasoning: {}, defaultMaxTokens: 10_000 }), 10_000, 'never above the model limit')
   assert.equal(pickEffort([{ id: 'low' }, { id: 'high' }], 'lowest'), 'low')
+  assert.equal(pickEffort([{ id: 'minimal' }, { id: 'low' }, { id: 'medium' }, { id: 'high' }], 'lowest'), 'minimal')
+  assert.equal(pickEffort([{ id: 'high' }, { id: 'none' }, { id: 'low' }], 'lowest'), 'none', 'listed in another order')
+  assert.equal(pickEffort([{ id: 'fast' }, { id: 'deep' }], 'lowest'), 'fast', 'unknown ids keep their order')
   assert.equal(pickEffort([{ id: 'off' }, { id: 'high' }], 'low'), 'high', 'the lightest effort that still reasons')
   assert.equal(pickEffort([], 'low'), undefined)
 })

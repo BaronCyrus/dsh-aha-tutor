@@ -261,6 +261,12 @@ test('end-to-end tutoring flow on the host', async () => {
     const short = await finish(jobs, studio.makeShort({ topic: '为什么单摆周期和质量无关' }))
     assert.equal(short.item.board.steps.length, 3)
     assert.equal((await studio.listItems({ kind: 'shorts' })).length, 1)
+    // A learner waits for every board, so lessons (prefetched ones too),
+    // re-explanations, answers and shorts all ask for the lightest reasoning.
+    const boardKinds = ['Teach this lesson', 'did not get this step', 'Explain the concept', 'two-minute explainer']
+    const boardCalls = llm.calls.filter(call => boardKinds.some(kind => call.user.includes(kind)))
+    for (const kind of boardKinds) assert.ok(boardCalls.some(call => call.user.includes(kind)), kind)
+    assert.deepEqual([...new Set(boardCalls.map(call => call.effort))], ['lowest'])
 
     // projects
     const project = confirmed.course.projects[0]

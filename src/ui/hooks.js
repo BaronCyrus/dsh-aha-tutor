@@ -87,6 +87,19 @@ export function useOnce(token) {
   return first
 }
 
+// True once `active` has stayed true for `ms`, and false again as soon as it
+// is not: for showing something only when a wait goes on.
+export function useLasting(active, ms) {
+  const [lasted, setLasted] = useState(false)
+  useEffect(() => {
+    setLasted(false)
+    if (!active) return undefined
+    const timer = setTimeout(() => setLasted(true), ms)
+    return () => clearTimeout(timer)
+  }, [active, ms])
+  return active && lasted
+}
+
 export function usePersistentState(key, initial) {
   const storageKey = `aha-tutor:${key}`
   const [value, setValue] = useState(() => {

@@ -43,7 +43,8 @@ export function AssistScreen({ draftMode, draftRequest, draftMaterials, token })
     try {
       const { item } = await api.call('items/get', { kind: 'assist', id })
       const turn = item.turns.length - 1
-      setSession({ threadId: item.id, turn, stream: null, steps: item.turns[turn]?.board?.steps ?? [], title: item.turns[turn]?.request ?? item.title, language: item.language, key: `${item.id}:${turn}:open` })
+      // Opening the thread on screen again keeps its place and only brings it into view.
+      setSession({ threadId: item.id, turn, stream: null, steps: item.turns[turn]?.board?.steps ?? [], title: item.turns[turn]?.request ?? item.title, language: item.language, key: `${item.id}:${turn}:open`, opened: Date.now() })
     } catch (failure) {
       setError(failure)
     }
@@ -52,7 +53,7 @@ export function AssistScreen({ draftMode, draftRequest, draftMaterials, token })
   return <div className="aha-page" data-wide="true">
     <div className="aha-split">
       <div className="aha-col" style={{ minHeight: 0 }}>
-        {session ? <Classroom key={session.key} scope={{ kind: 'thread', id: session.threadId, turn: session.turn }} title={session.title} steps={session.steps} stream={session.stream} language={session.language} recordChecks={false} onStreamDone={result => {
+        {session ? <Classroom key={session.key} scope={{ kind: 'thread', id: session.threadId, turn: session.turn }} title={session.title} steps={session.steps} stream={session.stream} language={session.language} recordChecks={false} reveal={session.opened} onStreamDone={result => {
           setSession(current => (current?.stream?.id === session.stream?.id ? { ...current, done: true, turn: Number.isInteger(result?.turn) ? result.turn : current.turn } : current))
           history.reload()
         }} /> : <div className="aha-col" style={{ gap: 4 }}>

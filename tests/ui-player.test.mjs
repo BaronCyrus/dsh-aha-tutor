@@ -5,14 +5,15 @@ import { estimateSpeechMs } from '../src/core/board-script.js'
 import { layoutBoard, reidSteps } from '../src/ui/board/layout.js'
 import { createPlayer } from '../src/ui/board/player.js'
 import { goalStates, transcriptEntries } from '../src/ui/board/sidepanel.js'
+import { createSpeech } from '../src/ui/speech.js'
 
-function harness() {
+function harness(voice) {
   let time = 0
   const frames = []
   const spoken = []
   const options = []
   const pending = []
-  const speech = {
+  const speech = voice ?? {
     speak(textValue, settings) {
       spoken.push(textValue)
       options.push(settings)
@@ -115,6 +116,30 @@ test('pause freezes progress; next, prev, seek and inserted steps move the curso
   assert.equal(player.state.rate, 1.5)
   await finishSpeech()
   player.dispose()
+})
+
+test('a voice that throws as it starts leaves the lesson going on silently', async () => {
+  const logged = []
+  const log = console.error
+  console.error = error => logged.push(error)
+  try {
+    // Node has no <audio>, so the cloud voice throws when it starts.
+    const speech = createSpeech({ fetchAudio: async () => ({ blob: new Blob(['mp3'], { type: 'audio/mpeg' }) }) })
+    speech.configure({ engine: 'cloud' })
+    const failed = await speech.speak('你好').done
+    assert.equal(failed.completed, false)
+    assert.match(failed.error, /Audio/u)
+    assert.ok(logged[0] instanceof ReferenceError, 'the error is logged for whoever debugs it')
+    const { player, advance } = harness(speech)
+    player.setSteps(steps, { done: true })
+    player.play()
+    await advance(5000)
+    assert.equal(player.state.index, 1)
+    assert.equal(player.state.status, 'check', 'both steps were written without narration')
+    player.dispose()
+  } finally {
+    console.error = log
+  }
 })
 
 test('layout honors columns and pages and breaks long content automatically', () => {

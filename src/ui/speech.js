@@ -198,20 +198,22 @@ function cloudEngine({ fetchAudio }) {
     return { done }
   }
 
+  function cancel() {
+    if (!session) return
+    const state = session
+    session = null
+    state.cancelled = true
+    state.audio.pause()
+    state.resolveDone({ completed: false })
+  }
+
   return {
     speak,
     prefetch,
     pause: () => session?.audio.pause(),
     resume: () => session?.audio.play().catch(() => undefined),
     setRate: rate => { if (session) session.audio.playbackRate = Math.min(2, Math.max(0.5, rate)) },
-    cancel() {
-      if (!session) return
-      const state = session
-      session = null
-      state.cancelled = true
-      state.audio.pause()
-      state.resolveDone({ completed: false })
-    },
+    cancel,
     clear() {
       for (const promise of cache.values()) promise.then(url => URL.revokeObjectURL(url)).catch(() => undefined)
       cache.clear()
@@ -239,7 +241,14 @@ export function createSpeech({ fetchAudio }) {
         return { done: Promise.resolve({ completed: true, silent: true }) }
       }
       active = engines[settings.engine] ?? engines.browser
-      return active.speak(textValue, { ...settings, ...options })
+      // An engine that throws fails like one whose audio never came: the
+      // lesson goes on silently instead of taking the page down with it.
+      try {
+        return active.speak(textValue, { ...settings, ...options })
+      } catch (error) {
+        console.error(error)
+        return { done: Promise.resolve({ completed: false, error: error?.message ?? 'speech' }) }
+      }
     },
     prefetch(textValue) {
       if (settings.engine === 'cloud') engines.cloud.prefetch(textValue)

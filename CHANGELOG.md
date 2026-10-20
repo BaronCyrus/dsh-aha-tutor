@@ -17,6 +17,7 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 
 ### Fixed
 
+- **The cloud voice works.** With **Cloud voice** chosen, opening a lesson left the plugin page blank, and it stayed blank on every return because the plugin reopens the last screen; **Test** in Settings did nothing. Lessons now play with the cloud voice, **Test** shows what went wrong (a missing key, for one), and a voice that fails to start lets the lesson go on silently instead of breaking the page.
 - A board could stop in the middle of a step when the model's reasoning used up the output limit (DeepSeek at low effort once thought 40,000 characters before a lesson). A low effort now gets 16k tokens of room for its reasoning instead of 8k.
 - On a narrow board, the small "preparing" notice stays on one line instead of breaking after a few characters.
 - **Formulas render as KaTeX meant them again.** The plugin bundled KaTeX 0.16 while DSH 0.2.1 styles formulas with KaTeX 0.18.7's stylesheet, which renamed its layout classes, so superscripts and subscripts were drawn at full size and stacked symbols such as ≠ came apart. The bundled KaTeX is now 0.18.7, and a test keeps the two in step.

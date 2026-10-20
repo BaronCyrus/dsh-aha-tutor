@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { CrashNotice, ErrorBoundary } from './boundary.js'
 import { Classroom } from './Classroom.jsx'
 import { openMainScreen, useAppValue } from './context.js'
 import { AppContext, useApp } from './hooks.js'
@@ -14,7 +15,9 @@ export function BoardTab({ useTabInfo, rpc, t, language, dsh }) {
   const { value } = useAppValue({ rpc, t, language, dsh })
   return <AppContext.Provider value={value}>
     <div className="aha aha-tab" style={{ height: '100%', overflow: 'auto', padding: '10px 12px' }}>
-      {params?.threadId ? <ThreadBoard key={`${params.threadId}:${tab.navigation.revision ?? 0}`} threadId={params.threadId} jobId={params.jobId} /> : <p className="aha-hint">{t('openBoard')}</p>}
+      {params?.threadId ? <ErrorBoundary key={`${params.threadId}:${tab.navigation.revision ?? 0}`} fallback={({ error, retry }) => <CrashNotice t={t} error={error} place="tab" onRetry={retry} />}>
+        <ThreadBoard threadId={params.threadId} jobId={params.jobId} />
+      </ErrorBoundary> : <p className="aha-hint">{t('openBoard')}</p>}
     </div>
   </AppContext.Provider>
 }
@@ -56,11 +59,15 @@ function metaOf(block) {
   return block?.meta && typeof block.meta === 'object' ? block.meta : null
 }
 
+// A card that crashes shows a notice in its place; the other cards of the
+// tool keep working.
 export function ToolCard(props) {
   const value = useCardValue(props)
   return <AppContext.Provider value={value}>
     <div className="aha aha-card" style={{ height: 'auto', display: 'flex', flexDirection: 'column', gap: 8, margin: '6px 0', padding: '10px 12px' }}>
-      <ToolBody {...props} />
+      <ErrorBoundary fallback={({ error, retry }) => <CrashNotice t={props.t} error={error} place="card" onRetry={retry} />}>
+        <ToolBody {...props} />
+      </ErrorBoundary>
     </div>
   </AppContext.Provider>
 }

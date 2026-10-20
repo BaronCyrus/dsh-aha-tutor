@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { ROUTE_EVENT, useAppValue } from './context.js'
-import { AppContext, usePersistentState } from './hooks.js'
+import { CrashNotice, ErrorBoundary } from './boundary.js'
+import { forgetRoute, ROUTE_EVENT, useAppValue, useRoute } from './context.js'
+import { AppContext } from './hooks.js'
 import { Icon } from './icons.jsx'
 import { AboutScreen } from './screens/About.jsx'
 import { AssistScreen } from './screens/Assist.jsx'
@@ -55,8 +56,20 @@ const SCREENS = {
 
 const ROOT_OF = { craft: 'courses', course: 'courses', lesson: 'courses', practice: 'courses', project: 'courses', cards: 'studio', sheet: 'studio', item: 'studio' }
 
-export function App({ rpc, t, language, dsh }) {
-  const [route, setRoute] = usePersistentState('route', { screen: 'home', params: {} })
+// A screen that crashes is replaced by a notice while the navigation keeps
+// working. A crash anywhere else replaces the whole page, and only a fresh
+// start from the home page is offered.
+export function App(props) {
+  const [restarts, setRestarts] = useState(0)
+  return <ErrorBoundary key={restarts} onError={forgetRoute} fallback={({ error }) => <div className="aha">
+    <main className="aha-main"><CrashNotice t={props.t} error={error} onHome={() => setRestarts(value => value + 1)} /></main>
+  </div>}>
+    <Page {...props} />
+  </ErrorBoundary>
+}
+
+function Page({ rpc, t, language, dsh }) {
+  const { route, setRoute, crashed } = useRoute()
   const history = useRef([])
 
   const navigate = useCallback((screen, params = {}, { replace = false } = {}) => {
@@ -86,17 +99,22 @@ export function App({ rpc, t, language, dsh }) {
   const { value, toastText } = useAppValue({ rpc, t, language, dsh, navigate, back })
   const Screen = SCREENS[route.screen] ?? HomeScreen
   const activeRoot = ROOT_OF[route.screen] ?? route.screen
+  // Opening a screen starts a new history. Opening the one on show again
+  // retries it after a crash, since every route object is new.
+  const open = screen => { history.current = []; setRoute({ screen, params: {} }) }
 
   return <AppContext.Provider value={value}>
     <div className="aha">
       <nav className="aha-nav">
         <div className="aha-brand"><Icon name="logo" size={24} /><span>{t('appName')}<small>{t('appTagline')}</small></span></div>
-        {NAV.map(([screen, label, icon]) => <button key={screen} type="button" className="aha-navItem" data-active={activeRoot === screen} onClick={() => { history.current = []; setRoute({ screen, params: {} }) }} title={t(label)}>
+        {NAV.map(([screen, label, icon]) => <button key={screen} type="button" className="aha-navItem" data-active={activeRoot === screen} onClick={() => open(screen)} title={t(label)}>
           <Icon name={icon} size={17} /><span>{t(label)}</span>
         </button>)}
       </nav>
       <main className="aha-main">
-        <Screen key={`${route.screen}:${JSON.stringify(route.params)}`} {...route.params} />
+        <ErrorBoundary resetKey={route} onError={crashed} fallback={({ error }) => <CrashNotice t={t} error={error} onRetry={() => setRoute(current => ({ ...current }))} onHome={() => open('home')} />}>
+          <Screen key={`${route.screen}:${JSON.stringify(route.params)}`} {...route.params} />
+        </ErrorBoundary>
       </main>
       {toastText ? <div className="aha-toast" role="status">{toastText}</div> : null}
     </div>

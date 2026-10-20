@@ -169,6 +169,12 @@ a.aha-btn{text-decoration:none}
 .aha-level[data-level=proficient]{background:color-mix(in srgb,var(--aha-brand) 14%,transparent);color:var(--aha-brand)}
 .aha-level[data-level=mastered]{background:color-mix(in srgb,var(--aha-ok) 16%,transparent);color:var(--aha-ok)}
 .aha-nextStep{flex-direction:row;align-items:center;gap:12px;flex-wrap:wrap;border-color:color-mix(in srgb,var(--aha-brand) 40%,var(--aha-border))}
+.aha-sourceList{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:13.5px;line-height:20px}
+.aha-sourceList a{color:var(--aha-brand);text-decoration:none;overflow-wrap:anywhere}
+.aha-sourceList a:hover{text-decoration:underline}
+.aha-sourceList p{margin:2px 0 0;font-size:12.5px;line-height:18px}
+.aha-sources summary{cursor:pointer;color:var(--aha-muted);font-size:13px}
+.aha-sources[open] summary{margin-bottom:6px}
 .aha-workPreview{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px dashed var(--aha-border);border-radius:10px;background:var(--aha-soft);font-size:13.5px}
 .aha-wrongStep{display:flex;flex-direction:column;gap:2px;margin-top:6px;padding:6px 10px;border-left:3px solid var(--aha-bad);border-radius:0 8px 8px 0;background:color-mix(in srgb,var(--aha-bad) 6%,transparent)}
 .aha-feedback{padding:8px 12px;border-radius:10px;background:var(--aha-soft);font-size:13.5px}

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import { CourseLabel, Empty, ErrorLine, MaterialPicker, Progress, Spinner } from '../components.jsx'
-import { useApp, useLoad } from '../hooks.js'
+import { useApp, useLoad, usePersistentState } from '../hooks.js'
 import { Icon } from '../icons.jsx'
 import { toDay } from '../../core/planner.js'
 
@@ -17,6 +17,10 @@ const MODES = [
 export function HomeScreen() {
   const { api, t, navigate, toast } = useApp()
   const [mode, setMode] = useState('course')
+  // Web research before a course: on by default, off when materials are
+  // attached (they set the scope), and the learner's own choice wins.
+  const [webDefault, setWebDefault] = usePersistentState('craftWeb', true)
+  const [webChoice, setWebChoice] = useState(null)
   const [text, setText] = useState('')
   const [materialIds, setMaterialIds] = useState([])
   const [picking, setPicking] = useState(false)
@@ -26,6 +30,12 @@ export function HomeScreen() {
   const plan = useLoad(() => api.call('plan/get', { today: toDay(new Date()) }), [])
   const samples = useLoad(() => api.call('samples/list'), [])
 
+  const web = webChoice ?? (materialIds.length ? false : webDefault)
+  function toggleWeb() {
+    setWebChoice(!web)
+    if (!materialIds.length) setWebDefault(!web)
+  }
+
   async function start(quick = false) {
     const goal = text.trim()
     setError(null)
@@ -33,7 +43,7 @@ export function HomeScreen() {
       if (!goal && !materialIds.length) return
       setBusy(true)
       try {
-        const { job } = await api.call('course/start', { goal, materialIds, quick })
+        const { job } = await api.call('course/start', { goal, materialIds, quick, web })
         navigate('craft', { jobId: job.id })
       } catch (failure) {
         setError(failure)
@@ -73,6 +83,7 @@ export function HomeScreen() {
         <div className="aha-spread">
           <div className="aha-row" style={{ gap: 6 }}>
             <button type="button" className="aha-btn" data-size="sm" onClick={() => setPicking(true)}><Icon name="plus" size={15} />{materialIds.length ? t('attached', { count: materialIds.length }) : t('attach')}</button>
+            {mode === 'course' ? <button type="button" className="aha-chip" data-active={web} aria-pressed={web} onClick={toggleWeb} title={t('webResearchHint')}>🌐 {t('webResearch')}</button> : null}
           </div>
           <div className="aha-row" style={{ gap: 6 }}>
             {mode === 'course' ? <button type="button" className="aha-btn" data-kind="ghost" disabled={busy} onClick={() => start(true)}>{t('quickStart')}</button> : null}

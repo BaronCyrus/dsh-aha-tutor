@@ -44,7 +44,7 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
 
     'course/list': () => courses.list(),
     'course/get': payload => courses.get({ courseId: need(payload, 'courseId', 'crs') }),
-    'course/start': payload => ({ job: courses.startCraft({ goal: payload.goal, materialIds: idList(payload.materialIds, 'mat'), quick: payload.quick === true, language: typeof payload.language === 'string' ? payload.language.slice(0, 12) : undefined }) }),
+    'course/start': payload => ({ job: courses.startCraft({ goal: payload.goal, materialIds: idList(payload.materialIds, 'mat'), quick: payload.quick === true, web: payload.web === true, language: typeof payload.language === 'string' ? payload.language.slice(0, 12) : undefined }) }),
     'course/proposal-apply': payload => courses.applyProposal({ courseId: need(payload, 'courseId', 'crs') }),
     'course/proposal-discard': payload => courses.discardProposal({ courseId: need(payload, 'courseId', 'crs') }),
     'course/rework-lesson': payload => ({ job: courses.reworkLesson({ courseId: need(payload, 'courseId', 'crs'), lesson: payload.lesson, unitTitle: payload.unitTitle, lectureTitle: payload.lectureTitle, mode: payload.mode === 'split' ? 'split' : 'deepen' }) }),

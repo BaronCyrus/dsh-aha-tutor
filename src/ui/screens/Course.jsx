@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 
 import { downloadText } from '../api.js'
-import { Confirm, Empty, ErrorLine, MasteryMeter, Modal, Progress, Spinner } from '../components.jsx'
+import { Confirm, Empty, ErrorLine, MasteryMeter, Modal, Progress, SourceList, Spinner } from '../components.jsx'
 import { useApp, useLoad } from '../hooks.js'
 import { Icon } from '../icons.jsx'
 import { courseProgress, flattenLessons, nextLesson } from '../../core/course-model.js'
@@ -88,6 +88,11 @@ export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
         </div>)}
       </div>)}
     </div> : null}
+
+    {tab === 'outline' && course.sources?.length ? <section className="aha-card">
+      <b>{t('courseSources')}</b>
+      <SourceList sources={course.sources} />
+    </section> : null}
 
     {tab === 'practice' ? <div className="aha-col">
       <div className="aha-row"><button type="button" className="aha-btn" data-kind="primary" onClick={() => navigate('practice', { courseId, review: true })}>{t('startReview')}</button></div>

@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## Unreleased
+
+### Added
+
+- **Web research before a course**: a new course can start by looking the subject up with DSH's web search (on by default, off when materials are attached, switchable on the home page). A few searches are made, and what comes back informs the questions and the blueprint. The course page lists the sources under **Sources**. When DSH cannot search, for example without a DeepSeek key, the course is designed as before and the questionnaire says why.
+
 ## 1.3.0 - 2026-10-19
 
 ### Added

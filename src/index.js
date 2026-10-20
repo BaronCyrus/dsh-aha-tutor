@@ -16,6 +16,7 @@ import { createLessons } from './host/lessons.js'
 import { createLlmPort } from './host/llm.js'
 import { createPluginManager } from './host/plugin-version.js'
 import { createProjects } from './host/projects.js'
+import { createResearch } from './host/research.js'
 import { createRoutes, createRpcHandler } from './host/rpc.js'
 import { publishRuntime } from './host/runtime.js'
 import { createSamples } from './host/samples.js'
@@ -46,7 +47,8 @@ export function apply(ctx) {
   let uiLanguage = 'zh-CN'
   const jobs = createJobs({ logger })
   const learner = createLearner({ store, llm, logger })
-  const courses = createCourses({ store, llm, jobs })
+  const research = createResearch({ getWeb: () => ctx.get?.('web'), llm, logger })
+  const courses = createCourses({ store, llm, jobs, research })
   const lessons = createLessons({ store, llm, jobs, courses, learner })
   const studio = createStudio({ store, llm, jobs, uiLanguage: () => uiLanguage })
   const projects = createProjects({ store, llm, jobs, courses })

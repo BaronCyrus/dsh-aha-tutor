@@ -45,7 +45,8 @@ function outlineStream(api) {
   }
 }
 
-export function createCourses({ store, llm, jobs, now = () => new Date() }) {
+// research: optional web research (research.js) run before the questions.
+export function createCourses({ store, llm, jobs, research, now = () => new Date() }) {
   const stamp = () => now().toISOString()
 
   async function readCourse(courseId) {
@@ -110,7 +111,7 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
   }
 
   // Step 1: create the draft and ask the intake questions (unless quick).
-  function startCraft({ goal, materialIds = [], quick = false, language }) {
+  function startCraft({ goal, materialIds = [], quick = false, language, web = false }) {
     const cleanGoal = text(goal, 2000)
     if (!cleanGoal && !materialIds.length) throw new TutorError('invalid', 'Tell me what you want to learn')
     const ids = materialIds.filter(id => /^mat_[a-z0-9]+$/u.test(id)).slice(0, 8)
@@ -128,11 +129,21 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
         createdAt: stamp(),
       }
       await saveCourse(draft)
-      if (quick) return { courseId, questionnaire: null }
+      // Look the subject up first, so the questions and the blueprint can use it.
+      let found = null
+      if (web && research) {
+        api.progress(0, quick ? 1 : 2, 'research')
+        found = await research.run({ goal: draft.goal, language: draft.language, signal: api.signal })
+        api.progress(0, quick ? 1 : 2, 'questions')
+      }
+      if (quick) {
+        if (found) await store.writeJson(store.paths.intake(courseId), { questionnaire: null, answers: {}, research: found, at: stamp() })
+        return { courseId, questionnaire: null, research: found }
+      }
       const profile = await readProfile(store)
       const questionnaire = await generateJson(llm, {
         purpose: 'teach',
-        prompt: questionnairePrompt({ goal: draft.goal, language: draft.language, materialsSummary: materialsSummary(materials), profile }),
+        prompt: questionnairePrompt({ goal: draft.goal, language: draft.language, materialsSummary: materialsSummary(materials), profile, sources: found?.sources }),
         maxTokens: 3000,
         signal: api.signal,
         normalize: raw => {
@@ -141,9 +152,9 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
           return value
         },
       })
-      await store.writeJson(store.paths.intake(courseId), { questionnaire, answers: {}, at: stamp() })
+      await store.writeJson(store.paths.intake(courseId), { questionnaire, answers: {}, ...(found ? { research: found } : {}), at: stamp() })
       api.progress(1, 2, 'questions')
-      return { courseId, questionnaire }
+      return { courseId, questionnaire, research: found }
     }, { key: `questions:${courseId}`, meta: { courseId } })
   }
 
@@ -176,6 +187,7 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
           timeline: settings.timeline,
           size: settings.size,
           weeklyMinutes: settings.weeklyMinutes,
+          sources: intake.research?.sources,
         }),
         images: llm.supportsImages?.('teach') ? await materialImages(store, materials) : undefined,
         maxTokens: 16000,
@@ -183,7 +195,9 @@ export function createCourses({ store, llm, jobs, now = () => new Date() }) {
         onText: outlineStream(api),
         normalize: raw => attachProjectUnits(raw, normalizeBlueprint(raw, { language: course.language })),
       })
-      const next = { ...course, ...blueprint, language: course.language, status: 'blueprint', settings }
+      // The sources the design leaned on stay with the course, for the course page.
+      const sources = intake.research?.sources ?? []
+      const next = { ...course, ...blueprint, language: course.language, status: 'blueprint', settings, ...(sources.length ? { sources } : {}) }
       await saveCourse(next)
       return { course: next }
     }, { key: `blueprint:${courseId}`, meta: { courseId } })

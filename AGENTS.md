@@ -19,6 +19,7 @@ This file governs the entire `dsh-aha-tutor` repository.
   - `src/client.jsx` (browser): the full-page app, sidebar entry, right-sidebar board tab and tool cards, built from `src/ui/` through the client wrapper in `tsdown.config.mjs`.
 - `src/core/` is pure logic shared by host and browser (mastery, SRS, planner, grading, board scripts, course model, retrieval, JSON extraction). Keep it free of Node and DOM APIs.
 - Generation uses only the model the user chose: DSH's default model or the plugin's two overrides ("teach" and "quick"). Never fall back to another provider, model or credential source on a failure.
+- Web research before course design goes through DSH's own web service (`ctx.get('web')`) and whatever search provider DSH is configured with. The plugin never calls a search vendor or touches its credentials; when DSH cannot search, the course is designed without research and the reason is shown.
 - Generate on demand: course structure when the learner confirms the blueprint, a lesson's board when it is opened plus at most one prefetched next lesson. Never generate a whole course's boards in the background.
 - Cloud TTS keys live in DSH's credential store as records and are used host-side only. Never fall back to environment variables, and never return a key to the browser.
 - The in-plugin update installs an exact registry version with DSH's bundled pnpm in the owning profile, under the profile's own pnpm release-age policy. Never pass `--config.minimumReleaseAge`, never edit `minimumReleaseAgeExclude`, and never use `--force`: bypassing the policy leaves a lockfile entry pnpm later rejects, and the profile then refuses every plugin install until that version is 24 hours old. A version pnpm holds back is reported as pending with the time it becomes installable. Verify the installed version even on exit code 0. `link:` installs are never updated in place. After an update, tell the user to quit and reopen DSH.
@@ -38,7 +39,7 @@ The plugin runs inside DSH on both systems. Every change must keep working on bo
 
 ## Security requirements
 
-- Model output, uploads, course packs and fetched web pages are untrusted. Keep `src/ui/sanitize.js`'s SVG allow-list, the sandboxed animation iframe (`sandbox="allow-scripts"`, no same-origin, `default-src 'none'` CSP), Markdown without raw HTML and KaTeX with `trust: false`.
+- Model output, uploads, course packs, fetched web pages and web search results are untrusted. Search results keep http(s) links only, are length-capped, reach prompts as reference material (never as instructions) and open outside the app. Keep `src/ui/sanitize.js`'s SVG allow-list, the sandboxed animation iframe (`sandbox="allow-scripts"`, no same-origin, `default-src 'none'` CSP), Markdown without raw HTML and KaTeX with `trust: false`.
 - Web import refuses non-`http(s)` URLs and localhost, private, link-local and metadata addresses, follows redirects by hand and re-checks each hop.
 - Project files: starter paths go through `safeRelativePath`; existing files are never overwritten; reviews read text files only, skip symlinks and cap the total size.
 - Browser RPC validates every payload and returns only user-facing error messages. Never print, log, commit or return to the browser any API key, token or package-manager output.

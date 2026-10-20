@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { blueprintDiff, diffIsEmpty } from '../../core/course-model.js'
-import { Confirm, ErrorLine, JobProgress, Spinner } from '../components.jsx'
+import { Confirm, ErrorLine, JobProgress, SourceList, Spinner } from '../components.jsx'
 import { useApp, useJob, useLoad } from '../hooks.js'
 
 const PACES = [['intensive', 'paceIntensive', 'paceIntensiveHint'], ['balanced', 'paceBalanced', 'paceBalancedHint'], ['relaxed', 'paceRelaxed', 'paceRelaxedHint']]
@@ -13,12 +13,13 @@ const WEEKLY = [60, 120, 180, 300, 420, 600]
 export function CraftScreen({ jobId, courseId, edit = false }) {
   const { api, t, navigate } = useApp()
   const [error, setError] = useState(null)
+  const [stage, setStage] = useState('questions')
 
   // Arriving from Home with a start job: wait for it, then switch to the course.
   useEffect(() => {
     if (!jobId || courseId) return undefined
     const controller = new AbortController()
-    api.follow({ job: { id: jobId, status: 'running' } }, { signal: controller.signal })
+    api.follow({ job: { id: jobId, status: 'running' } }, { signal: controller.signal, onProgress: progress => setStage(progress?.label === 'research' ? 'research' : 'questions') })
       .then(result => navigate('craft', { courseId: result.courseId }, { replace: true }))
       .catch(failure => { if (!controller.signal.aborted) setError(failure) })
     return () => controller.abort()
@@ -27,7 +28,7 @@ export function CraftScreen({ jobId, courseId, edit = false }) {
   if (!courseId) {
     return <div className="aha-page">
       <h2 className="aha-title">{t('craftQuestionsTitle')}</h2>
-      {error ? <><ErrorLine error={error} /><button type="button" className="aha-btn" onClick={() => navigate('home')}>{t('back')}</button></> : <Spinner label={t('thinkingQuestions')} />}
+      {error ? <><ErrorLine error={error} /><button type="button" className="aha-btn" onClick={() => navigate('home')}>{t('back')}</button></> : <Spinner label={stage === 'research' ? t('researching') : t('thinkingQuestions')} />}
     </div>
   }
   return <CraftCourse courseId={courseId} edit={edit} />
@@ -88,7 +89,7 @@ function Intake({ course, intake, job, onDone }) {
 
   if (job.running) {
     if (job.progress?.label === 'questions') return <div className="aha-page"><h2 className="aha-title">{course.goal}</h2><JobProgress progress={job.progress} label={t('thinkingQuestions')} onCancel={job.cancel} /></div>
-    return <BuildLog course={course} job={job} />
+    return <BuildLog course={course} job={job} research={intake?.research} />
   }
 
   return <div className="aha-page">
@@ -96,6 +97,7 @@ function Intake({ course, intake, job, onDone }) {
       <h2 className="aha-title">{t('craftQuestionsTitle')}</h2>
       <p className="aha-subtitle">{course.goal}</p>
       <p className="aha-hint">{t('craftQuestionsHint')}</p>
+      {intake?.research ? <ResearchNote research={intake.research} /> : null}
     </div>
     {questions.map((question, index) => <section key={question.id} className="aha-card">
       <div className="aha-cardTitle">{index + 1}. {question.prompt}</div>
@@ -136,14 +138,25 @@ function Intake({ course, intake, job, onDone }) {
   </div>
 }
 
+// What the web search before the questions found, or why there was none.
+function ResearchNote({ research }) {
+  const { t } = useApp()
+  if (research.skipped) return <p className="aha-hint">{t('researchSkipped', { reason: t(`researchSkipped_${research.skipped}`) })}</p>
+  return <details className="aha-sources">
+    <summary>{t('researchFound', { count: research.sources.length })}</summary>
+    <SourceList sources={research.sources} />
+  </details>
+}
+
 // While the blueprint is written: what the teacher is doing, and the outline
 // as it grows (the unit being written last).
-function BuildLog({ course, job }) {
+function BuildLog({ course, job, research }) {
   const { t } = useApp()
   const units = job.preview?.units ?? []
   const lessons = units.reduce((sum, unit) => sum + unit.lectures.reduce((count, lecture) => count + lecture.lessons.length, 0), 0)
   const phase = job.progress?.label === 'materials' ? 'materials' : units.length ? 'lessons' : 'units'
   const steps = [
+    ...(research?.sources?.length ? [['research', t('buildResearch', { count: research.sources.length })]] : []),
     ['answers', t('buildAnswers')],
     ...(course.materialIds?.length ? [['materials', t('buildMaterials')]] : []),
     ['units', t('buildUnits')],

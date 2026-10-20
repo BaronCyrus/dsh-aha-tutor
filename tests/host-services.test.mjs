@@ -9,6 +9,7 @@ import { createJobs } from '../src/host/jobs.js'
 import { createLearner } from '../src/host/learner.js'
 import { createLessons } from '../src/host/lessons.js'
 import { createProjects } from '../src/host/projects.js'
+import { createResearch } from '../src/host/research.js'
 import { createStore } from '../src/host/store.js'
 import { createStudio } from '../src/host/studio.js'
 
@@ -34,6 +35,7 @@ function fakeLlm() {
   const answer = ({ user }) => {
     if (user.includes('multiple-choice questions whose answers')) return JSON.stringify({ questions: [{ prompt: '你的基础？', topic: 'level', options: [{ label: '零基础' }, { label: '学过高中物理' }] }, { prompt: '目标？', options: ['考试', '兴趣'] }] })
     if (user.includes('Design the course blueprint')) return `好的，这是蓝图：\n\`\`\`json\n${JSON.stringify(blueprint)}\n\`\`\``
+    if (user.includes('short web search queries')) return JSON.stringify({ queries: ['简谐运动 教学大纲', '弹簧振子 单摆'] })
     if (user.includes('Apply the change request')) return JSON.stringify({ ...blueprint, title: '简谐运动（修订）' })
     if (user.includes('Split this lesson into two')) return JSON.stringify({ lessons: [{ title: '弹簧的力（上）', concepts: ['回复力'], estMinutes: 10 }, { title: '弹簧的力（下）', concepts: ['胡克定律'], estMinutes: 10 }] })
     if (user.includes('Expand every project')) {
@@ -101,7 +103,9 @@ test('end-to-end tutoring flow on the host', async () => {
     const llm = fakeLlm()
     const jobs = createJobs()
     const learner = createLearner({ store, llm })
-    const courses = createCourses({ store, llm, jobs })
+    // DSH's web service, answering every query with one source.
+    const web = { async search(request) { return { sources: [{ url: `https://physics.example/${encodeURIComponent(request.query)}`, title: request.query, snippet: '回复力与位移成正比' }] } } }
+    const courses = createCourses({ store, llm, jobs, research: createResearch({ getWeb: () => web, llm }) })
     const lessons = createLessons({ store, llm, jobs, courses, learner })
     const studio = createStudio({ store, llm, jobs })
     const projects = createProjects({ store, llm, jobs, courses, projectsRoot: join(root, 'projects') })
@@ -110,7 +114,10 @@ test('end-to-end tutoring flow on the host', async () => {
     const uploaded = await finish(jobs, studio.upload({ name: '讲义.md', base64: Buffer.from('# 简谐运动\n\n## 回复力\n回复力 F=-kx。\n\n## 单摆\n周期与质量无关。').toString('base64') }))
     assert.equal(uploaded.material.brief.topics[0], '回复力')
 
-    const started = await finish(jobs, courses.startCraft({ goal: '我想学简谐运动', materialIds: [uploaded.material.id] }))
+    const started = await finish(jobs, courses.startCraft({ goal: '我想学简谐运动', materialIds: [uploaded.material.id], web: true }))
+    // The subject was looked up first, and the questions saw what came back.
+    assert.equal(started.research.sources.length, 2)
+    assert.match(llm.calls.find(call => call.user.includes('multiple-choice questions')).user, /<web_sources>[\s\S]*physics\.example/u)
     assert.equal(started.questionnaire.questions.length, 2)
     const { courseId } = started
     const intakeJob = courses.submitIntake({ courseId, answers: { q1: { choice: ['b'], other: '' }, q9: { choice: ['a'] } }, timeline: 'intensive', weeklyMinutes: 120, deadline: '2026-12-01' })
@@ -125,6 +132,8 @@ test('end-to-end tutoring flow on the host', async () => {
     assert.equal(drafted.course.language, 'zh-CN')
     assert.equal(drafted.course.projects[0].unitId, drafted.course.units[1].id)
     const intakePrompt = llm.calls.find(call => call.user.includes('Design the course blueprint')).user
+    assert.match(intakePrompt, /<web_sources>[\s\S]*弹簧振子/u, 'the blueprint is designed with the sources too')
+    assert.equal(drafted.course.sources.length, 2, 'and they stay with the course')
     assert.match(intakePrompt, /学过高中物理/)
     assert.match(intakePrompt, /Intensive pace: for a broad subject, up to/)
     // A narrow goal or a time budget sizes the course; the pace is only a ceiling.

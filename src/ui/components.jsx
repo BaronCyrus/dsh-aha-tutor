@@ -182,6 +182,16 @@ export function describeMaterial(item, t) {
   return parts.join(' · ')
 }
 
+// Web sources: untrusted links, so http(s) only and opened outside the app.
+export function SourceList({ sources }) {
+  const safe = (sources ?? []).filter(source => /^https?:\/\//iu.test(String(source?.url ?? '')))
+  return <ol className="aha-sourceList">{safe.map(source => <li key={source.url}>
+    <a href={source.url} target="_blank" rel="noopener noreferrer">{source.title || source.url}</a>
+    <span className="aha-hint"> · {new URL(source.url).hostname}</span>
+    {source.snippet ? <p className="aha-hint">{source.snippet}</p> : null}
+  </li>)}</ol>
+}
+
 // A course named compactly in lists (its emoji and main title); the full
 // title shows on hover.
 export function CourseLabel({ title, emoji }) {

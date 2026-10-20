@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
-import { CourseLabel, Empty, ErrorLine, Spinner } from '../components.jsx'
+import { ErrorLine, Spinner } from '../components.jsx'
 import { useApp, useLoad } from '../hooks.js'
-import { toDay } from '../../core/planner.js'
+import { PlanItem, togglePlanItem } from '../PlanItem.jsx'
+import { parseDay, toDay } from '../../core/planner.js'
 
 const WEEKLY = [60, 120, 180, 240, 300, 420, 600, 900]
 
@@ -16,6 +17,8 @@ export function PlanScreen() {
   const [exam, setExam] = useState({ title: '', day: '', courseId: '' })
   const [error, setError] = useState(null)
   const weekdayNames = t('weekdays').split(',')
+  const today = toDay(new Date())
+  const [selected, setSelected] = useState(today)
 
   useEffect(() => {
     if (!plan.value) return
@@ -43,8 +46,18 @@ export function PlanScreen() {
     }
   }
 
+  async function toggle(item, day) {
+    setError(null)
+    try {
+      plan.setValue(await togglePlanItem(api, item, day, today))
+    } catch (failure) {
+      setError(failure)
+    }
+  }
+
   const courseTitle = id => courses.value?.find(course => course.id === id)?.title ?? ''
-  const schedule = plan.value?.plan.days.slice(0, 14) ?? []
+  const calendar = plan.value?.calendar ?? []
+  const selectedItems = calendar.find(entry => entry.day === selected)?.items ?? []
 
   return <div className="aha-page">
     <div className="aha-col" style={{ gap: 4 }}><h2 className="aha-title">{t('planTitle')}</h2><p className="aha-hint">{t('planHint')}</p></div>
@@ -80,14 +93,52 @@ export function PlanScreen() {
       </form>
     </section>
     <ErrorLine error={error ?? plan.error} />
-    {plan.loading && !plan.value ? <Spinner label={t('loading')} /> : schedule.length ? <section className="aha-col">
-      {schedule.map(day => <div key={day.day} className="aha-card">
-        <div className="aha-spread"><b>{day.day === toDay(new Date()) ? t('today') : day.day} · {weekdayNames[new Date(`${day.day}T12:00:00`).getDay()]}</b><span className="aha-hint">{t('minutesUnit', { minutes: day.minutes })}</span></div>
-        {day.items.map((item, index) => <div key={`${item.refId}-${index}`} className="aha-spread">
-          <span><span className="aha-tag">{item.kind === 'lesson' ? t('lessonItem') : item.kind === 'review' ? t('reviewItem') : t('examItem')}</span> {item.title}<CourseLabel title={item.courseTitle} emoji={item.courseEmoji} /></span>
-          {item.kind === 'lesson' ? <button type="button" className="aha-btn" data-size="sm" onClick={() => navigate('lesson', { courseId: item.courseId, lessonId: item.refId })}>{t('learn')}</button> : null}
-        </div>)}
-      </div>)}
-    </section> : <Empty>{t('noPlanToday')}</Empty>}
+    {plan.loading && !plan.value ? <Spinner label={t('loading')} /> : <>
+      <PlanCalendar days={calendar} today={today} selected={selected} onSelect={setSelected} weekdayNames={weekdayNames} />
+      <section className="aha-card">
+        <b>{selected === today ? `${t('today')} · ` : ''}{t('dayLabel', { month: parseDay(selected).getMonth() + 1, day: parseDay(selected).getDate(), weekday: weekdayNames[parseDay(selected).getDay()] })}</b>
+        {selectedItems.length
+          ? selectedItems.map(item => <PlanItem key={`${item.kind}:${item.refId}`} item={item} day={selected} today={today} onToggle={toggle} />)
+          : <p className="aha-hint">{selected === today ? t('noPlanToday') : t('dayEmpty')}</p>}
+      </section>
+    </>}
   </div>
+}
+
+const pad = value => String(value).padStart(2, '0')
+const shiftMonth = (month, delta) => {
+  const date = parseDay(`${month}-01`)
+  date.setMonth(date.getMonth() + delta)
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`
+}
+
+// A month at a time, weeks starting on Monday: each day lists what was or
+// is planned, ticked items marked.
+function PlanCalendar({ days, today, selected, onSelect, weekdayNames }) {
+  const { t } = useApp()
+  const [month, setMonth] = useState(today.slice(0, 7))
+  const byDay = useMemo(() => new Map(days.map(entry => [entry.day, entry.items])), [days])
+  const first = parseDay(`${month}-01`)
+  const length = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate()
+  const cells = [...Array((first.getDay() + 6) % 7).fill(null), ...Array.from({ length }, (_, index) => `${month}-${pad(index + 1)}`)]
+  return <section className="aha-card aha-calendar">
+    <div className="aha-spread">
+      <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => setMonth(value => shiftMonth(value, -1))} aria-label={t('prevMonth')}>‹</button>
+      <b>{t('monthLabel', { year: first.getFullYear(), month: first.getMonth() + 1 })}</b>
+      <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => setMonth(value => shiftMonth(value, 1))} aria-label={t('nextMonth')}>›</button>
+    </div>
+    <div className="aha-calGrid">
+      {[1, 2, 3, 4, 5, 6, 0].map(day => <span key={day} className="aha-calHead">{weekdayNames[day]}</span>)}
+      {cells.map((day, index) => {
+        if (!day) return <span key={`gap${index}`} />
+        const items = byDay.get(day) ?? []
+        const finished = items.length > 0 && items.every(item => item.kind === 'exam' || item.checked)
+        return <button key={day} type="button" className="aha-calDay" data-today={day === today ? 'true' : undefined} data-selected={day === selected ? 'true' : undefined} data-past={day < today ? 'true' : undefined} onClick={() => onSelect(day)}>
+          <span className="aha-calNum">{Number(day.slice(8))}{finished ? ' ✓' : ''}</span>
+          {items.slice(0, 3).map(item => <span key={`${item.kind}:${item.refId}`} className="aha-calItem" data-kind={item.kind} data-checked={item.checked ? 'true' : undefined}>{item.title}</span>)}
+          {items.length > 3 ? <span className="aha-calMore">+{items.length - 3}</span> : null}
+        </button>
+      })}
+    </div>
+  </section>
 }

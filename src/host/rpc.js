@@ -98,6 +98,8 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
     'profile/clear': () => learner.clearProfile(),
     'profile/remove-note': payload => learner.removeNote({ id: need(payload, 'id', 'nte') }),
     'plan/get': payload => learner.plan({ today: payload.today }),
+    'plan/check': payload => learner.check({ today: payload.today, day: payload.day, item: payload.item }),
+    'plan/uncheck': payload => learner.uncheck({ today: payload.today, day: String(payload.day ?? '').slice(0, 10), refId: String(payload.refId ?? '').slice(0, 80) }),
     'plan/settings': payload => learner.savePlanSettings({ weeklyMinutes: payload.weeklyMinutes, studyDays: payload.studyDays }),
     'plan/add-exam': payload => learner.addExam({ title: payload.title, day: payload.day, courseId: payload.courseId }),
     'plan/remove-exam': payload => learner.removeExam({ id: need(payload, 'id', 'exm') }),

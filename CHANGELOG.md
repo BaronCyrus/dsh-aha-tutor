@@ -7,6 +7,14 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 ### Added
 
 - **Web research before a course**: a new course can start by looking the subject up with DSH's web search (on by default, off when materials are attached, switchable on the home page). A few searches are made, and what comes back informs the questions and the blueprint. The course page lists the sources under **Sources**. When DSH cannot search, for example without a DeepSeek key, the course is designed as before and the questionnaire says why.
+- **Plan calendar with ticks**: the plan page shows a month calendar; past days keep what was planned and what came of it. Finishing a lesson or a review ticks it on its own, and today's or an earlier day's items can be ticked or unticked by hand, here and on the home page. A lesson ticked by hand counts as done, and the days ahead are planned again; time already studied today comes off today's list instead of pulling the next lesson in.
+- **Board export as PDF and pictures**: **Export board** in a lesson or a short now offers a PDF with one board page per page, a PNG picture per page (several pages come as a ZIP) and the Markdown text as before. The pages are drawn from the board itself, so they keep the handwriting font, formulas, highlights, marks and the questions asked in class, in the board look chosen in Settings.
+
+### Fixed
+
+- **Formulas render as KaTeX meant them again.** The plugin bundled KaTeX 0.16 while DSH 0.2.1 styles formulas with KaTeX 0.18.7's stylesheet, which renamed its layout classes, so superscripts and subscripts were drawn at full size and stacked symbols such as ≠ came apart. The bundled KaTeX is now 0.18.7, and a test keeps the two in step.
+- Dashed lines in board figures (guide lines, heights) stay dashed after they are drawn instead of turning solid.
+- A highlight may contain a single "=", so `==乘积 = 0==` is highlighted instead of showing its marks.
 
 ## 1.3.0 - 2026-10-19
 

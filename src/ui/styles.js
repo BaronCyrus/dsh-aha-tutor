@@ -175,6 +175,27 @@ a.aha-btn{text-decoration:none}
 .aha-sourceList p{margin:2px 0 0;font-size:12.5px;line-height:18px}
 .aha-sources summary{cursor:pointer;color:var(--aha-muted);font-size:13px}
 .aha-sources[open] summary{margin-bottom:6px}
+.aha-planItem{display:flex;align-items:center;gap:8px;min-height:36px;flex-wrap:wrap}
+.aha-planTitle{flex:1;min-width:140px}
+.aha-planItem[data-checked=true] .aha-planTitle{color:var(--aha-muted);text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--aha-muted) 60%,transparent)}
+.aha-check{width:18px;height:18px;margin:0;accent-color:var(--aha-ok);cursor:pointer;flex:0 0 auto}
+.aha-check:disabled{cursor:default;opacity:.85}
+.aha-calendar{container-type:inline-size;container-name:calendar}
+.aha-calGrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.aha-calHead{text-align:center;font-size:12px;color:var(--aha-muted);padding:2px 0}
+.aha-calDay{display:flex;flex-direction:column;align-items:stretch;gap:2px;min-height:86px;padding:4px 5px;border:1px solid var(--aha-border);border-radius:8px;background:var(--aha-surface);color:var(--aha-text);font:inherit;text-align:left;cursor:pointer;overflow:hidden}
+.aha-calDay:hover{background:var(--aha-hover)}
+.aha-calDay[data-past=true]{background:color-mix(in srgb,var(--aha-soft) 55%,var(--aha-surface))}
+.aha-calDay[data-today=true]{border-color:var(--aha-brand)}
+.aha-calDay[data-selected=true]{outline:2px solid var(--aha-brand);outline-offset:-1px}
+.aha-calNum{font-size:12.5px;font-weight:600}
+.aha-calDay[data-today=true] .aha-calNum{color:var(--aha-brand)}
+.aha-calItem{font-size:11.5px;line-height:16px;padding:0 4px;border-radius:4px;background:color-mix(in srgb,var(--aha-brand) 12%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aha-calItem[data-kind=review]{background:color-mix(in srgb,var(--aha-ok) 14%,transparent)}
+.aha-calItem[data-kind=exam]{background:color-mix(in srgb,var(--aha-bad) 16%,transparent)}
+.aha-calItem[data-checked=true]{opacity:.55;text-decoration:line-through}
+.aha-calMore{font-size:11px;color:var(--aha-muted)}
+@container calendar (max-width:560px){.aha-calDay{min-height:54px}.aha-calItem{font-size:0;height:5px;padding:0}.aha-calMore{font-size:10px}}
 .aha-workPreview{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border:1px dashed var(--aha-border);border-radius:10px;background:var(--aha-soft);font-size:13.5px}
 .aha-wrongStep{display:flex;flex-direction:column;gap:2px;margin-top:6px;padding:6px 10px;border-left:3px solid var(--aha-bad);border-radius:0 8px 8px 0;background:color-mix(in srgb,var(--aha-bad) 6%,transparent)}
 .aha-feedback{padding:8px 12px;border-radius:10px;background:var(--aha-soft);font-size:13.5px}
@@ -231,6 +252,13 @@ a.aha-btn{text-decoration:none}
 .aha-pager button[data-active=true]{background:var(--ink);color:var(--paper)}
 .aha-buffering{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:12px;background:var(--aha-surface);border:1px solid var(--aha-border);color:var(--aha-text);font-family:inherit;z-index:4}
 @container board (max-width:640px){.aha-cols{grid-template-columns:1fr}.aha-boardScroll{padding:16px}}
+/* Board pages laid out off screen for PDF and PNG exports (capture.js). */
+.aha-exportPages{position:fixed;left:-40000px;top:0;display:flex;flex-direction:column;align-items:flex-start;gap:24px;pointer-events:none}
+.aha-board.aha-exportPage{flex:none;width:1200px;min-height:675px;padding:40px 56px 24px;display:flex;flex-direction:column;overflow:visible;box-sizing:border-box}
+.aha-exportPage>.aha-cols{flex:1 0 auto}
+.aha-exportPage .aha-op-math{overflow:visible}
+.aha-exportPage .aha-op-code{white-space:pre-wrap;overflow-wrap:anywhere;overflow:visible}
+.aha-exportFoot{display:flex;justify-content:space-between;gap:24px;margin-top:22px;font-size:13px;line-height:18px;color:var(--ink-soft);opacity:.75}
 
 /* ── cheat sheet and print ─────────────────────────────────────────────── */
 .aha-sheet{column-gap:18px;font-size:var(--sheet-size,12px);line-height:1.45}

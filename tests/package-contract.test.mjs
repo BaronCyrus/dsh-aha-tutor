@@ -102,6 +102,16 @@ test('every endpoint the browser calls is routed on the host', async () => {
   assert.ok(called.size > 40)
 })
 
+test('the bundled KaTeX matches the stylesheet DSH loads', async () => {
+  // DSH 0.2.1 styles formulas with KaTeX 0.18.7's stylesheet; markup from
+  // another KaTeX version uses class names that stylesheet does not know.
+  assert.equal(manifest.devDependencies.katex, '0.18.7')
+  const { default: katex } = await import('katex')
+  assert.equal(katex.version, '0.18.7')
+  const html = katex.renderToString('a^2 \\neq 0', { throwOnError: false, strict: 'ignore', trust: false, output: 'html' })
+  for (const name of ['katex-base', 'katex-strut', 'katex-sizing', 'katex-thinbox', 'katex-inner']) assert.ok(html.includes(name), name)
+})
+
 test('the board fonts ship with their licenses, stay small and are all declared', () => {
   assert.ok(manifest.files.includes('assets/fonts/*'))
   let total = 0

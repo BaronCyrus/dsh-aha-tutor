@@ -2,7 +2,10 @@ import katex from 'katex'
 
 // KaTeX markup is cached per formula: the board re-renders every animation
 // frame, formulas do not change. DSH already loads KaTeX's stylesheet and
-// fonts for its own Markdown, so only the renderer is bundled here.
+// fonts for its own Markdown, so only the renderer is bundled here, and it
+// must be the version of that stylesheet (0.18.7 in DSH 0.2.1): KaTeX 0.18
+// renamed its layout classes (katex-sizing, katex-strut, …), and markup from
+// another version loses its superscript sizes and stacked symbols such as ≠.
 const cache = new Map()
 
 export function renderTex(tex, display = false) {

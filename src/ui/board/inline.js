@@ -2,9 +2,10 @@
 // visible length so text can be "written" a character at a time.
 
 // A formula is one token wherever it stands, so "==" or "**" inside it never
-// opens a style, and a bold or highlighted run may contain formulas.
+// opens a style, and a bold or highlighted run may contain formulas. A
+// highlight may hold a single "=" ("==乘积 = 0==").
 const MATH = /\$[^$\n]+\$/gu
-const TOKEN = /(\$[^$\n]+\$|\*\*(?:\$[^$\n]+\$|[^*\n])+?\*\*|==(?:\$[^$\n]+\$|[^=\n])+?==)/gu
+const TOKEN = /(\$[^$\n]+\$|\*\*(?:\$[^$\n]+\$|[^*\n])+?\*\*|==(?:\$[^$\n]+\$|=(?!=)|[^=\n])+?==)/gu
 
 // Formulas inside a styled run keep its style: "==以 $a$ 为边==" highlights a
 // rendered a instead of the raw "$a$".

@@ -7,7 +7,9 @@ import vm from 'node:vm'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const bundlePath = join(root, 'lib', 'client.js')
-const ALLOWED = new Set(['react', 'react/jsx-runtime', '@deepseek-ai/dsh-client-ui-primitives'])
+// The modules DSH's web frontend shares with plugins (its module registry
+// lists react, react/jsx-runtime and react-dom with the platform packages).
+const ALLOWED = new Set(['react', 'react/jsx-runtime', 'react-dom', '@deepseek-ai/dsh-client-ui-primitives'])
 
 function stubRequire(id) {
   if (!ALLOWED.has(id)) throw new Error(`client bundle required an undeclared module: ${id}`)

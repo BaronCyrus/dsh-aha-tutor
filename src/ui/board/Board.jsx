@@ -53,9 +53,14 @@ function DrawnSvg({ markup, reveal, caption }) {
       const start = (index / Math.max(1, shapes.length)) * strokeShare
       const end = ((index + 1) / Math.max(1, shapes.length)) * strokeShare
       const local = Math.min(1, Math.max(0, (reveal - start) / Math.max(0.0001, end - start)))
-      if (length > 0) {
+      // Once a stroke is drawn it gets its own dash pattern back, so dashed
+      // guide lines stay dashed.
+      if (length > 0 && local < 1) {
         shape.style.strokeDasharray = `${length}`
         shape.style.strokeDashoffset = `${length * (1 - local)}`
+      } else {
+        shape.style.strokeDasharray = ''
+        shape.style.strokeDashoffset = ''
       }
       shape.style.fillOpacity = local >= 1 ? '' : String(local * 0.6)
       if (!length) shape.style.opacity = String(local)
@@ -92,7 +97,13 @@ function Animation({ op, reveal, theme }) {
   </div>
 }
 
-function OpView({ op, reveal, marks, aside, now, opRef, theme }) {
+// Exports cannot run an animation: they show its poster, or a labelled frame.
+function AnimationStill({ op, label }) {
+  if (op.poster) return <DrawnSvg markup={op.poster} reveal={1} caption={op.caption} />
+  return <div className="aha-op-note" data-tone="tip">▶ {op.caption || label}</div>
+}
+
+function OpView({ op, reveal, marks, aside, now, opRef, theme, still = false, animationLabel = '' }) {
   const style = { '--reveal': `${Math.round(reveal * 1000) / 10}%` }
   const markDecor = marks.map(mark => <span key={mark.id} className={mark.style === 'circle' ? 'aha-markRing' : mark.style === 'box' ? 'aha-markBox' : 'aha-markLine'} style={{ opacity: mark.reveal, clipPath: `inset(0 ${100 - mark.reveal * 100}% 0 0)` }} />)
   let body
@@ -142,7 +153,7 @@ function OpView({ op, reveal, marks, aside, now, opRef, theme }) {
       break
     }
     case 'anim':
-      body = <Animation op={op} reveal={reveal} theme={theme} />
+      body = still ? <AnimationStill op={op} label={animationLabel} /> : <Animation op={op} reveal={reveal} theme={theme} />
       break
     default:
       body = null
@@ -260,6 +271,34 @@ export function Board({ steps, position, theme = 'light', font = 'hand', bufferi
     </div>
     {buffering ? <div className="aha-buffering"><span className="aha-spinner" />{bufferingLabel}</div> : null}
   </div>
+}
+
+// Every page of a board fully written, for PDF and PNG exports: the same
+// pages, columns and styles as the board, without the pager, the pencil or
+// scrolling. Pages with nothing on them are left out; the first page shows
+// `title` when the board names none. footer: { left, right } beside the
+// page number.
+export function BoardSheets({ steps, title = '', theme = 'light', font = 'hand', footer = {}, animationLabel = '' }) {
+  const layout = useMemo(() => layoutBoard(steps), [steps])
+  const asides = useMemo(() => new Set(steps.flatMap(step => (step.aside ? step.ops.map(op => op.id) : []))), [steps])
+  const marks = useMemo(() => {
+    const byOp = new Map()
+    for (const step of steps) for (const op of step.ops) if (op.t === 'mark') byOp.set(op.ref, [...(byOp.get(op.ref) ?? []), { id: op.id, style: op.style, reveal: 1 }])
+    return byOp
+  }, [steps])
+  const pages = layout.pages.filter(page => page.columns.some(column => column.length))
+  return pages.map((page, index) => {
+    const heading = page.title || (index === 0 ? title : '')
+    return <div key={index} className="aha-board aha-exportPage" data-theme={theme} data-font={font} data-sheet={index}>
+      {heading ? <h2 className="aha-boardTitle"><span><Inline text={heading} /></span></h2> : null}
+      <div className="aha-cols">
+        {page.columns.map((column, columnIndex) => <div className="aha-colBody" key={columnIndex}>
+          {column.map(({ op }) => <OpView key={op.id} op={op} reveal={1} marks={marks.get(op.id) ?? []} aside={asides.has(op.id)} now={false} theme={theme} still animationLabel={animationLabel} />)}
+        </div>)}
+      </div>
+      <div className="aha-exportFoot"><span>{footer.left ?? ''}</span><span>{[footer.right, `${index + 1} / ${pages.length}`].filter(Boolean).join(' · ')}</span></div>
+    </div>
+  })
 }
 
 function lastVisiblePage(layout, steps, position) {

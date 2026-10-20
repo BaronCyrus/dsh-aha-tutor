@@ -1,8 +1,9 @@
 import { useState } from 'react'
 
-import { CourseLabel, Empty, ErrorLine, MaterialPicker, Progress, Spinner } from '../components.jsx'
+import { Empty, ErrorLine, MaterialPicker, Progress, Spinner } from '../components.jsx'
 import { useApp, useLoad, usePersistentState } from '../hooks.js'
 import { Icon } from '../icons.jsx'
+import { PlanItem, togglePlanItem } from '../PlanItem.jsx'
 import { toDay } from '../../core/planner.js'
 
 const MODES = [
@@ -72,6 +73,14 @@ export function HomeScreen() {
   const active = (courses.value ?? []).filter(course => course.status === 'ready' && !course.archived && course.progress.percent < 100).slice(0, 3)
   const pending = (courses.value ?? []).filter(course => course.status !== 'ready' && !course.archived).slice(0, 2)
   const today = plan.value?.today ?? []
+  const todayDay = toDay(new Date())
+  async function toggle(item, day) {
+    try {
+      plan.setValue(await togglePlanItem(api, item, day, todayDay))
+    } catch (failure) {
+      setError(failure)
+    }
+  }
 
   return <div className="aha-page">
     <section className="aha-hero">
@@ -114,12 +123,8 @@ export function HomeScreen() {
     <section className="aha-col">
       <div className="aha-spread"><h3 className="aha-cardTitle">{t('todayPlan')}</h3><button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => navigate('plan')}>{t('navPlan')} →</button></div>
       {plan.loading && !plan.value ? <Spinner /> : today.length ? <div className="aha-col" style={{ gap: 6 }}>
-        {today.map((item, index) => <div key={`${item.refId}-${index}`} className="aha-card" style={{ flexDirection: 'row', alignItems: 'center', padding: '10px 14px' }}>
-          <span className="aha-tag">{item.kind === 'lesson' ? t('lessonItem') : item.kind === 'review' ? t('reviewItem') : t('examItem')}</span>
-          <span style={{ flex: 1 }}>{item.title}<CourseLabel title={item.courseTitle} emoji={item.courseEmoji} /></span>
-          {item.minutes ? <span className="aha-hint">{t('minutesUnit', { minutes: item.minutes })}</span> : null}
-          {item.kind === 'lesson' ? <button type="button" className="aha-btn" data-size="sm" onClick={() => navigate('lesson', { courseId: item.courseId, lessonId: item.refId })}>{t('learn')}</button> : null}
-          {item.kind === 'review' ? <button type="button" className="aha-btn" data-size="sm" onClick={() => navigate('practice', { review: true })}>{t('review')}</button> : null}
+        {today.map(item => <div key={`${item.kind}:${item.refId}`} className="aha-card" style={{ padding: '6px 14px' }}>
+          <PlanItem item={item} day={todayDay} today={todayDay} onToggle={toggle} />
         </div>)}
       </div> : <Empty>{t('noPlanToday')}</Empty>}
     </section>

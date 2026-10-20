@@ -5,13 +5,33 @@
 import { conceptIndex, findLesson, flattenLessons, text } from '../core/course-model.js'
 import { newId } from '../core/ids.js'
 import { masteryPercent } from '../core/mastery.js'
-import { buildPlan, toDay } from '../core/planner.js'
+import { addDays, buildPlan, mergeAgenda, planCalendar, toDay } from '../core/planner.js'
 import { EMPTY_PROFILE, readProfile, readProgress } from './context.js'
 import { generateJson } from './generate.js'
 import { profilePrompt } from './prompts.js'
 
 const PROFILE_REFRESH_MS = 10 * 60_000
 const MAX_NOTES = 30
+
+const AGENDA_DAYS = 180
+const MAX_CHECKS = 1000
+
+// A plan item as stored with the agenda or a tick: only what the calendar
+// shows, every field capped.
+function agendaItem(raw) {
+  const kind = raw?.kind === 'lesson' || raw?.kind === 'review' ? raw.kind : null
+  const refId = text(raw?.refId, 80)
+  if (!kind || !refId) return null
+  return {
+    kind,
+    refId,
+    courseId: /^crs_[a-z0-9]{6,40}$/u.test(String(raw.courseId)) ? raw.courseId : null,
+    title: text(raw.title, 160),
+    courseTitle: text(raw.courseTitle, 160),
+    courseEmoji: text(raw.courseEmoji, 8),
+    minutes: Math.min(240, Math.max(0, Math.round(Number(raw.minutes) || 0))),
+  }
+}
 
 export function createLearner({ store, llm, now = () => new Date(), logger }) {
   let lastRefresh = 0
@@ -73,8 +93,12 @@ export function createLearner({ store, llm, now = () => new Date(), logger }) {
     return {
       settings: { weeklyMinutes: plan.settings?.weeklyMinutes ?? 300, studyDays: plan.settings?.studyDays ?? [1, 2, 3, 4, 5, 6, 0] },
       exams: Array.isArray(plan.exams) ? plan.exams : [],
+      checks: Array.isArray(plan.checks) ? plan.checks : [],
+      agenda: plan.agenda && typeof plan.agenda === 'object' ? plan.agenda : {},
     }
   }
+
+  const validDay = value => (/^\d{4}-\d{2}-\d{2}$/u.test(String(value ?? '')) ? value : null)
 
   async function activeCourses() {
     const ids = await store.listIds(store.paths.courses(), 'crs')
@@ -87,33 +111,88 @@ export function createLearner({ store, llm, now = () => new Date(), logger }) {
     return result
   }
 
+  // The plan from today on, and a calendar of what was planned and done.
+  // A lesson ticked by hand counts as done for planning; a review ticked by
+  // hand leaves today's list only (its review schedule is untouched). Time
+  // already studied today comes off today's list, so finishing an item does
+  // not pull the next one in.
   async function plan({ today } = {}) {
     const file = await readPlanFile()
-    const day = /^\d{4}-\d{2}-\d{2}$/u.test(String(today ?? '')) ? today : toDay(now())
+    const day = validDay(today) ?? toDay(now())
     const active = await activeCourses()
+    const tickedLessons = new Set(file.checks.filter(check => check.kind === 'lesson' && check.day <= day).map(check => check.refId))
+    const tickedToday = new Set(file.checks.filter(check => check.day === day).map(check => check.refId))
     const reviews = []
+    const done = { lessons: new Map(), reviews: new Map() }
     for (const { course, progress } of active) {
+      const label = { courseId: course.id, courseTitle: course.title, courseEmoji: course.emoji ?? '' }
       const index = conceptIndex(course)
       for (const [conceptId, card] of Object.entries(progress.reviews ?? {})) {
         const concept = index.get(conceptId)
         if (!concept) continue
-        reviews.push({ id: `${course.id}:${conceptId}`, courseId: course.id, title: concept.name, dueDay: toDay(new Date(card.dueAt)), minutes: 5 })
+        const id = `${course.id}:${conceptId}`
+        if (card.lastReviewedAt) done.reviews.set(id, toDay(new Date(card.lastReviewedAt)))
+        if (!tickedToday.has(id)) reviews.push({ id, ...label, title: concept.name, dueDay: toDay(new Date(card.dueAt)), minutes: 5 })
+      }
+      for (const { lesson } of flattenLessons(course)) {
+        const record = progress.lessons?.[lesson.id]
+        if (record?.status === 'done' && record.completedAt) done.lessons.set(lesson.id, { day: toDay(new Date(record.completedAt)), item: { kind: 'lesson', refId: lesson.id, title: lesson.title, minutes: lesson.estMinutes, ...label } })
       }
     }
+    const spent = new Map()
+    for (const { day: doneDay, item } of done.lessons.values()) if (doneDay === day) spent.set(item.refId, item.minutes)
+    for (const item of file.agenda[day] ?? []) {
+      if (item.kind === 'review' && (done.reviews.get(item.refId) === day || tickedToday.has(item.refId))) spent.set(item.refId, item.minutes)
+    }
+    for (const check of file.checks) if (check.day === day && check.item) spent.set(check.refId, check.item.minutes)
     const built = buildPlan({
       today: day,
+      spentToday: [...spent.values()].reduce((sum, minutes) => sum + (Number(minutes) || 0), 0),
       settings: file.settings,
       courses: active.map(({ course, progress }) => ({
         id: course.id,
         title: course.title,
         emoji: course.emoji ?? '',
         deadline: course.settings?.deadline ?? null,
-        lessons: flattenLessons(course).map(({ lesson }) => ({ id: lesson.id, title: lesson.title, minutes: lesson.estMinutes, done: progress.lessons?.[lesson.id]?.status === 'done' })),
+        lessons: flattenLessons(course).map(({ lesson }) => ({ id: lesson.id, title: lesson.title, minutes: lesson.estMinutes, done: progress.lessons?.[lesson.id]?.status === 'done' || tickedLessons.has(lesson.id) })),
       })),
       reviews,
       exams: file.exams.map(exam => ({ id: exam.id, title: exam.title, day: exam.day, courseId: exam.courseId ?? null })),
     })
-    return { settings: file.settings, exams: file.exams, plan: built, today: built.days.find(entry => entry.day === day)?.items ?? [] }
+    // Keep what is planned today, so it stays on today's list once done.
+    // The file is written only when today's list or the kept days change.
+    const planned = (built.days.find(entry => entry.day === day)?.items ?? []).filter(item => item.kind !== 'exam').map(agendaItem)
+    const oldest = addDays(day, -AGENDA_DAYS)
+    const merged = mergeAgenda(file.agenda[day] ?? [], planned).slice(0, 40)
+    let agenda = file.agenda
+    if (JSON.stringify(merged) !== JSON.stringify(file.agenda[day] ?? []) || Object.keys(file.agenda).some(key => key < oldest)) {
+      const saved = await store.updateJson(store.paths.plan(), {}, current => {
+        const kept = Object.fromEntries(Object.entries(current.agenda ?? {}).filter(([key]) => validDay(key) && key >= oldest))
+        kept[day] = mergeAgenda(kept[day] ?? [], planned).slice(0, 40)
+        return { ...current, agenda: kept }
+      })
+      agenda = saved.agenda
+    }
+    const calendar = planCalendar({ today: day, agenda, plan: built, done, checks: file.checks })
+    return { settings: file.settings, exams: file.exams, plan: built, today: calendar.today, calendar: calendar.days }
+  }
+
+  // Tick an item by hand (on the day it belongs to), or take the tick back.
+  async function check({ today, day, item }) {
+    const current = validDay(today) ?? toDay(now())
+    const when = validDay(day)
+    const entry = agendaItem(item ?? {})
+    if (!when || !entry || when > current) throw new Error('Only today or an earlier day can be ticked')
+    await store.updateJson(store.paths.plan(), {}, current => ({
+      ...current,
+      checks: [...(current.checks ?? []).filter(existing => !(existing.refId === entry.refId && existing.day === when)), { refId: entry.refId, kind: entry.kind, day: when, item: entry, at: now().toISOString() }].slice(-MAX_CHECKS),
+    }))
+    return plan({ today })
+  }
+
+  async function uncheck({ today, day, refId }) {
+    await store.updateJson(store.paths.plan(), {}, current => ({ ...current, checks: (current.checks ?? []).filter(existing => !(existing.refId === refId && existing.day === day)) }))
+    return plan({ today })
   }
 
   async function savePlanSettings({ weeklyMinutes, studyDays }) {
@@ -170,7 +249,7 @@ export function createLearner({ store, llm, now = () => new Date(), logger }) {
     return { items }
   }
 
-  return Object.freeze({ getProfile, saveProfile, clearProfile, removeNote, noteLesson, plan, savePlanSettings, addExam, removeExam, reviewSession })
+  return Object.freeze({ getProfile, saveProfile, clearProfile, removeNote, noteLesson, plan, check, uncheck, savePlanSettings, addExam, removeExam, reviewSession })
 }
 
 function list(value) {

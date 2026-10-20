@@ -142,6 +142,8 @@ test('formulas inside a highlight or bold keep rendering as math', () => {
   // "==" or "**" inside a formula never opens a style.
   assert.deepEqual(parseInline('$a == b$ 且 ==c=='), [{ kind: 'math', tex: 'a == b' }, { kind: 'text', text: ' 且 ' }, { kind: 'mark', text: 'c' }])
   assert.deepEqual(parseInline('==价格 $5=='), [{ kind: 'mark', text: '价格 $5' }])
+  // A single "=" inside a highlight is text (seen on a generated board).
+  assert.deepEqual(parseInline('只有 ==乘积 = 0== 时'), [{ kind: 'text', text: '只有 ' }, { kind: 'mark', text: '乘积 = 0' }, { kind: 'text', text: ' 时' }])
   assert.equal(inlinePlain('==以 $a$ 为边=='), '以 a 为边')
   assert.deepEqual(sliceInline(parseInline('==以 $a$ 为边=='), 2), [{ kind: 'mark', text: '以 ' }])
 })

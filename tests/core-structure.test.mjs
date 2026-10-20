@@ -24,7 +24,7 @@ import {
 } from '../src/core/course-model.js'
 import { assertId, isId, newId } from '../src/core/ids.js'
 import { extractJson, parseJsonLines, repairTruncated } from '../src/core/json-extract.js'
-import { addDays, buildPlan, daysBetween, toDay } from '../src/core/planner.js'
+import { addDays, buildPlan, daysBetween, mergeAgenda, planCalendar, toDay } from '../src/core/planner.js'
 
 const rawBlueprint = {
   title: '数据分析入门',
@@ -233,6 +233,45 @@ test('planner spreads lessons over study days, keeps review time and flags deadl
   assert.equal(addDays('2026-12-31', 1), '2027-01-01')
   assert.equal(daysBetween('2026-03-01', '2026-03-31'), 30)
   assert.equal(toDay(new Date(2026, 0, 5)), '2026-01-05')
+})
+
+test('time studied today comes off today\'s list instead of pulling more in', () => {
+  const today = '2026-10-19'
+  const course = { id: 'crs_a', title: 'A', lessons: Array.from({ length: 4 }, (_, index) => ({ id: `l${index}`, title: `L${index}`, minutes: 20 })) }
+  const settings = { weeklyMinutes: 140, studyDays: [0, 1, 2, 3, 4, 5, 6] }
+  assert.equal(buildPlan({ today, settings, courses: [course] }).days[0].day, today)
+  const spent = buildPlan({ today, settings, courses: [course], spentToday: 20 })
+  assert.equal(spent.days[0].day, '2026-10-20', 'a full day gets nothing more')
+  const wider = { weeklyMinutes: 280, studyDays: settings.studyDays }
+  assert.equal(buildPlan({ today, settings: wider, courses: [course], spentToday: 25 }).days[0].day, '2026-10-20', 'a lesson that no longer fits is not forced in once the learner has studied')
+  const roomy = buildPlan({ today, settings: wider, courses: [course], spentToday: 15 })
+  assert.equal(roomy.days[0].day, today)
+  assert.deepEqual(roomy.days[0].items.map(item => item.refId), ['l0'])
+})
+
+test('the plan calendar keeps past days as planned and ticks what was done', () => {
+  const today = '2026-10-21'
+  const lesson = id => ({ kind: 'lesson', refId: id, courseId: 'crs_aaaaaa', title: id, minutes: 20 })
+  const review = id => ({ kind: 'review', refId: id, courseId: 'crs_aaaaaa', title: id, minutes: 5 })
+  assert.deepEqual(mergeAgenda([lesson('a')], [lesson('a'), lesson('b')]).map(item => item.refId), ['a', 'b'])
+  const calendar = planCalendar({
+    today,
+    agenda: { '2026-10-19': [lesson('a'), review('crs_aaaaaa:k1'), review('crs_aaaaaa:k2')], '2026-10-20': [lesson('b')], [today]: [lesson('x')], '2026-10-25': [lesson('future')] },
+    plan: { days: [{ day: '2026-10-20', items: [lesson('stale')] }, { day: today, items: [lesson('c')] }, { day: '2026-10-22', items: [lesson('d'), { kind: 'exam', refId: 'e1', title: 'exam', minutes: 0 }] }] },
+    done: {
+      lessons: new Map([['a', { day: '2026-10-19', item: lesson('a') }], ['z', { day: '2026-10-20', item: lesson('z') }], ['later', { day: '2026-10-30', item: lesson('later') }]]),
+      reviews: new Map([['crs_aaaaaa:k1', '2026-10-19'], ['crs_aaaaaa:k2', '2026-10-21']]),
+    },
+    checks: [{ refId: 'b', day: '2026-10-20', item: lesson('b') }, { refId: 'x', day: '2026-10-22', item: lesson('x') }],
+  })
+  const byDay = Object.fromEntries(calendar.days.map(entry => [entry.day, entry.items.map(item => `${item.refId}:${item.checked}`)]))
+  assert.deepEqual(byDay['2026-10-19'], ['a:auto', 'crs_aaaaaa:k1:auto', 'crs_aaaaaa:k2:false'], 'a review counts on the day it was done only')
+  assert.deepEqual(byDay['2026-10-20'], ['b:manual', 'z:auto'], 'a lesson done on an unplanned day still shows there')
+  assert.deepEqual(byDay[today], ['x:false', 'c:false'])
+  assert.deepEqual(byDay['2026-10-22'], ['d:false', 'e1:false'], 'future days and exams are never ticked')
+  assert.equal(byDay['2026-10-25'], undefined, 'only past agendas are kept')
+  assert.equal(byDay['2026-10-30'], undefined)
+  assert.deepEqual(calendar.today.map(item => item.refId), ['x', 'c'])
 })
 
 test('course packs round-trip with fresh ids and remapped progress', () => {

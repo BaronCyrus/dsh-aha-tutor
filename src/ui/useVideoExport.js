@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-import { downloadBlob } from './api.js'
+import { downloadBlob, downloadName } from './api.js'
 import { fetchSpeech } from './context.js'
 import { useApp, useDarkMode } from './hooks.js'
 import { exportVideo, videoSupported } from './video.js'
@@ -35,7 +35,7 @@ export function useVideoExport() {
         signal: local.signal,
         onProgress: progress => setState({ percent: Math.round((progress.done / Math.max(1, progress.total)) * 100), phase: progress.phase }),
       })
-      downloadBlob(`${String(title || 'aha').replace(/[<>:"/\\|?*]/gu, ' ').slice(0, 60)}.webm`, blob)
+      downloadBlob(`${downloadName(title)}.webm`, blob)
     } catch (error) {
       if (!local.signal.aborted) toast(error.message === 'unsupported' ? t('exportUnsupported') : t('errorGeneric', { message: error.message }))
     } finally {

@@ -18,6 +18,7 @@ This file governs the entire `dsh-aha-tutor` repository.
   - `src/agent.js` (`dsh-aha-tutor/agent`): the conversation preset's tools and system-prompt section.
   - `src/client.jsx` (browser): the full-page app, sidebar entry, right-sidebar board tab and tool cards, built from `src/ui/` through the client wrapper in `tsdown.config.mjs`.
 - `src/core/` is pure logic shared by host and browser (mastery, SRS, planner, grading, board scripts, course model, retrieval, JSON extraction). Keep it free of Node and DOM APIs.
+- Formulas are rendered by the bundled KaTeX and styled by the KaTeX stylesheet and fonts DSH loads. The bundled version must be the stylesheet's version (0.18.7 in DSH 0.2.1); KaTeX renames layout classes between versions. `tests/package-contract.test.mjs` pins it; change both together when DSH moves.
 - Generation uses only the model the user chose: DSH's default model or the plugin's two overrides ("teach" and "quick"). Never fall back to another provider, model or credential source on a failure.
 - Web research before course design goes through DSH's own web service (`ctx.get('web')`) and whatever search provider DSH is configured with. The plugin never calls a search vendor or touches its credentials; when DSH cannot search, the course is designed without research and the reason is shown.
 - Generate on demand: course structure when the learner confirms the blueprint, a lesson's board when it is opened plus at most one prefetched next lesson. Never generate a whole course's boards in the background.

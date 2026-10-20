@@ -322,7 +322,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
         {crumb ? <span className="aha-crumb">{crumb}</span> : null}
         <span className="aha-cardTitle">{title}</span>
       </div>
-      <div className="aha-row">{header}</div>
+      <div className="aha-row">{typeof header === 'function' ? header({ steps }) : header}</div>
     </div>
     <div className="aha-classBody">
       <div className="aha-classMain">

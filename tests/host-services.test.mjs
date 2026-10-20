@@ -227,6 +227,20 @@ test('end-to-end tutoring flow on the host', async () => {
     const plan = await learner.plan({ today: '2026-10-19' })
     assert.ok(plan.plan.days.length > 0)
     assert.ok(plan.plan.days.flatMap(day => day.items).some(item => item.kind === 'lesson'))
+    // Today's list is kept and ticked; a lesson ticked by hand counts as done,
+    // and the plan ahead moves up without it.
+    const planned = plan.today.find(item => item.kind === 'lesson' && !item.checked)
+    assert.ok(planned)
+    assert.deepEqual((await learner.plan({ today: '2026-10-19' })).today.map(item => item.refId), plan.today.map(item => item.refId))
+    const ticked = await learner.check({ today: '2026-10-19', day: '2026-10-19', item: planned })
+    assert.equal(ticked.today.find(item => item.refId === planned.refId)?.checked, 'manual')
+    assert.ok(!ticked.plan.days.flatMap(day => day.items).some(item => item.refId === planned.refId))
+    assert.equal(ticked.calendar.find(entry => entry.day === '2026-10-19')?.items.find(item => item.refId === planned.refId)?.checked, 'manual')
+    await assert.rejects(learner.check({ today: '2026-10-19', day: '2026-10-20', item: planned }), /today or an earlier day/u)
+    await assert.rejects(learner.check({ today: '2026-10-19', day: '2026-10-18', item: { kind: 'exam', refId: 'x' } }), /today or an earlier day/u)
+    const unticked = await learner.uncheck({ today: '2026-10-19', day: '2026-10-19', refId: planned.refId })
+    assert.equal(unticked.today.find(item => item.refId === planned.refId)?.checked, false)
+    assert.ok(unticked.plan.days.flatMap(day => day.items).some(item => item.refId === planned.refId), 'unticked, the lesson is planned again')
     const session = await learner.reviewSession()
     assert.equal(session.items.length, 0, 'the review is not due yet')
     // Once due, a course page can review its own course only.

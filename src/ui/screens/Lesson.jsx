@@ -1,11 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { downloadText } from '../api.js'
+import { BoardExport } from '../BoardExport.jsx'
 import { Classroom } from '../Classroom.jsx'
 import { ErrorLine, Modal, Spinner } from '../components.jsx'
 import { useApp, useLoad } from '../hooks.js'
 import { useVideoExport } from '../useVideoExport.js'
-import { boardToMarkdown } from '../../core/board-script.js'
 
 export function LessonScreen({ courseId, lessonId }) {
   const { api, t, navigate } = useApp()
@@ -61,10 +60,10 @@ export function LessonScreen({ courseId, lessonId }) {
       onPosition={savePosition}
       onEnded={() => setFinished(true)}
       onStreamDone={result => { if (result?.board?.steps?.length) setSource(current => ({ ...current, steps: result.board.steps })) }}
-      header={<>
+      header={({ steps }) => <>
         <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => navigate('course', { courseId })}>← {t('backToCourse')}</button>
         <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => navigate('practice', { courseId, lessonId })}>{t('practice')}</button>
-        <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" disabled={!source.steps.length} onClick={() => downloadText(`${lesson.title}.md`, boardToMarkdown({ title: lesson.title, steps: source.steps }), 'text/markdown')}>{t('exportBoard')}</button>
+        <BoardExport steps={steps} title={lesson.title} />
         {video.exporting
           ? <><Spinner label={t('exporting', { percent: video.exporting.percent })} /><button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={video.cancel}>{t('cancel')}</button></>
           : <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" disabled={!source.steps.length} title={video.cloud ? '' : t('exportNeedsCloud')} onClick={() => video.start({ steps: source.steps, title: lesson.title })}>{t('exportVideo')}</button>}

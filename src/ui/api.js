@@ -76,6 +76,12 @@ export function fileToBase64(file) {
   })
 }
 
+// A learner-visible title as a download name: no path separators or
+// characters Windows refuses, at most 60 characters.
+export function downloadName(title, fallback = 'aha') {
+  return String(title ?? '').replace(/[<>:"/\\|?*\u0000-\u001f]/gu, ' ').replace(/\s+/gu, ' ').trim().slice(0, 60).trim() || fallback
+}
+
 export function downloadText(fileName, textValue, mime = 'application/json') {
   const url = URL.createObjectURL(new Blob([textValue], { type: `${mime};charset=utf-8` }))
   const anchor = document.createElement('a')

@@ -47,9 +47,10 @@ function clampNumber(value, min, max, fallback) {
 }
 
 // courses: [{ id, title, deadline?, priority?, lessons: [{ id, title, minutes, done }] }]
-// reviews: [{ id, courseId?, title, dueDay, minutes }]
+// reviews: [{ id, courseId?, title, courseTitle?, courseEmoji?, dueDay, minutes }]
 // exams:   [{ id, title, day, courseId? }]
-export function buildPlan({ today, settings, courses = [], reviews = [], exams = [] }) {
+// spentToday: minutes already studied today, which today's list leaves out.
+export function buildPlan({ today, settings, courses = [], reviews = [], exams = [], spentToday = 0 }) {
   const start = today ?? toDay(new Date())
   const { studyDays, weeklyMinutes, dailyMinutes } = normalizeSettings(settings)
 
@@ -82,13 +83,14 @@ export function buildPlan({ today, settings, courses = [], reviews = [], exams =
     const items = examsToday.map(exam => ({ kind: 'exam', refId: exam.id, courseId: exam.courseId ?? null, title: exam.title, minutes: 0 }))
 
     if (studyDays.includes(weekday)) {
-      let budget = dailyMinutes
-      const reviewBudget = Math.round(dailyMinutes * REVIEW_SHARE)
+      const spent = offset === 0 ? Math.max(0, Number(spentToday) || 0) : 0
+      let budget = dailyMinutes - spent
+      const reviewBudget = Math.min(Math.max(0, budget), Math.round(dailyMinutes * REVIEW_SHARE))
       let reviewUsed = 0
       while (pendingReviews.length && pendingReviews[0].dueDay <= day && reviewUsed + pendingReviews[0].minutes <= reviewBudget) {
         const review = pendingReviews.shift()
         reviewUsed += review.minutes
-        items.push({ kind: 'review', refId: review.id, courseId: review.courseId ?? null, title: review.title, minutes: review.minutes })
+        items.push({ kind: 'review', refId: review.id, courseId: review.courseId ?? null, title: review.title, courseTitle: review.courseTitle ?? '', courseEmoji: review.courseEmoji ?? '', minutes: review.minutes })
       }
       budget -= reviewUsed
 
@@ -100,7 +102,7 @@ export function buildPlan({ today, settings, courses = [], reviews = [], exams =
         for (const queue of ordered) {
           const lesson = queue.remaining[0]
           if (!lesson) continue
-          const dayIsEmpty = !items.some(item => item.kind === 'lesson')
+          const dayIsEmpty = !spent && !items.some(item => item.kind === 'lesson')
           if (lesson.minutes <= budget || dayIsEmpty) {
             queue.remaining.shift()
             budget -= lesson.minutes
@@ -165,4 +167,48 @@ function neededWeeklyMinutes(course, start, deadline, studyDays) {
 
 export function todayItems(plan, day) {
   return plan?.days?.find(entry => entry.day === day)?.items ?? []
+}
+
+const itemKey = item => `${item.kind}:${item.refId}`
+
+// Today's planned items join what was already planned today (a lesson done
+// this morning stays on the list, ticked).
+export function mergeAgenda(saved = [], planned = []) {
+  const seen = new Set(saved.map(itemKey))
+  return [...saved, ...planned.filter(item => !seen.has(itemKey(item)))]
+}
+
+// The calendar the plan page shows: past days as they were planned and what
+// came of them, today's list, and the plan ahead.
+//   agenda:  { [day]: items } as planned on each day
+//   done:    { lessons: Map(refId → { day, item }), reviews: Map(refId → day) }
+//   checks:  [{ refId, day, item }] ticked by hand
+// Each item gets checked: 'auto' | 'manual' | false (future days and exams
+// are never ticked). A lesson finished on a day it was not planned for still
+// shows on that day; a review counts only where it was planned or ticked.
+export function planCalendar({ today, agenda = {}, plan, done = {}, checks = [], ahead = 120 }) {
+  const lessonsDone = done.lessons ?? new Map()
+  const reviewsDone = done.reviews ?? new Map()
+  const last = addDays(today, ahead)
+  const days = new Map()
+  const put = (day, item) => {
+    const list = days.get(day) ?? []
+    if (!list.some(entry => itemKey(entry) === itemKey(item))) list.push(item)
+    days.set(day, list)
+  }
+  for (const [day, items] of Object.entries(agenda)) if (day <= today) for (const item of items) put(day, item)
+  for (const entry of plan?.days ?? []) if (entry.day >= today && entry.day <= last) for (const item of entry.items) put(entry.day, item)
+  for (const { day, item } of lessonsDone.values()) if (day <= today) put(day, item)
+  for (const check of checks) if (check.day <= today && check.item) put(check.day, check.item)
+  const status = (item, day) => {
+    if (day > today || item.kind === 'exam') return false
+    if (checks.some(check => check.refId === item.refId && check.day === day)) return 'manual'
+    if (item.kind === 'lesson' && lessonsDone.get(item.refId)?.day === day) return 'auto'
+    if (item.kind === 'review' && reviewsDone.get(item.refId) === day) return 'auto'
+    return false
+  }
+  const out = [...days.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([day, items]) => ({ day, items: items.map(item => ({ ...item, checked: status(item, day) })) }))
+  return { today: out.find(entry => entry.day === today)?.items ?? [], days: out }
 }

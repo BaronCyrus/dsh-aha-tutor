@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+import { BoardExport } from '../BoardExport.jsx'
 import { Classroom } from '../Classroom.jsx'
 import { Empty, ErrorLine, Spinner } from '../components.jsx'
 import { useApp, useLoad, useOnce } from '../hooks.js'
@@ -54,7 +55,8 @@ export function ShortsScreen({ draftTopic, draftUrl, token }) {
         {current ? <div className="aha-shortStage">
           <Classroom key={current.key} scope={{ kind: 'short', id: current.id }} title={current.title} steps={current.steps} stream={current.stream} language={current.language} recordChecks={false}
             onStreamDone={result => { setCurrent(previous => ({ ...previous, steps: result?.item?.board?.steps ?? previous.steps, title: result?.item?.title ?? previous.title, stream: null })); list.reload() }}
-            header={<>
+            header={({ steps }) => <>
+              <BoardExport steps={steps} title={current.title} kind={null} />
               {video.exporting ? <><Spinner label={t('exporting', { percent: video.exporting.percent })} /><button type="button" className="aha-btn" data-size="sm" onClick={video.cancel}>{t('cancel')}</button></>
                 : <button type="button" className="aha-btn" data-size="sm" disabled={!current.steps.length} onClick={() => video.start({ steps: current.steps, title: current.title })}>{t('exportVideo')}</button>}
             </>} />

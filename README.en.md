@@ -30,9 +30,9 @@
 | **Practice, flashcards, reviews** | Every lesson has practice, with figures where they help, open answers graded by the model and keyboard answering; a round ends with stars, how your mastery moved and a next step. Flashcards and concepts come back on a spaced-repetition schedule, and the study plan leaves time for them |
 | **Your materials become courses** | PDF, Word, PowerPoint, Markdown, web links and images (images need a vision model). Lessons and cheat sheets cite pages; long readings can be digested into structure, claims and a glossary |
 | **Cheat sheets, notes, quizzes** | Printable cheat sheets organized by theme (columns, font size and highlighting adjustable), plus notes, flashcard decks and quizzes |
-| **Explainer shorts and video export** | A two-minute whiteboard explainer from a topic or a link; any lesson exports to a video with the handwriting, captions and a watermark |
+| **Explainer shorts and exports** | A two-minute whiteboard explainer from a topic or a link; any lesson exports to a video with the handwriting, captions and a watermark, or its board to a PDF (one board page per page, handwriting and formulas included) or a PNG picture per page |
 | **Hands-on projects** | Code projects get a folder with starter files and a DSH session where a coding agent helps you build; submit it back for a rubric-based review |
-| **Study plan and learner profile** | Lessons are scheduled around your weekly time, study days and deadlines, with warnings when a deadline is at risk; the tutor remembers your background and weak spots, which you can view, edit or clear |
+| **Study plan and learner profile** | Lessons are scheduled around your weekly time, study days and deadlines, with warnings when a deadline is at risk; a month calendar ticks what you finish, takes ticks by hand and replans the days ahead; the tutor remembers your background and weak spots, which you can view, edit or clear |
 | **In conversations too** | A new conversation preset, "开窍 · AI 私人老师", lets the tutor explain on the whiteboard, run interactive quizzes, design a course or make a cheat sheet right from a DSH chat |
 
 Two sample courses ship with the plugin (harmonic motion and Bayesian thinking, in Chinese) so you can try the chalkboard classroom without spending tokens.

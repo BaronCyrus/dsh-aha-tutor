@@ -123,7 +123,7 @@ export function createProjects({ store, llm, jobs, courses, projectsRoot = resol
         const content = await readWorkspace(folder)
         if (content) parts.push(`Files in the project folder:\n${content}`)
       }
-      if (!parts.length) throw new TutorError('invalid', 'Nothing to review yet: write a note or work in the project folder first')
+      if (!parts.length) throw new TutorError('nothing-to-review', 'Nothing to review yet: write a note or work in the project folder first')
       const result = await generateJson(llm, {
         purpose: 'teach',
         prompt: projectReviewPrompt({ project, submission: parts.join('\n\n'), language: course.language }),

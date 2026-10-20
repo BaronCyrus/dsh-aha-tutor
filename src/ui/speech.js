@@ -189,11 +189,11 @@ function cloudEngine({ fetchAudio }) {
       audio.src = url
       audio.playbackRate = Math.min(2, Math.max(0.5, rate))
       audio.onended = () => { if (session === state) session = null; resolveDone({ completed: true }) }
-      audio.onerror = () => { if (session === state) session = null; resolveDone({ completed: false, error: 'playback' }) }
+      audio.onerror = () => { if (session === state) session = null; resolveDone({ completed: false, error: 'playback', code: 'playback' }) }
       return audio.play()
     }).catch(error => {
       if (session === state) session = null
-      resolveDone({ completed: false, error: error?.message ?? 'tts' })
+      resolveDone({ completed: false, error: error?.message ?? 'tts', code: error?.code })
     })
     return { done }
   }

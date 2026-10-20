@@ -9,12 +9,14 @@ import { applyEvidence, createConceptState, masteryPercent, recommendNext } from
 import { createCard, gradeFromScore, review } from '../core/srs.js'
 import { masteryFor, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
 import { generateJson, generateSteps, TutorError } from './generate.js'
-import { askPrompt, cheatsheetPrompt, correctionPrompt, flashcardsPrompt, gradePrompt, lessonPrompt, quizPrompt, reexplainPrompt } from './prompts.js'
+import { askPrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, flashcardsPrompt, gradePrompt, lessonPrompt, quizPrompt, reexplainPrompt } from './prompts.js'
 
 const EVENTS_KEPT = 200
 // Questions and re-explanations kept per lesson, replayed where they were asked.
 const ASIDES_KEPT = 30
 const STEP_ID = /^s\d{1,4}$/u
+// Jobs that write a lesson's board: opened by the learner, or prefetched.
+const BOARD_JOBS = ['lesson/board', 'lesson/prefetch']
 
 export function createLessons({ store, llm, jobs, courses, learner, now = () => new Date() }) {
   const stamp = () => now().toISOString()
@@ -133,20 +135,33 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }).catch(() => undefined)
   }
 
+  // The job writing the board on the learner's screen, when the classroom
+  // follows one (scope.jobId) and it is the job for this board.
+  function followedJob(scope, kinds, meta) {
+    const job = scope?.jobId ? jobs.get(scope.jobId) : null
+    return job && kinds.includes(job.kind) && Object.entries(meta).every(([key, value]) => job.meta?.[key] === value) ? job : null
+  }
+
   // Resolve the board a question refers to: a course lesson, an assist thread
-  // or an explainer short.
+  // or an explainer short. While that board is still being written (the first
+  // time, or again over a saved one), it is the steps written so far: the
+  // learner sees those, and the saved board starts with the same ones.
   async function scopeBoard(scope) {
     if (scope?.kind === 'lesson') {
       const { course, row } = await context(scope.courseId, scope.lessonId)
-      const board = await store.readJson(store.paths.board(course.id, row.lesson.id), null)
+      const writing = followedJob(scope, BOARD_JOBS, { courseId: course.id, lessonId: row.lesson.id })
+      const board = writing ? { steps: writing.partial } : await store.readJson(store.paths.board(course.id, row.lesson.id), null)
       return { course, lesson: row.lesson, board, language: course.language }
     }
     if (scope?.kind === 'thread' || scope?.kind === 'short') {
-      const kind = scope.kind === 'thread' ? 'assist' : 'shorts'
-      const item = await store.readJson(store.paths.item(kind, scope.id), null)
-      if (!item) throw new TutorError('not-found', 'Not found')
-      const board = scope.kind === 'thread' ? item.turns?.[Math.max(0, Math.min(item.turns.length - 1, Number(scope.turn) || 0))]?.board : item.board
-      return { course: null, lesson: { title: item.title, objectives: [] }, board, language: item.language }
+      const thread = scope.kind === 'thread'
+      const writing = thread ? followedJob(scope, ['assist/turn'], { threadId: scope.id }) : followedJob(scope, ['short/make'], { id: scope.id })
+      const item = await store.readJson(store.paths.item(thread ? 'assist' : 'shorts', scope.id), null)
+      if (!item && !writing) throw new TutorError('not-found', 'Not found')
+      const board = writing ? { steps: writing.partial } : thread ? item.turns?.[Math.max(0, Math.min(item.turns.length - 1, Number(scope.turn) || 0))]?.board : item.board
+      // A new thread or short has no saved language yet: its steps are written in it.
+      const language = item?.language ?? detectLanguage((board?.steps ?? []).map(step => step.say).join(' '))
+      return { course: null, lesson: { title: item?.title ?? writing.meta?.title ?? '', objectives: [] }, board, language }
     }
     throw new TutorError('invalid', 'Unknown board')
   }
@@ -167,7 +182,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
 
   function ask({ scope, stepIndex = 0, question, anchorStepId }) {
     const request = text(question, 1500)
-    if (!request) throw new TutorError('invalid', 'Type your question')
+    if (!request) throw new TutorError('empty-question', 'Type your question')
     return jobs.start('lesson/ask', async api => {
       const { course, lesson, board, language } = await scopeBoard(scope)
       const profile = await readProfile(store)
@@ -189,7 +204,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
   function reexplain({ scope, stepIndex = 0, style = 'example', anchorStepId }) {
     return jobs.start('lesson/reexplain', async api => {
       const { course, lesson, board, language } = await scopeBoard(scope)
-      if (!board?.steps?.length) throw new TutorError('invalid', 'Nothing to re-explain yet')
+      if (!board?.steps?.length) throw new TutorError('no-board', 'The board is not written yet. Try again once its first step is up.')
       const index = Math.min(board.steps.length - 1, Math.max(0, Number(stepIndex) || 0))
       const step = boardToPlainText({ steps: [board.steps[index]] }, { maxChars: 3000 })
       const answer = await generateSteps(llm, {

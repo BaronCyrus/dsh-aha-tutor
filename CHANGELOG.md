@@ -22,6 +22,8 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 - **Formulas render as KaTeX meant them again.** The plugin bundled KaTeX 0.16 while DSH 0.2.1 styles formulas with KaTeX 0.18.7's stylesheet, which renamed its layout classes, so superscripts and subscripts were drawn at full size and stacked symbols such as ≠ came apart. The bundled KaTeX is now 0.18.7, and a test keeps the two in step.
 - Dashed lines in board figures (guide lines, heights) stay dashed after they are drawn instead of turning solid.
 - A highlight may contain a single "=", so `==乘积 = 0==` is highlighted instead of showing its marks.
+- **Explain differently works while the board is still being written.** Choosing a style before a new lesson's board was saved showed "Nothing to re-explain yet"; it now re-explains the step on screen from the steps already written. The same goes for instant answers and explainer shorts, where re-explaining, raising a hand or a correction during the writing failed with "Not found". A raised hand and a correction now see the board written so far, a lesson being regenerated is asked about its new steps rather than the old saved ones, and a follow-up in instant help is asked about its own answer rather than the previous one.
+- **Every error shows in your language.** Messages that reached the Chinese interface in English ("出了点问题：…" followed by English) now have their own Chinese and English wording: empty inputs, files that cannot be imported, course packs, cloud voice settings and keys, missing items, a lost connection to DSH and others. Messages that only a bug could cause share one line. A test checks that every error the host can send has both.
 
 ## 1.3.0 - 2026-10-19
 

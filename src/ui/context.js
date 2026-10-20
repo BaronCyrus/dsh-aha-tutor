@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { createApi } from './api.js'
+import { ApiError, createApi } from './api.js'
 import { usePersistentState } from './hooks.js'
 import { createSpeech } from './speech.js'
 
@@ -45,13 +45,13 @@ export async function fetchSpeech(api, text) {
     })
     if (response.ok) return { blob: await response.blob() }
     if (response.status !== 404) {
-      let message = 'tts failed'
+      let failure = null
       try {
-        message = (await response.json())?.error?.message ?? message
+        failure = (await response.json())?.error ?? null
       } catch {
         // not JSON
       }
-      throw new Error(message)
+      throw new ApiError(failure?.code ?? 'tts-failed', failure?.message ?? 'tts failed')
     }
   } catch (error) {
     if (error?.message && error.message !== 'Failed to fetch') throw error

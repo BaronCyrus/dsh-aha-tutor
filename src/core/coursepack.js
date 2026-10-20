@@ -36,19 +36,24 @@ export function exportCoursePack({ course, progress, boards = {}, practice = {},
   }
 }
 
+// Errors carry a code: 'pack-too-large', 'pack-too-new', or 'bad-pack'.
 export function parseCoursePack(input) {
   let pack = input
   if (typeof input === 'string') {
-    if (input.length > COURSEPACK_MAX_BYTES) throw new Error('course pack is too large')
+    if (input.length > COURSEPACK_MAX_BYTES) throw packError('pack-too-large', 'course pack is too large')
     try {
       pack = JSON.parse(input)
     } catch {
-      throw new Error('course pack is not valid JSON')
+      throw packError('bad-pack', 'course pack is not valid JSON')
     }
   }
-  if (pack?.format !== COURSEPACK_FORMAT) throw new Error('not a course pack')
-  if (!Number.isInteger(pack.version) || pack.version > COURSEPACK_VERSION) throw new Error('course pack was made by a newer version of the plugin')
+  if (pack?.format !== COURSEPACK_FORMAT) throw packError('bad-pack', 'not a course pack')
+  if (!Number.isInteger(pack.version) || pack.version > COURSEPACK_VERSION) throw packError('pack-too-new', 'course pack was made by a newer version of the plugin')
   return pack
+}
+
+function packError(code, message) {
+  return Object.assign(new Error(message), { code })
 }
 
 // Returns { course, boards, practice, sheets, cards, progress } with fresh ids.

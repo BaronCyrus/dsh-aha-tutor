@@ -120,7 +120,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
   function digest({ id }) {
     return jobs.start('material/digest', async api => {
       const [material] = await readMaterials(store, [assertId(id, 'mat')])
-      if (!material?.chunks.length) throw new TutorError('invalid', 'This material has no text to digest')
+      if (!material?.chunks.length) throw new TutorError('material-no-text', 'This material has no text to digest')
       const title = material.meta.title
       const language = detectLanguage(material.chunks[0].text, uiLanguage())
       const size = material.chunks.reduce((sum, chunk) => sum + chunk.text.length, 0)
@@ -178,9 +178,9 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
 
   async function scopeOf(materialIds) {
     const ids = (Array.isArray(materialIds) ? materialIds : []).filter(id => /^mat_[a-z0-9]+$/u.test(String(id))).slice(0, 8)
-    if (!ids.length) throw new TutorError('invalid', 'Pick at least one material')
+    if (!ids.length) throw new TutorError('no-material', 'Pick at least one material')
     const materials = await readMaterials(store, ids)
-    if (!materials.some(item => item.chunks.length)) throw new TutorError('invalid', 'These materials have no text')
+    if (!materials.some(item => item.chunks.length)) throw new TutorError('material-no-text', 'These materials have no text')
     const title = materials.map(item => item.meta.title).join(' + ')
     const language = detectLanguage(materials.find(item => item.chunks.length)?.chunks[0]?.text ?? title, uiLanguage())
     const outline = materials.map(item => item.meta.brief?.topics?.join('; ') ?? '').filter(Boolean).join('\n')
@@ -324,8 +324,9 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
   // before the board is finished.
   function assist({ mode = 'explain', request, materialIds = [], threadId, newThreadId }) {
     const ask = text(request, 4000)
-    if (!ask) throw new TutorError('invalid', 'Type your question')
+    if (!ask) throw new TutorError('empty-question', 'Type your question')
     const chosen = ASSIST_MODES.includes(mode) ? mode : 'explain'
+    const fresh = /^thd_[a-z0-9]{6,40}$/u.test(String(newThreadId)) ? newThreadId : null
     return jobs.start('assist/turn', async api => {
       let thread = threadId ? await store.readJson(store.paths.item('assist', assertId(threadId, 'thd')), null) : null
       const ids = [...new Set([...(thread?.materialIds ?? []), ...(Array.isArray(materialIds) ? materialIds : [])])].filter(id => /^mat_[a-z0-9]+$/u.test(String(id))).slice(0, 8)
@@ -345,7 +346,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
         minSteps: 1,
       })
       const turn = { mode: chosen, request: ask, board, at: stamp() }
-      const id = thread?.id ?? (/^thd_[a-z0-9]{6,40}$/u.test(String(newThreadId)) ? newThreadId : newId('thd'))
+      const id = thread?.id ?? fresh ?? newId('thd')
       // Append under the store's lock: an earlier answer may finish in the
       // background while this one was being written.
       const saved = await store.updateJson(store.paths.item('assist', id), null, current => {
@@ -356,7 +357,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
         return next
       })
       return { threadId: saved.id, turn: saved.turns.length - 1, board }
-    }, { meta: { threadId: threadId ?? null } })
+    }, { meta: { threadId: threadId ?? fresh, title: ask.slice(0, 60) } })
   }
 
   // Images are offered to vision-capable models only.
@@ -368,7 +369,8 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
 
   function makeShort({ topic, url, newId: presetId }) {
     const subject = text(topic, 300)
-    if (!subject && !url) throw new TutorError('invalid', 'Give a topic or a web address')
+    if (!subject && !url) throw new TutorError('empty-topic', 'Give a topic or a web address')
+    const id = /^sht_[a-z0-9]{6,40}$/u.test(String(presetId)) ? presetId : newId('sht')
     return jobs.start('short/make', async api => {
       let passages = ''
       let sourceTitle = ''
@@ -389,10 +391,10 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
         onStep: step => api.push(step),
         minSteps: 3,
       })
-      const item = { id: /^sht_[a-z0-9]{6,40}$/u.test(String(presetId)) ? presetId : newId('sht'), title: board.title || subject || sourceTitle, topic: subject, sourceUrl: url ? String(url) : null, language, board, createdAt: stamp() }
+      const item = { id, title: board.title || subject || sourceTitle, topic: subject, sourceUrl: url ? String(url) : null, language, board, createdAt: stamp() }
       await store.writeJson(store.paths.item('shorts', item.id), item)
       return { item }
-    })
+    }, { meta: { id, title: subject } })
   }
 
   return Object.freeze({

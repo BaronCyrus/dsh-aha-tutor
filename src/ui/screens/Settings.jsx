@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
+import { ApiError } from '../api.js'
 import { ErrorLine, Spinner } from '../components.jsx'
 import { useApp, useLoad } from '../hooks.js'
 import { browserSpeechAvailable, listVoices, onVoicesChanged, pickVoice } from '../speech.js'
@@ -45,7 +46,8 @@ export function SettingsScreen() {
       speech.configure({ engine: settings.voiceEngine ?? 'browser', voiceId: settings.voiceId || undefined, language: lang, rate: settings.voiceRate ?? 1 })
       const spoken = speech.speak(t('testSentence'), { rate: settings.voiceRate ?? 1 })
       const result = await spoken.done
-      if (result?.error) setError(new Error(result.error))
+      // Cloud voices say what went wrong; the system voice only names the engine's error.
+      if (result?.error) setError(new ApiError(result.code ?? 'speech', result.error))
     } finally {
       setTesting(false)
     }

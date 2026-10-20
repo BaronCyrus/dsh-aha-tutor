@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { Empty, ErrorLine, JobProgress, Spinner } from '../components.jsx'
+import { Empty, ErrorLine, errorText, JobProgress, Spinner } from '../components.jsx'
 import { ApiError } from '../api.js'
 import { useApp, useJob, useLoad } from '../hooks.js'
 import { ItemCard } from '../ItemCard.jsx'
@@ -259,7 +259,7 @@ export function SheetScreen({ courseId, unitId, sheetId }) {
     const next = { ...layout, ...patch }
     setLayout(next)
     const request = sheetId ? api.call('items/sheet-layout', { id: sheetId, layout: next }) : api.call('unit/sheet-layout', { courseId, unitId, layout: next })
-    request.catch(failure => toast(t('errorGeneric', { message: failure.message })))
+    request.catch(failure => toast(errorText(t, failure)))
   }
 
   if (error) return <div className="aha-page"><ErrorLine error={error} /></div>

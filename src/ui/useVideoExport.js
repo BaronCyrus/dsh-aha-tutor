@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { downloadBlob, downloadName } from './api.js'
+import { errorText } from './components.jsx'
 import { fetchSpeech } from './context.js'
 import { useApp, useDarkMode } from './hooks.js'
 import { exportVideo, videoSupported } from './video.js'
@@ -37,7 +38,8 @@ export function useVideoExport() {
       })
       downloadBlob(`${downloadName(title)}.webm`, blob)
     } catch (error) {
-      if (!local.signal.aborted) toast(error.message === 'unsupported' ? t('exportUnsupported') : t('errorGeneric', { message: error.message }))
+      // A cloud voice that fails says why; the recorder's own errors do not.
+      if (!local.signal.aborted) toast(error.message === 'unsupported' ? t('exportUnsupported') : error?.code ? errorText(t, error) : t('exportFailed'))
     } finally {
       setState(null)
     }

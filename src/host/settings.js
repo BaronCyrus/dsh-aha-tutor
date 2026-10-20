@@ -68,7 +68,7 @@ export function createKeyStore({ getCredentials, credentialKey }) {
   }
   const service = () => {
     const credentials = getCredentials()
-    if (!credentials) throw new TutorError('unavailable', 'DSH credentials are not available in this profile')
+    if (!credentials) throw new TutorError('no-credentials', 'DSH credentials are not available in this profile')
     return credentials
   }
   return {
@@ -90,7 +90,7 @@ export function createKeyStore({ getCredentials, credentialKey }) {
     },
     async write(provider, value) {
       const key = String(value ?? '').trim()
-      if (!/^[\x21-\x7E]{8,1024}$/u.test(key)) throw new TutorError('invalid', 'The key looks wrong (8–1024 printable characters, no spaces)')
+      if (!/^[\x21-\x7E]{8,1024}$/u.test(key)) throw new TutorError('bad-key', 'The key looks wrong (8–1024 printable characters, no spaces)')
       await service().modifyRecord(keyOf(provider), async () => ({ kind: 'api-key', key }))
     },
     async remove(provider) {

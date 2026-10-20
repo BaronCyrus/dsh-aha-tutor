@@ -80,7 +80,7 @@ export function createJobs({ logger, now = Date.now } = {}) {
       })
       .catch(error => {
         job.status = controller.signal.aborted ? 'cancelled' : 'failed'
-        job.error = controller.signal.aborted ? { code: 'cancelled', message: 'Cancelled' } : { code: error?.code ?? 'failed', message: publicMessage(error) }
+        job.error = controller.signal.aborted ? { code: 'cancelled', message: 'Cancelled' } : { code: publicCode(error), message: publicMessage(error) }
         if (job.status === 'failed') logger?.warn?.('aha-tutor job %s failed: %s', kind, error?.message)
       })
       .finally(() => {
@@ -142,6 +142,15 @@ export function createJobs({ logger, now = Date.now } = {}) {
 // Only messages written for users cross to the browser.
 export function publicMessage(error) {
   if (error?.userMessage) return String(error.userMessage)
-  if (['MaterialError', 'TtsError', 'TutorError'].includes(error?.name)) return String(error.message)
+  if (USER_ERRORS.includes(error?.name)) return String(error.message)
   return 'Generation failed'
 }
+
+// The code the browser shows a message for (err_<code> in i18n.js). Speech
+// errors are kept apart: their "network" or "too-large" is not a material's.
+export function publicCode(error) {
+  if (!USER_ERRORS.includes(error?.name)) return 'failed'
+  return error.name === 'TtsError' ? `tts-${error.code ?? 'failed'}` : error.code ?? 'failed'
+}
+
+const USER_ERRORS = ['MaterialError', 'TtsError', 'TutorError']

@@ -63,9 +63,12 @@ test('jobs report progress and partial results, dedupe by key and cancel', async
   jobs.cancel(slow.id)
   await new Promise(resolve => setTimeout(resolve, 5))
   assert.equal(jobs.get(slow.id).status, 'cancelled')
-  const failing = jobs.start('fail', async () => { throw new Error('secret internal detail') })
+  const failing = jobs.start('fail', async () => { throw Object.assign(new Error('secret internal detail'), { code: 'EACCES' }) })
+  // The browser shows a message by code: speech errors keep theirs apart.
+  const speaking = jobs.start('tts', async () => { throw new TtsError('network', 'Could not reach the TTS service') })
   await new Promise(resolve => setTimeout(resolve, 5))
-  assert.equal(jobs.get(failing.id).error.message, 'Generation failed')
+  assert.deepEqual(jobs.get(failing.id).error, { code: 'failed', message: 'Generation failed' })
+  assert.deepEqual(jobs.get(speaking.id).error, { code: 'tts-network', message: 'Could not reach the TTS service' })
 
   // A job says how long it has run, by the host's clock, and stops counting when done.
   let clock = 10_000

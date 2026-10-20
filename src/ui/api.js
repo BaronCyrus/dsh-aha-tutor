@@ -19,7 +19,7 @@ export function createApi(rpc) {
     try {
       response = await rpc.call(CHANNEL, endpoint, payload ?? {})
     } catch (error) {
-      throw new ApiError('network', error?.message || 'Connection to DSH failed')
+      throw new ApiError('connection', error?.message || 'Connection to DSH failed')
     }
     if (!response?.ok) throw new ApiError(response?.error?.code ?? 'failed', response?.error?.message ?? 'Request failed')
     return response.value
@@ -61,6 +61,13 @@ export function createApi(rpc) {
   }
 
   return { call, follow, run, cancel }
+}
+
+// The scope of a question about a board (lesson/ask, lesson/reexplain,
+// lesson/correct). A board that came from a job also names it: while the
+// board is still being written, the host answers from the steps written so far.
+export function boardScope(scope, stream) {
+  return stream?.id ? { ...scope, jobId: stream.id } : scope
 }
 
 // Read a File as base64 without blowing the stack on large inputs.

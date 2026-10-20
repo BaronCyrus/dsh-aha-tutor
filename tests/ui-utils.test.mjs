@@ -3,7 +3,7 @@ import { test } from 'node:test'
 
 import { DOMParser } from 'linkedom'
 
-import { createApi } from '../src/ui/api.js'
+import { boardScope, createApi } from '../src/ui/api.js'
 import { chartSvg, escapeXml, niceTicks } from '../src/ui/charts.js'
 import { courseNextStep, lessonStage, nextStepFor, sessionStats } from '../src/ui/practice.js'
 import { PREP_DELAY_MS, prepStages } from '../src/ui/prep.js'
@@ -177,6 +177,16 @@ test('leaving a screen stops watching a job without cancelling it', async () => 
   assert.ok(!calls.includes('job/cancel'))
   await api.cancel({ id: 'job_a' })
   assert.deepEqual(calls.filter(endpoint => endpoint === 'job/cancel'), ['job/cancel'])
+})
+
+test('a question about a board names the job writing it, and failures keep their code', async () => {
+  const lesson = { kind: 'lesson', courseId: 'crs_abcdef12', lessonId: 'les_abcdef12' }
+  assert.deepEqual(boardScope(lesson, { id: 'job_abcdef12', status: 'running' }), { ...lesson, jobId: 'job_abcdef12' })
+  assert.equal(boardScope(lesson, null), lesson, 'a saved board needs no job')
+  const offline = createApi({ call: async () => { throw new Error('socket closed') } })
+  await assert.rejects(offline.call('course/list'), error => error.code === 'connection')
+  const failing = createApi({ call: async () => ({ ok: false, error: { code: 'aha-tutor/no-board', message: 'The board is not written yet.' } }) })
+  await assert.rejects(failing.call('lesson/reexplain'), error => error.code === 'aha-tutor/no-board')
 })
 
 test('captions split narration into sentences without breaking formulas', () => {

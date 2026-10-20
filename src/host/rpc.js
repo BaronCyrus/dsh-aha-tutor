@@ -4,7 +4,7 @@
 // Only messages written for users leave the host.
 
 import { TutorError } from './generate.js'
-import { publicMessage } from './jobs.js'
+import { publicCode, publicMessage } from './jobs.js'
 
 const ID = prefix => new RegExp(`^${prefix}_[a-z0-9]{6,40}$`, 'u')
 const IDS = { crs: ID('crs'), les: ID('les'), unt: ID('unt'), prj: ID('prj'), mat: ID('mat'), job: ID('job'), thd: ID('thd'), sht: ID('sht'), chs: ID('chs'), dck: ID('dck'), exm: ID('exm'), nte: ID('nte') }
@@ -23,11 +23,15 @@ function idList(value, prefix, max = 8) {
   return (Array.isArray(value) ? value : []).filter(item => typeof item === 'string' && IDS[prefix].test(item)).slice(0, max)
 }
 
+// A board scope may name the job still writing that board (the one the
+// classroom follows); the service checks that the job belongs to it.
 function scopeOf(payload) {
   const scope = payload?.scope ?? {}
-  if (scope.kind === 'lesson') return { kind: 'lesson', courseId: need(scope, 'courseId', 'crs'), lessonId: need(scope, 'lessonId', 'les') }
-  if (scope.kind === 'thread') return { kind: 'thread', id: need(scope, 'id', 'thd'), turn: Number(scope.turn) || 0 }
-  if (scope.kind === 'short') return { kind: 'short', id: need(scope, 'id', 'sht') }
+  const jobId = optional(scope, 'jobId', 'job')
+  const writing = jobId ? { jobId } : {}
+  if (scope.kind === 'lesson') return { kind: 'lesson', courseId: need(scope, 'courseId', 'crs'), lessonId: need(scope, 'lessonId', 'les'), ...writing }
+  if (scope.kind === 'thread') return { kind: 'thread', id: need(scope, 'id', 'thd'), turn: Number(scope.turn) || 0, ...writing }
+  if (scope.kind === 'short') return { kind: 'short', id: need(scope, 'id', 'sht'), ...writing }
   throw new TutorError('invalid', 'Invalid board scope')
 }
 
@@ -173,7 +177,7 @@ export function createRpcHandler(routes, { logger, checkPeer = isOwner } = {}) {
       if (signal?.aborted) throw error
       const known = ['TutorError', 'MaterialError', 'TtsError'].includes(error?.name)
       if (!known) logger?.warn?.('aha-tutor %s failed: %s', endpoint, error?.message)
-      return failure(known ? error.code ?? 'failed' : 'failed', known ? error.message : publicMessage(error))
+      return failure(publicCode(error), publicMessage(error))
     }
   }
 }

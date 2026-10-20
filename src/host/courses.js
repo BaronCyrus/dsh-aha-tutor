@@ -113,7 +113,7 @@ export function createCourses({ store, llm, jobs, research, now = () => new Date
   // Step 1: create the draft and ask the intake questions (unless quick).
   function startCraft({ goal, materialIds = [], quick = false, language, web = false }) {
     const cleanGoal = text(goal, 2000)
-    if (!cleanGoal && !materialIds.length) throw new TutorError('invalid', 'Tell me what you want to learn')
+    if (!cleanGoal && !materialIds.length) throw new TutorError('empty-goal', 'Tell me what you want to learn')
     const ids = materialIds.filter(id => /^mat_[a-z0-9]+$/u.test(id)).slice(0, 8)
     const courseId = newId('crs')
     return jobs.start('craft/start', async api => {
@@ -205,10 +205,10 @@ export function createCourses({ store, llm, jobs, research, now = () => new Date
 
   function revise({ courseId, instruction }) {
     const request = text(instruction, 1500)
-    if (!request) throw new TutorError('invalid', 'Describe the change you want')
+    if (!request) throw new TutorError('empty-change', 'Describe the change you want')
     return jobs.start('craft/revise', async api => {
       const course = await readCourse(courseId)
-      if (!course.units) throw new TutorError('invalid', 'There is no blueprint to revise yet')
+      if (!course.units) throw new TutorError('no-blueprint', 'There is no blueprint to revise yet')
       const current = { title: course.title, subtitle: course.subtitle, emoji: course.emoji, summary: course.summary, level: course.level, units: course.units, projects: course.projects }
       api.progress(0, 0, 'blueprint')
       const revised = await generateJson(llm, {
@@ -229,7 +229,7 @@ export function createCourses({ store, llm, jobs, research, now = () => new Date
   async function applyProposal({ courseId }) {
     const course = await readCourse(courseId)
     const proposal = await store.readJson(store.paths.proposal(courseId), null)
-    if (!proposal?.blueprint?.units) throw new TutorError('not-found', 'There is no proposed change')
+    if (!proposal?.blueprint?.units) throw new TutorError('no-proposal', 'There is no proposed change')
     // Lessons the revision kept have the same ids, so their progress stays.
     const next = { ...course, ...proposal.blueprint, language: course.language, status: course.status === 'ready' ? 'ready' : 'blueprint' }
     await saveCourse(next)
@@ -314,7 +314,7 @@ export function createCourses({ store, llm, jobs, research, now = () => new Date
   function confirm({ courseId }) {
     return jobs.start('craft/confirm', async api => {
       const course = await readCourse(courseId)
-      if (!course.units) throw new TutorError('invalid', 'Generate a blueprint first')
+      if (!course.units) throw new TutorError('no-blueprint', 'Generate a blueprint first')
       const lectures = course.units.slice(0, 1).flatMap(unit => unit.lectures.map(lecture => ({ unit, lecture })))
       const total = lectures.length + (course.projects?.length ? 1 : 0)
       let done = 0
@@ -412,7 +412,14 @@ export function createCourses({ store, llm, jobs, research, now = () => new Date
   }
 
   async function importPack({ json }) {
-    const imported = importCoursePack(json)
+    let imported
+    try {
+      imported = importCoursePack(json)
+    } catch (error) {
+      // Only the pack reader's own errors are written for users.
+      const known = ['bad-pack', 'pack-too-large', 'pack-too-new'].includes(error?.code)
+      throw new TutorError(known ? error.code : 'bad-pack', known ? error.message : 'not a course pack')
+    }
     const { course } = imported
     await saveCourse(course)
     for (const [lessonId, board] of Object.entries(imported.boards)) await store.writeJson(store.paths.board(course.id, lessonId), board)

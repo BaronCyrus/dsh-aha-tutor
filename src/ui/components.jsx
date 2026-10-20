@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 
-import { fileToBase64 } from './api.js'
+import { ApiError, fileToBase64 } from './api.js'
 import { useApp, useLoad } from './hooks.js'
 import { Icon } from './icons.jsx'
 import { shortCourseTitle } from '../core/course-model.js'
@@ -82,7 +82,7 @@ export function useMaterialUpload() {
       })
       if (response.status !== 404) {
         const body = await response.json()
-        if (!body?.ok) throw new Error(body?.error?.message ?? 'Upload failed')
+        if (!body?.ok) throw new ApiError(body?.error?.code ?? 'failed', body?.error?.message ?? 'Upload failed')
         return (await api.follow(body.value)).material
       }
     } catch (error) {

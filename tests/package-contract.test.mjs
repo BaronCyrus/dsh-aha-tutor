@@ -91,6 +91,57 @@ test('every UI string key exists in both languages', () => {
   assert.deepEqual(Object.keys(zh).filter(key => !(key in en)), [], 'zh keys missing in en')
 })
 
+// The string literals the first argument of each matching call can take: the
+// codes an error is made with, even behind a condition.
+function firstArgumentLiterals(source, pattern) {
+  const codes = []
+  for (const match of source.matchAll(pattern)) {
+    let depth = 0
+    let quote = null
+    let argument = ''
+    for (let index = match.index + match[0].length; index < source.length; index += 1) {
+      const char = source[index]
+      if (quote) {
+        if (char === quote && source[index - 1] !== '\\') quote = null
+      } else if (char === '\'' || char === '"' || char === '`') {
+        quote = char
+      } else if ('([{'.includes(char)) {
+        depth += 1
+      } else if (')]}'.includes(char) || char === ',') {
+        if (depth === 0) break
+        if (char !== ',') depth -= 1
+      }
+      argument += char
+    }
+    codes.push(...[...argument.matchAll(/'([a-z-]+)'/gu)].map(found => found[1]))
+  }
+  return codes
+}
+
+test('every error the browser can show has a message in both languages', () => {
+  const host = walk(join(root, 'src', 'host'), /\.js$/u).map(file => readFileSync(file, 'utf8')).join('\n')
+  const ui = walk(join(root, 'src', 'ui'), /\.(js|jsx)$/u).map(file => readFileSync(file, 'utf8')).join('\n')
+  const llm = readFileSync(join(root, 'src', 'host', 'llm.js'), 'utf8')
+  const pack = readFileSync(join(root, 'src', 'core', 'coursepack.js'), 'utf8')
+  const codes = new Set([
+    ...firstArgumentLiterals(host, /new (?:TutorError|MaterialError)\(/gu),
+    // The course pack reader's codes, passed on by courses.importPack().
+    ...firstArgumentLiterals(pack, /\bpackError\(/gu),
+    // publicCode() keeps speech errors apart.
+    ...firstArgumentLiterals(host, /new TtsError\(/gu).map(code => `tts-${code}`),
+    ...firstArgumentLiterals(host, /\bfailure\(/gu),
+    ...[...llm.matchAll(/^ {2}[A-Z_]+: \['([a-z-]+)'/gmu)].map(match => match[1]),
+    ...firstArgumentLiterals(ui, /new ApiError\(/gu),
+    ...[...ui.matchAll(/\bcode: '([a-z-]+)'/gu)].map(match => match[1]),
+    // publicCode()'s fallback, and a cancelled job.
+    'failed',
+    'cancelled',
+  ])
+  for (const code of ['no-board', 'bad-pack', 'pack-too-new', 'llm-auth', 'llm-missing', 'tts-auth', 'tts-network', 'tts-failed', 'connection', 'playback', 'forbidden']) assert.ok(codes.has(code), `found ${code}`)
+  const missing = [...codes].filter(code => !(`err_${code}` in zh) || !(`err_${code}` in en))
+  assert.deepEqual(missing, [])
+})
+
 test('every endpoint the browser calls is routed on the host', async () => {
   const sources = walk(join(root, 'src', 'ui'), /\.(js|jsx)$/u).map(file => readFileSync(file, 'utf8')).join('\n')
   const called = new Set([...sources.matchAll(/api\.(?:call|run)\('([a-z/-]+)'/gu)].map(match => match[1]))

@@ -80,7 +80,7 @@ export function createLlmPort({ getLlm, getDefault, getAttachments, prefs, logge
     if (purpose === 'quick' && settings.teachProvider && settings.teachModel) return { provider: settings.teachProvider, model: settings.teachModel }
     const selection = getDefault()
     if (selection?.provider && selection?.model) return { provider: selection.provider, model: selection.model }
-    throw new TutorError('llm-unavailable', 'No model is configured in DSH yet.')
+    throw new TutorError('llm-missing', 'No model is configured in DSH yet.')
   }
 
   async function modalities(purpose, signal) {
@@ -112,7 +112,7 @@ export function createLlmPort({ getLlm, getDefault, getAttachments, prefs, logge
 
   async function attempt({ purpose, effort, system, user, images, maxTokens, signal, onText, onReasoning }) {
     const llm = getLlm()
-    if (!llm) throw new TutorError('llm-unavailable', 'DSH has no model service in this profile.')
+    if (!llm) throw new TutorError('llm-missing', 'DSH has no model service in this profile.')
     const target = route(purpose)
     const timeout = AbortSignal.timeout(CALL_TIMEOUT_MS)
     const fused = signal ? AbortSignal.any([signal, timeout]) : timeout

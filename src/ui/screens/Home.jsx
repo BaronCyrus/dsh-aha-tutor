@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import { Empty, ErrorLine, MaterialPicker, Progress, Spinner } from '../components.jsx'
+import { Empty, ErrorLine, errorText, MaterialPicker, Progress, Spinner } from '../components.jsx'
 import { useApp, useLoad, usePersistentState } from '../hooks.js'
 import { Icon } from '../icons.jsx'
 import { PlanItem, togglePlanItem } from '../PlanItem.jsx'
@@ -142,7 +142,7 @@ export function HomeScreen() {
               toast(t('courseReady'))
               navigate('course', { courseId: course.id })
             } catch (failure) {
-              toast(t('errorGeneric', { message: failure.message }))
+              toast(errorText(t, failure))
             }
           }}>{t('importSample')}</button>
         </div>)}

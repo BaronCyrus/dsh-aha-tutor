@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 
 import { downloadText } from '../api.js'
-import { Confirm, Empty, ErrorLine, MasteryMeter, Modal, Progress, SourceList, Spinner } from '../components.jsx'
+import { Confirm, Empty, ErrorLine, errorText, MasteryMeter, Modal, Progress, SourceList, Spinner } from '../components.jsx'
 import { useApp, useLoad } from '../hooks.js'
 import { Icon } from '../icons.jsx'
 import { courseProgress, flattenLessons, nextLesson } from '../../core/course-model.js'
@@ -40,7 +40,7 @@ export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
       const pack = await api.call('course/export', { courseId, includeProgress })
       downloadText(pack.fileName, pack.json)
     } catch (failure) {
-      toast(t('errorGeneric', { message: failure.message }))
+      toast(errorText(t, failure))
     }
   }
 

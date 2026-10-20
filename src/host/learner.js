@@ -7,7 +7,7 @@ import { newId } from '../core/ids.js'
 import { masteryPercent } from '../core/mastery.js'
 import { addDays, buildPlan, mergeAgenda, planCalendar, toDay } from '../core/planner.js'
 import { EMPTY_PROFILE, readProfile, readProgress } from './context.js'
-import { generateJson } from './generate.js'
+import { generateJson, TutorError } from './generate.js'
 import { profilePrompt } from './prompts.js'
 
 const PROFILE_REFRESH_MS = 10 * 60_000
@@ -182,7 +182,7 @@ export function createLearner({ store, llm, now = () => new Date(), logger }) {
     const current = validDay(today) ?? toDay(now())
     const when = validDay(day)
     const entry = agendaItem(item ?? {})
-    if (!when || !entry || when > current) throw new Error('Only today or an earlier day can be ticked')
+    if (!when || !entry || when > current) throw new TutorError('cannot-tick', 'Only today or an earlier day can be ticked')
     await store.updateJson(store.paths.plan(), {}, current => ({
       ...current,
       checks: [...(current.checks ?? []).filter(existing => !(existing.refId === entry.refId && existing.day === when)), { refId: entry.refId, kind: entry.kind, day: when, item: entry, at: now().toISOString() }].slice(-MAX_CHECKS),
@@ -208,7 +208,7 @@ export function createLearner({ store, llm, now = () => new Date(), logger }) {
 
   async function addExam({ title, day, courseId }) {
     const name = text(title, 120)
-    if (!name || !/^\d{4}-\d{2}-\d{2}$/u.test(String(day))) throw new Error('Exam needs a title and a date')
+    if (!name || !/^\d{4}-\d{2}-\d{2}$/u.test(String(day))) throw new TutorError('exam-incomplete', 'Exam needs a title and a date')
     await store.updateJson(store.paths.plan(), {}, current => ({
       ...current,
       exams: [...(current.exams ?? []), { id: newId('exm'), title: name, day, courseId: /^crs_[a-z0-9]+$/u.test(String(courseId)) ? courseId : null }].slice(-50),

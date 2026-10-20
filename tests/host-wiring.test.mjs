@@ -99,7 +99,7 @@ test('the host row serves the browser channel, HTTP routes and the preset runtim
     assert.equal((await call('settings/get')).keys.azure, true)
     assert.ok(![...harness.records.values()].some(record => JSON.stringify(record).length && false))
     assert.equal(JSON.stringify(await call('settings/get')).includes('abcdefgh12345678'), false, 'keys never return to the browser')
-    await assert.rejects(call('settings/set-key', { provider: 'azure', key: 'short' }), /looks wrong/u)
+    await assert.rejects(call('settings/set-key', { provider: 'azure', key: 'short' }), error => error.code === 'aha-tutor/bad-key' && /looks wrong/u.test(error.message))
     const saved = await call('settings/save', { settings: { teachProvider: 'deepseek-official', teachModel: 'deepseek-pro', voiceEngine: 'cloud', voiceRate: 7, tts: { azure: { region: 'westus', apiKey: 'leak' } } } })
     assert.equal(saved.voiceRate, 2)
     assert.equal(saved.tts.azure.region, 'westus')
@@ -124,6 +124,7 @@ test('the host row serves the browser channel, HTTP routes and the preset runtim
     assert.ok(harness.fetchRoutes['/api/aha-tutor/tts'])
     const tts = await harness.fetchRoutes['/api/aha-tutor/tts'].fetch(new Request('http://127.0.0.1/api/aha-tutor/tts', { method: 'POST', body: JSON.stringify({ text: 'hi' }) }))
     assert.equal(tts.status, 401, 'no key for the chosen provider yet')
+    assert.equal((await tts.json()).error.code, 'aha-tutor/tts-no-key')
 
     assert.ok(getRuntime().studio, 'the preset tools can reach the services')
     const samples = await call('samples/list')
@@ -137,6 +138,8 @@ test('the host row serves the browser channel, HTTP routes and the preset runtim
     assert.ok(lesson.board.steps.some(step => step.check?.conceptIds?.length))
     assert.equal(lesson.practice.items.length, 5)
     await assert.rejects(call('samples/import', { id: '../secret' }), /Unknown sample/u)
+    // A question may name the job writing its board; the id is checked like any other.
+    await assert.rejects(call('lesson/reexplain', { scope: { kind: 'lesson', courseId: sample.id, lessonId: firstLesson.id, jobId: 'job_../../x' } }), error => error.code === 'aha-tutor/invalid')
   } finally {
     harness.dispose()
     assert.throws(() => getRuntime(), /still starting/u)

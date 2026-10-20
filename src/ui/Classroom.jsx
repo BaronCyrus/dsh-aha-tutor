@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { boardScope } from './api.js'
 import { Board, Inline } from './board/Board.jsx'
 import { captionSentences } from './board/inline.js'
 import { reidSteps } from './board/layout.js'
@@ -207,7 +208,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
     let added = false
     setError(null)
     try {
-      const { job } = await api.call(endpoint, { ...payload, scope, stepIndex: mainIndexOf(anchorIndex), anchorStepId: anchorId })
+      const { job } = await api.call(endpoint, { ...payload, scope: boardScope(scope, stream), stepIndex: mainIndexOf(anchorIndex), anchorStepId: anchorId })
       onStarted?.()
       setAsides(current => [...current, asideEntry({ id, kind, label, anchorId, streaming: true })])
       added = true

@@ -7,6 +7,7 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 
 import { BOARD_FONT_FILES } from '../core/board-fonts.js'
+import { publicCode } from './jobs.js'
 import { MAX_UPLOAD_BYTES } from './materials.js'
 
 export const UPLOAD_PATH = '/api/aha-tutor/upload'
@@ -46,7 +47,7 @@ export function uploadRoute({ studio }) {
       try {
         return json({ ok: true, value: { job: studio.upload({ name, bytes }) } })
       } catch (error) {
-        return failure(error?.code ?? 'failed', error?.name === 'TutorError' ? error.message : 'Upload failed', 400)
+        return failure(publicCode(error), error?.name === 'TutorError' ? error.message : 'Upload failed', 400)
       }
     },
   }
@@ -69,7 +70,7 @@ export function ttsRoute({ speak }) {
         return new Response(result.audio, { status: 200, headers: { 'content-type': result.mime, 'cache-control': 'no-store' } })
       } catch (error) {
         const known = error?.name === 'TtsError' || error?.name === 'TutorError'
-        return failure(error?.code ?? 'tts', known ? error.message : 'Speech synthesis failed', error?.code === 'auth' ? 401 : 502)
+        return failure(known ? publicCode(error) : 'tts-failed', known ? error.message : 'Speech synthesis failed', ['auth', 'no-key'].includes(error?.code) ? 401 : 502)
       }
     },
   }

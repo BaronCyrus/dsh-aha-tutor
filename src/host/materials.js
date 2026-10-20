@@ -42,7 +42,7 @@ export function detectKind(name, bytes) {
   if (head[0] === 0x89 && head[1] === 0x50) return 'image'
   if (head[0] === 0xff && head[1] === 0xd8) return 'image'
   if (head.subarray(0, 2).toString('latin1') === 'PK') {
-    if (lower.endsWith('.doc') || lower.endsWith('.ppt')) throw new MaterialError('unsupported', 'Old .doc/.ppt files are not supported; save as .docx/.pptx')
+    if (lower.endsWith('.doc') || lower.endsWith('.ppt')) throw new MaterialError('old-office', 'Old .doc/.ppt files are not supported; save as .docx/.pptx')
   }
   throw new MaterialError('unsupported', 'This file type is not supported')
 }
@@ -273,7 +273,7 @@ export function extractPlain(bytes, kind) {
   } else {
     chunks.push(...chunkText(value, {}))
   }
-  if (!chunks.length) throw new MaterialError('no-text', 'This file is empty')
+  if (!chunks.length) throw new MaterialError('empty', 'This file is empty')
   const title = kind === 'markdown' ? /^#\s+(.+)$/mu.exec(value)?.[1]?.trim() ?? '' : ''
   return { title, chunks }
 }
@@ -284,7 +284,7 @@ export async function ingestFile({ name, bytes, signal }) {
   const kind = detectKind(name, bytes)
   const baseTitle = String(name ?? '').replace(/\.[^.]+$/u, '').slice(0, 120) || 'Untitled'
   if (kind === 'image') {
-    if (bytes.length > MAX_IMAGE_BYTES) throw new MaterialError('too-large', 'Images must be smaller than 10 MB')
+    if (bytes.length > MAX_IMAGE_BYTES) throw new MaterialError('image-too-large', 'Images must be smaller than 10 MB')
     return { kind, title: baseTitle, chunks: [], chars: 0, truncated: false, mime: imageMime(name, bytes) }
   }
   if (kind === 'pdf') {
@@ -336,7 +336,7 @@ export async function ingestUrl(address, { fetchImpl = pageFetch, signal } = {})
     } catch (error) {
       if (signal?.aborted) throw signal.reason ?? error
       if (error?.name === 'AddressError') throw new MaterialError('bad-url', error.message)
-      if (error?.code === 'ETOOLARGE') throw new MaterialError('too-large', 'The page is too large')
+      if (error?.code === 'ETOOLARGE') throw new MaterialError('page-too-large', 'The page is too large')
       throw new MaterialError('network', timeout.aborted ? 'The page took too long to load' : 'The page could not be loaded')
     }
     if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
@@ -348,7 +348,7 @@ export async function ingestUrl(address, { fetchImpl = pageFetch, signal } = {})
   if (!response?.ok) throw new MaterialError('http', `The page returned an error (${response?.status ?? 'redirect loop'})`)
   const type = String(response.headers.get('content-type') ?? '').toLowerCase()
   const bytes = Buffer.from(await response.arrayBuffer())
-  if (bytes.length > MAX_PAGE_BYTES && !type.includes('pdf')) throw new MaterialError('too-large', 'The page is too large')
+  if (bytes.length > MAX_PAGE_BYTES && !type.includes('pdf')) throw new MaterialError('page-too-large', 'The page is too large')
   if (type.includes('application/pdf') || bytes.subarray(0, 5).toString('latin1') === '%PDF-') {
     const result = await ingestFile({ name: `${url.pathname.split('/').pop() || 'page'}.pdf`, bytes, signal })
     return { ...result, kind: 'url', url: url.href }
@@ -370,6 +370,6 @@ export async function ingestUrl(address, { fetchImpl = pageFetch, signal } = {})
   const title = String(article?.title || document.querySelector('title')?.textContent || url.hostname).trim().slice(0, 160)
   const body = article?.textContent || document.body?.textContent || ''
   const chunks = chunkText(body, { section: url.hostname })
-  if (!chunks.length) throw new MaterialError('no-text', 'No readable text on this page')
+  if (!chunks.length) throw new MaterialError('page-no-text', 'No readable text on this page')
   return finish('url', title, chunks, { url: url.href })
 }

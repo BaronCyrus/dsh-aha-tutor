@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
+import { newId } from '../src/core/ids.js'
 import { createCourses } from '../src/host/courses.js'
 import { createJobs } from '../src/host/jobs.js'
 import { createLearner } from '../src/host/learner.js'
@@ -94,6 +95,47 @@ async function finish(jobs, started) {
     await new Promise(resolve => setTimeout(resolve, 2))
   }
   throw new Error('job timed out')
+}
+
+// The error a job fails with.
+async function failure(jobs, started) {
+  for (let attempt = 0; attempt < 500 && jobs.get(started.id).status === 'running'; attempt += 1) await new Promise(resolve => setTimeout(resolve, 2))
+  assert.equal(jobs.get(started.id).status, 'failed')
+  return jobs.get(started.id).error
+}
+
+async function written(jobs, started, count) {
+  for (let attempt = 0; attempt < 500 && jobs.get(started.id).partialCount < count; attempt += 1) await new Promise(resolve => setTimeout(resolve, 2))
+  assert.equal(jobs.get(started.id).partialCount, count)
+}
+
+// fakeLlm whose boards (lessons, answers, shorts) stop after their first two
+// steps while held: a board still being written. rewrite changes what they say.
+function holdingLlm() {
+  const base = fakeLlm()
+  const boards = ['Teach this lesson', 'Explain the concept', 'two-minute explainer']
+  let gate = null
+  return {
+    ...base,
+    hold(rewrite = value => value) {
+      let open
+      gate = { opened: new Promise(resolve => { open = resolve }), open: () => open(), rewrite }
+    },
+    release() {
+      gate?.open()
+      gate = null
+    },
+    async stream(request) {
+      const held = gate
+      if (!held || !boards.some(kind => request.user.includes(kind))) return base.stream(request)
+      const full = held.rewrite(await base.complete(request))
+      const lines = full.split('\n')
+      request.onText(`${lines.slice(0, 2).join('\n')}\n`)
+      await held.opened
+      request.onText(lines.slice(2).join('\n'))
+      return full
+    },
+  }
 }
 
 test('end-to-end tutoring flow on the host', async () => {
@@ -287,6 +329,104 @@ test('end-to-end tutoring flow on the host', async () => {
     assert.equal((await courses.list()).length, 2)
     await courses.remove({ courseId })
     assert.equal((await courses.list()).length, 1)
+    jobs.dispose()
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('questions about a board still being written use the steps written so far', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'aha-writing-'))
+  try {
+    const store = createStore({ root: join(root, 'data') })
+    const llm = holdingLlm()
+    const jobs = createJobs()
+    const learner = createLearner({ store, llm })
+    const courses = createCourses({ store, llm, jobs })
+    const lessons = createLessons({ store, llm, jobs, courses, learner })
+    const studio = createStudio({ store, llm, jobs })
+    const lastPrompt = kind => llm.calls.findLast(call => call.user.includes(kind))
+    const REEXPLAIN = 'did not get this step'
+
+    const { courseId } = await finish(jobs, courses.startCraft({ goal: '我想学简谐运动' }))
+    await finish(jobs, courses.submitIntake({ courseId, answers: {} }))
+    const { course } = await finish(jobs, courses.confirm({ courseId }))
+    const [first, second] = course.units[0].lectures[0].lessons
+    const scope = { kind: 'lesson', courseId, lessonId: first.id }
+
+    // A lesson opened for the first time: the classroom follows the job that
+    // writes its board, which is saved only once the whole board is written.
+    llm.hold()
+    const writing = (await lessons.prepare({ courseId, lessonId: first.id })).job
+    await written(jobs, writing, 2)
+    const reexplained = lessons.reexplain({ scope: { ...scope, jobId: writing.id }, stepIndex: 1, style: 'example', anchorStepId: 's2' })
+    assert.equal((await finish(jobs, reexplained)).steps.length, 2)
+    assert.match(lastPrompt(REEXPLAIN).user, /<step_to_reexplain>\n\[s2\] 公式\n {2}\$F=-kx\$/u)
+    assert.equal((await finish(jobs, lessons.ask({ scope: { ...scope, jobId: writing.id }, stepIndex: 1, question: '负号呢？' }))).steps[0].say, '这是你问题的答案')
+    assert.match(lastPrompt('raised a hand').user, /<board_so_far>[\s\S]*F=-kx/u, 'a raised hand sees the board so far')
+    await finish(jobs, lessons.correct({ scope: { ...scope, jobId: writing.id }, stepIndex: 1, item: { prompt: '解 $x^2=4$', answer: '$x=\\pm 2$' }, response: '$x=2$' }))
+    assert.match(lastPrompt('went wrong somewhere').user, /<board_so_far>[\s\S]*F=-kx/u, 'so does a correction')
+    // Without that job, or with a job that writes something else, there is no board yet.
+    assert.equal((await failure(jobs, lessons.reexplain({ scope, stepIndex: 1 }))).code, 'no-board')
+    assert.equal((await failure(jobs, lessons.reexplain({ scope: { ...scope, jobId: reexplained.id }, stepIndex: 1 }))).code, 'no-board')
+    assert.equal((await failure(jobs, lessons.reexplain({ scope: { kind: 'lesson', courseId, lessonId: second.id, jobId: writing.id }, stepIndex: 1 }))).code, 'no-board')
+    llm.release()
+    assert.equal((await finish(jobs, writing)).board.steps[1].say, '公式')
+    const kept = (await lessons.get({ courseId, lessonId: first.id })).asides
+    assert.deepEqual(kept.map(aside => [aside.kind, aside.anchorStepId]), [['reexplain', 's2'], ['question', 's2'], ['correction', 's2']], 'they stay with the lesson')
+    for (let attempt = 0; attempt < 300 && !(await store.exists(store.paths.board(courseId, second.id))); attempt += 1) await new Promise(resolve => setTimeout(resolve, 3))
+
+    // Regenerating writes a new board while the old one is still saved: the
+    // classroom shows the new steps, so questions are about those.
+    llm.hold(value => value.replace('F=-kx', 'F=ma'))
+    const rewriting = (await lessons.prepare({ courseId, lessonId: first.id, force: true })).job
+    await written(jobs, rewriting, 2)
+    await finish(jobs, lessons.reexplain({ scope: { ...scope, jobId: rewriting.id }, stepIndex: 1, anchorStepId: 's2' }))
+    assert.match(lastPrompt(REEXPLAIN).user, /<step_to_reexplain>[\s\S]*F=ma/u)
+    assert.doesNotMatch(lastPrompt(REEXPLAIN).user, /F=-kx/u)
+    llm.release()
+    await finish(jobs, rewriting)
+
+    // An assist thread is saved once its first answer is written.
+    llm.hold()
+    const threadId = newId('thd')
+    const answering = studio.assist({ mode: 'explain', request: '什么是简谐运动？', newThreadId: threadId })
+    await written(jobs, answering, 2)
+    const thread = { kind: 'thread', id: threadId, turn: 0 }
+    assert.equal((await failure(jobs, lessons.reexplain({ scope: thread, stepIndex: 1 }))).code, 'not-found')
+    assert.equal((await failure(jobs, lessons.reexplain({ scope: { ...thread, id: newId('thd'), jobId: answering.id }, stepIndex: 1 }))).code, 'not-found', 'a job for another thread does not count')
+    await finish(jobs, lessons.reexplain({ scope: { ...thread, jobId: answering.id }, stepIndex: 1 }))
+    assert.match(lastPrompt(REEXPLAIN).user, /<lesson>\n什么是简谐运动？\n<\/lesson>[\s\S]*<step_to_reexplain>\n\[s2\] 例子/u)
+    assert.doesNotMatch(lastPrompt(REEXPLAIN).system, /the learner's language/u, 'the steps tell the language')
+    llm.release()
+    assert.equal((await finish(jobs, answering)).threadId, threadId)
+    // Until a follow-up is saved, the thread's last saved answer is another board.
+    llm.hold(value => value.replaceAll('概念', '追问'))
+    const following = studio.assist({ mode: 'explain', request: '再举个例子', threadId })
+    await written(jobs, following, 2)
+    await finish(jobs, lessons.reexplain({ scope: { ...thread, turn: 1, jobId: following.id }, stepIndex: 0 }))
+    assert.match(lastPrompt(REEXPLAIN).user, /<step_to_reexplain>\n\[s1\] 追问/u)
+    llm.release()
+    assert.equal((await finish(jobs, following)).turn, 1)
+
+    // So is a short.
+    llm.hold()
+    const shortId = newId('sht')
+    const making = studio.makeShort({ topic: '为什么单摆周期和质量无关', newId: shortId })
+    await written(jobs, making, 2)
+    const short = { kind: 'short', id: shortId }
+    assert.equal((await failure(jobs, lessons.reexplain({ scope: short, stepIndex: 1 }))).code, 'not-found')
+    await finish(jobs, lessons.reexplain({ scope: { ...short, jobId: making.id }, stepIndex: 1 }))
+    assert.match(lastPrompt(REEXPLAIN).user, /<step_to_reexplain>\n\[s2\] 二/u)
+    llm.release()
+    assert.equal((await finish(jobs, making)).item.id, shortId)
+
+    // A file that is not a course pack says so.
+    await assert.rejects(courses.importPack({ json: 'not json' }), error => error.code === 'bad-pack')
+    await assert.rejects(courses.importPack({ json: '{"format":"other"}' }), error => error.code === 'bad-pack')
+    // A pack whose course is broken says the same, without the reader's internals.
+    await assert.rejects(courses.importPack({ json: JSON.stringify({ format: 'aha-tutor.coursepack', version: 1, course: { units: 'x' } }) }), error => error.code === 'bad-pack' && error.message === 'not a course pack')
+    await assert.rejects(courses.importPack({ json: JSON.stringify({ ...JSON.parse((await courses.exportPack({ courseId })).json), version: 99 }) }), error => error.code === 'pack-too-new')
     jobs.dispose()
   } finally {
     await rm(root, { recursive: true, force: true })

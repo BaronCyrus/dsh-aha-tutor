@@ -83,7 +83,7 @@ export function BoardExport({ steps, title, kind = 'ghost' }) {
     const local = { cancelled: false }
     control.current = local
     render(job.format, local)
-      .catch(error => { if (!local.cancelled) toast(t('errorGeneric', { message: error.message })) })
+      .catch(() => { if (!local.cancelled) toast(t('exportFailed')) })
       .finally(() => {
         if (control.current !== local) return
         control.current = null

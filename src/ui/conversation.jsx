@@ -4,7 +4,7 @@ import { Classroom } from './Classroom.jsx'
 import { openMainScreen, useAppValue } from './context.js'
 import { AppContext, useApp } from './hooks.js'
 import { ItemCard } from './ItemCard.jsx'
-import { Spinner } from './components.jsx'
+import { errorText, Spinner } from './components.jsx'
 
 // ── side-panel whiteboard (conversation sessions) ───────────────────────────
 
@@ -42,7 +42,7 @@ function ThreadBoard({ threadId, jobId }) {
     return () => { live = false }
   }, [threadId, jobId])
   if (!state) return <Spinner label={t('loading')} />
-  if (state.error) return <p className="aha-error">{t('errorGeneric', { message: state.error.message })}</p>
+  if (state.error) return <p className="aha-error">{errorText(t, state.error)}</p>
   return <Classroom scope={{ kind: 'thread', id: threadId, turn: state.turn ?? 0 }} title={state.title || t('boardSession')} steps={state.steps} stream={state.stream} language={state.language} recordChecks={false} />
 }
 

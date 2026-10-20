@@ -64,13 +64,13 @@ export function checkEndpoint(value) {
   try {
     url = new URL(String(value))
   } catch {
-    throw new TtsError('config', 'TTS address is not a valid URL')
+    throw new TtsError('address', 'TTS address is not a valid URL')
   }
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
   if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) {
-    throw new TtsError('config', 'TTS address must use https (http only for localhost)')
+    throw new TtsError('address', 'TTS address must use https (http only for localhost)')
   }
-  if (url.username || url.password) throw new TtsError('config', 'TTS address must not contain credentials')
+  if (url.username || url.password) throw new TtsError('address', 'TTS address must not contain credentials')
   return url
 }
 
@@ -165,7 +165,7 @@ const synthesizers = {
   },
 
   async volcengine({ text, config, secret, rate, fetchImpl, signal }) {
-    if (!config.appId) throw new TtsError('config', 'Volcengine App ID is required')
+    if (!config.appId) throw new TtsError('app-id', 'Volcengine App ID is required')
     const response = await boundedFetch(fetchImpl, 'https://openspeech.bytedance.com/api/v1/tts', {
       method: 'POST',
       headers: { Authorization: `Bearer;${secret}`, 'Content-Type': 'application/json' },
@@ -224,9 +224,9 @@ const synthesizers = {
 
   async azure({ text, config, secret, rate, fetchImpl, signal }) {
     const region = String(config.region || '').trim().toLowerCase()
-    if (!/^[a-z0-9]{2,30}$/u.test(region)) throw new TtsError('config', 'Azure region is invalid')
+    if (!/^[a-z0-9]{2,30}$/u.test(region)) throw new TtsError('azure', 'Azure region is invalid')
     const voice = String(config.voice || 'zh-CN-XiaoxiaoNeural')
-    if (!/^[A-Za-z]{2,3}-[A-Za-z]{2,4}-[A-Za-z0-9:]+$/u.test(voice)) throw new TtsError('config', 'Azure voice name is invalid')
+    if (!/^[A-Za-z]{2,3}-[A-Za-z]{2,4}-[A-Za-z0-9:]+$/u.test(voice)) throw new TtsError('azure', 'Azure voice name is invalid')
     const lang = voice.split('-').slice(0, 2).join('-')
     const percent = Math.round((rateNumber(rate) - 1) * 100)
     const ssml = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${lang}"><voice name="${voice}"><prosody rate="${percent >= 0 ? '+' : ''}${percent}%">${xmlEscape(text)}</prosody></voice></speak>`
@@ -260,7 +260,7 @@ export function createTts({ cacheDir, fetchImpl = globalThis.fetch, getSecret })
   async function synthesize({ provider, config = {}, text, rate = 1, signal }) {
     if (!TTS_PROVIDERS.includes(provider)) throw new TtsError('config', 'Unknown TTS provider')
     const content = String(text ?? '').trim().slice(0, 4000)
-    if (!content) throw new TtsError('request', 'Nothing to speak')
+    if (!content) throw new TtsError('empty', 'Nothing to speak')
     const merged = { ...providerDefaults(provider), ...config }
     const key = cacheKey(provider, merged, rate, content)
     const file = cacheDir ? join(cacheDir, `${key}.mp3`) : null
@@ -273,7 +273,7 @@ export function createTts({ cacheDir, fetchImpl = globalThis.fetch, getSecret })
       }
     }
     const secret = await getSecret(provider)
-    if (!secret) throw new TtsError('auth', 'No key saved for this TTS provider')
+    if (!secret) throw new TtsError('no-key', 'No key saved for this TTS provider')
     const parts = []
     for (const chunk of splitForTts(content, CHUNK_UNITS[provider])) {
       parts.push(await synthesizers[provider]({ text: chunk, config: merged, secret, rate, fetchImpl, signal }))

@@ -11,26 +11,33 @@ const PROVIDERS = [['openai', 'providerOpenai'], ['volcengine', 'providerVolceng
 export function SettingsScreen() {
   const { api, t, settings, reloadSettings, setVoiceId, speech, language } = useApp()
   const models = useLoad(() => api.call('models/list'), [])
+  // An error shows under the control that failed ({ area, failure }): at the
+  // top of the page it would be out of sight on a narrow window.
   const [error, setError] = useState(null)
+  const errorIn = area => (error?.area === area ? error.failure : null)
   const [voices, setVoices] = useState(() => listVoices())
   const [keyDraft, setKeyDraft] = useState('')
   const [testing, setTesting] = useState(false)
   useEffect(() => onVoicesChanged(setVoices), [])
 
-  async function save(patch) {
+  async function attempt(area, action) {
     setError(null)
     try {
-      await api.call('settings/save', { settings: patch })
-      await reloadSettings()
+      await action()
     } catch (failure) {
-      setError(failure)
+      setError({ area, failure })
     }
   }
+
+  const save = (area, patch) => attempt(area, async () => {
+    await api.call('settings/save', { settings: patch })
+    await reloadSettings()
+  })
 
   const routeValue = (provider, model) => (provider && model ? `${provider}::${model}` : '')
   const setRoute = (prefix, value) => {
     const [provider = '', model = ''] = value ? value.split('::') : []
-    save({ [`${prefix}Provider`]: provider, [`${prefix}Model`]: model })
+    save('models', { [`${prefix}Provider`]: provider, [`${prefix}Model`]: model })
   }
   const modelOptions = useMemo(() => (models.value ?? []).map(row => ({ value: `${row.provider}::${row.model}`, label: `${row.providerName} · ${row.name}${row.images ? ' 🖼' : ''}` })), [models.value])
 
@@ -41,13 +48,14 @@ export function SettingsScreen() {
   const providerConfig = settings.tts?.[provider] ?? {}
 
   async function test() {
+    setError(null)
     setTesting(true)
     try {
       speech.configure({ engine: settings.voiceEngine ?? 'browser', voiceId: settings.voiceId || undefined, language: lang, rate: settings.voiceRate ?? 1 })
       const spoken = speech.speak(t('testSentence'), { rate: settings.voiceRate ?? 1 })
       const result = await spoken.done
       // Cloud voices say what went wrong; the system voice only names the engine's error.
-      if (result?.error) setError(new ApiError(result.code ?? 'speech', result.error))
+      if (result?.error) setError({ area: 'test', failure: new ApiError(result.code ?? 'speech', result.error) })
     } finally {
       setTesting(false)
     }
@@ -56,7 +64,6 @@ export function SettingsScreen() {
   if (!settings.voiceEngine) return <div className="aha-page"><Spinner label={t('loading')} /></div>
   return <div className="aha-page" style={{ maxWidth: 820 }}>
     <h2 className="aha-title">{t('settingsTitle')}</h2>
-    <ErrorLine error={error} />
 
     <section className="aha-card">
       <b>{t('modelsTitle')}</b>
@@ -68,16 +75,18 @@ export function SettingsScreen() {
         </select>
       </label>)}
       {models.loading ? <Spinner /> : null}
+      <ErrorLine error={errorIn('models')} reveal />
     </section>
 
     <section className="aha-card">
       <b>{t('voiceTitle')}</b>
       <div className="aha-row" style={{ gap: 6 }}>
-        {[['browser', 'engineBrowser'], ['cloud', 'engineCloud'], ['off', 'engineOff']].map(([value, label]) => <button key={value} type="button" className="aha-chip" data-active={settings.voiceEngine === value} onClick={() => save({ voiceEngine: value })}>{t(label)}</button>)}
+        {[['browser', 'engineBrowser'], ['cloud', 'engineCloud'], ['off', 'engineOff']].map(([value, label]) => <button key={value} type="button" className="aha-chip" data-active={settings.voiceEngine === value} onClick={() => save('engine', { voiceEngine: value })}>{t(label)}</button>)}
       </div>
       <label className="aha-label">{t('voiceRate')} · {settings.voiceRate ?? 1}×
-        <input type="range" min="0.5" max="2" step="0.05" value={settings.voiceRate ?? 1} onChange={event => save({ voiceRate: Number(event.currentTarget.value) })} />
+        <input type="range" min="0.5" max="2" step="0.05" value={settings.voiceRate ?? 1} onChange={event => save('engine', { voiceRate: Number(event.currentTarget.value) })} />
       </label>
+      <ErrorLine error={errorIn('engine')} reveal />
       {settings.voiceEngine === 'browser' ? <>
         <label className="aha-label">{t('browserVoice')}
           <select className="aha-select" value={settings.voiceId ?? ''} onChange={event => setVoiceId(event.currentTarget.value)}>
@@ -89,41 +98,43 @@ export function SettingsScreen() {
       </> : null}
       {settings.voiceEngine === 'cloud' ? <div className="aha-col">
         <label className="aha-label">{t('cloudProvider')}
-          <select className="aha-select" value={provider} onChange={event => save({ ttsProvider: event.currentTarget.value })}>
+          <select className="aha-select" value={provider} onChange={event => save('cloud', { ttsProvider: event.currentTarget.value })}>
             {PROVIDERS.map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
           </select>
         </label>
         {fields.map(field => <label key={field.key} className="aha-label">{t(`field_${field.key}`)}
           <input className="aha-input" defaultValue={providerConfig[field.key] ?? ''} key={`${provider}:${field.key}:${providerConfig[field.key] ?? ''}`} onBlur={event => {
             const value = event.currentTarget.value.trim()
-            if (value !== (providerConfig[field.key] ?? '')) save({ tts: { [provider]: { [field.key]: value } } })
+            if (value !== (providerConfig[field.key] ?? '')) save('cloud', { tts: { [provider]: { [field.key]: value } } })
           }} />
         </label>)}
+        <ErrorLine error={errorIn('cloud')} reveal />
         <label className="aha-label">{t('field_apiKey')} · <span className={settings.keys?.[provider] ? 'aha-ok' : 'aha-hint'}>{settings.keys?.[provider] ? t('keySaved') : t('keyMissing')}</span>
           <div className="aha-row">
             <input className="aha-input" style={{ flex: 1 }} type="password" autoComplete="off" spellCheck={false} value={keyDraft} onChange={event => setKeyDraft(event.currentTarget.value)} />
-            <button type="button" className="aha-btn" disabled={!keyDraft.trim()} onClick={async () => {
-              setError(null)
-              try {
-                await api.call('settings/set-key', { provider, key: keyDraft.trim() })
-                setKeyDraft('')
-                await reloadSettings()
-              } catch (failure) {
-                setError(failure)
-              }
-            }}>{t('saveKey')}</button>
-            {settings.keys?.[provider] ? <button type="button" className="aha-btn" data-kind="ghost" onClick={async () => { await api.call('settings/clear-key', { provider }); await reloadSettings() }}>{t('clearKey')}</button> : null}
+            <button type="button" className="aha-btn" disabled={!keyDraft.trim()} onClick={() => attempt('key', async () => {
+              await api.call('settings/set-key', { provider, key: keyDraft.trim() })
+              setKeyDraft('')
+              await reloadSettings()
+            })}>{t('saveKey')}</button>
+            {settings.keys?.[provider] ? <button type="button" className="aha-btn" data-kind="ghost" onClick={() => attempt('key', async () => {
+              await api.call('settings/clear-key', { provider })
+              await reloadSettings()
+            })}>{t('clearKey')}</button> : null}
           </div>
         </label>
+        <ErrorLine error={errorIn('key')} reveal />
       </div> : null}
       <div><button type="button" className="aha-btn" disabled={testing || settings.voiceEngine === 'off'} onClick={test}>{testing ? <span className="aha-spinner" /> : '🔊'} {t('testVoice')}</button></div>
+      <ErrorLine error={errorIn('test')} reveal />
     </section>
 
     <section className="aha-card">
       <b>{t('boardTheme')}</b>
-      <div className="aha-row" style={{ gap: 6 }}>{[['auto', 'themeAuto'], ['light', 'themeLight'], ['dark', 'themeDark']].map(([value, label]) => <button key={value} type="button" className="aha-chip" data-active={(settings.boardTheme ?? 'auto') === value} onClick={() => save({ boardTheme: value })}>{t(label)}</button>)}</div>
+      <div className="aha-row" style={{ gap: 6 }}>{[['auto', 'themeAuto'], ['light', 'themeLight'], ['dark', 'themeDark']].map(([value, label]) => <button key={value} type="button" className="aha-chip" data-active={(settings.boardTheme ?? 'auto') === value} onClick={() => save('board', { boardTheme: value })}>{t(label)}</button>)}</div>
       <b>{t('boardFont')}</b>
-      <div className="aha-row" style={{ gap: 6 }}>{[['hand', 'fontHand'], ['standard', 'fontStandard']].map(([value, label]) => <button key={value} type="button" className="aha-chip" data-active={(settings.boardFont ?? 'hand') === value} onClick={() => save({ boardFont: value })} style={value === 'hand' ? { fontFamily: BOARD_FONT } : undefined}>{t(label)}</button>)}</div>
+      <div className="aha-row" style={{ gap: 6 }}>{[['hand', 'fontHand'], ['standard', 'fontStandard']].map(([value, label]) => <button key={value} type="button" className="aha-chip" data-active={(settings.boardFont ?? 'hand') === value} onClick={() => save('board', { boardFont: value })} style={value === 'hand' ? { fontFamily: BOARD_FONT } : undefined}>{t(label)}</button>)}</div>
+      <ErrorLine error={errorIn('board')} reveal />
     </section>
 
     <VersionCard />

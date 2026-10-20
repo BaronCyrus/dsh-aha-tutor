@@ -8,7 +8,9 @@ import { captionSentences, spokenText } from './inline.js'
 
 const STEP_GAP_MS = 450
 
-export function createPlayer({ speech, onChange, now = () => performance.now(), frame, cancelFrame, startIndex = 0 }) {
+// onNarration(result) hears how each step's narration ended (spoken, silent
+// or failed), except a narration cut short by moving to another step.
+export function createPlayer({ speech, onChange, onNarration, now = () => performance.now(), frame, cancelFrame, startIndex = 0 }) {
   const requestFrame = frame ?? (callback => requestAnimationFrame(callback))
   const cancel = cancelFrame ?? (handle => cancelAnimationFrame(handle))
   let steps = []
@@ -78,6 +80,7 @@ export function createPlayer({ speech, onChange, now = () => performance.now(), 
         if (!run || run.token !== token) return
         if (result?.silent || result?.error) run.silentUntil = estimateSpeechMs(step.say, rate) * 0.8
         else run.speechDone = true
+        onNarration?.(result)
       })
       speech?.prefetch?.(spokenText(steps[state.index + 1]?.say ?? ''))
     }

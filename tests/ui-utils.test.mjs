@@ -5,11 +5,12 @@ import { DOMParser } from 'linkedom'
 
 import { boardScope, createApi } from '../src/ui/api.js'
 import { chartSvg, escapeXml, niceTicks } from '../src/ui/charts.js'
+import { en, format, zh } from '../src/ui/i18n.js'
 import { courseNextStep, lessonStage, nextStepFor, sessionStats } from '../src/ui/practice.js'
 import { PREP_DELAY_MS, prepStages } from '../src/ui/prep.js'
 import { STYLE } from '../src/ui/styles.js'
 import { animationDocument, sanitizeSvg } from '../src/ui/sanitize.js'
-import { createSpeech, splitSentences } from '../src/ui/speech.js'
+import { afterNarration, createSpeech, splitSentences } from '../src/ui/speech.js'
 import { syncedStarts, themedSvg, wrap } from '../src/ui/video.js'
 import { captionSentences, inlinePlain, parseInline, sliceInline, spokenText, texToText } from '../src/ui/board/inline.js'
 
@@ -137,6 +138,56 @@ test('cloud voice plays the host\'s audio, reports a failed request and stops wh
   } finally {
     delete globalThis.Audio
   }
+})
+
+test('cloud voice keeps the host\'s code and tells a browser that will not play as a playback failure', async () => {
+  let refuse = false
+  globalThis.Audio = class {
+    // What Chromium answers before the page has been clicked.
+    play() { return refuse ? Promise.reject(new DOMException('play() failed because the user didn\'t interact with the document first.', 'NotAllowedError')) : Promise.resolve() }
+    pause() {}
+  }
+  try {
+    const speech = createSpeech({
+      fetchAudio: async textValue => {
+        if (textValue === '没有密钥') throw Object.assign(new Error('No key saved for this TTS provider'), { code: 'aha-tutor/tts-no-key' })
+        if (textValue === '读不出来') throw new TypeError('Failed to read the response')
+        return { blob: new Blob(['mp3'], { type: 'audio/mpeg' }) }
+      },
+    })
+    speech.configure({ engine: 'cloud' })
+    assert.equal((await speech.speak('没有密钥').done).code, 'aha-tutor/tts-no-key')
+    assert.equal((await speech.speak('读不出来').done).code, 'tts-failed')
+    refuse = true
+    const blocked = await speech.speak('你好').done
+    assert.equal(blocked.completed, false)
+    assert.equal(blocked.code, 'playback', 'not the DOMException\'s numeric code')
+  } finally {
+    delete globalThis.Audio
+  }
+})
+
+test('a failing voice is turned off for the lesson: at once when only its settings can fix it, else on the second failure in a row', () => {
+  const failed = code => ({ completed: false, error: 'it failed', code })
+  for (const code of ['tts-no-key', 'tts-auth', 'tts-address', 'tts-app-id', 'tts-azure', 'tts-request', 'tts-timeout', 'no-credentials']) {
+    assert.deepEqual(afterNarration(0, failed(`aha-tutor/${code}`)), { failures: 1, stop: { code, message: 'it failed' } }, code)
+  }
+  // A system voice without permission or engine names no code.
+  assert.equal(afterNarration(0, { completed: false, error: 'not-allowed' }).stop.code, 'speech')
+
+  let voice = afterNarration(0, failed('aha-tutor/tts-network'))
+  assert.deepEqual(voice, { failures: 1, stop: null }, 'a lost connection may pass')
+  voice = afterNarration(voice.failures, { completed: true })
+  assert.deepEqual(voice, { failures: 0, stop: null }, 'a step that was spoken starts the count again')
+  voice = afterNarration(voice.failures, failed('playback'))
+  voice = afterNarration(voice.failures, { completed: true, silent: true })
+  assert.equal(voice.failures, 1, 'a muted step neither fails nor speaks')
+  voice = afterNarration(voice.failures, failed('aha-tutor/tts-server'))
+  assert.deepEqual(voice, { failures: 2, stop: { code: 'tts-server', message: 'it failed' } })
+
+  // The note puts the reason inside one sentence in either language.
+  assert.equal(format(zh.voiceDownCloud, { reason: zh['err_tts-no-key'] }), '云端语音用不了：还没有保存这个语音服务的密钥，请先在设置里填写。这节课先静音往下讲。')
+  assert.equal(format(en.voiceDownSystem, { reason: en.err_speech }), 'The system voice is not working: Reading aloud did not work. Try another system voice, or switch to a cloud voice. This lesson goes on without sound.')
 })
 
 test('video captions never start a line with closing punctuation', () => {

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { ApiError, fileToBase64 } from './api.js'
 import { useApp, useLoad } from './hooks.js'
@@ -54,10 +54,16 @@ export function errorText(t, error) {
   return code && t(key) !== key ? t(key) : t('errorGeneric', { message: error?.message ?? String(error) })
 }
 
-export function ErrorLine({ error, style }) {
+// reveal: a line shown under the control that failed is scrolled into view
+// when it appears below the edge of the window.
+export function ErrorLine({ error, style, reveal = false }) {
   const { t } = useApp()
+  const line = useRef(null)
+  useEffect(() => {
+    if (reveal && error) line.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [reveal, error])
   if (!error) return null
-  return <div className="aha-error" role="alert" style={style} title={error.message ?? undefined}>{errorText(t, error)}</div>
+  return <div ref={line} className="aha-error" role="alert" style={style} title={error.message ?? undefined}>{errorText(t, error)}</div>
 }
 
 export function Empty({ children }) {

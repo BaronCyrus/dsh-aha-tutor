@@ -184,17 +184,22 @@ function cloudEngine({ fetchAudio }) {
     audio.preservesPitch = true
     const state = { audio, cancelled: false, resolveDone, rate }
     session = state
+    // The host's failures carry their code (tts-no-key, …). A browser that
+    // will not play the audio, one not clicked yet for instance, gives only a
+    // DOMException, whose numeric code means nothing to the learner.
+    const fail = (error, fallback) => {
+      if (session === state) session = null
+      const code = typeof error?.code === 'string' && error.code ? error.code : fallback.code
+      resolveDone({ completed: false, error: error?.message ?? fallback.code, code })
+    }
     load(textValue).then(url => {
       if (state.cancelled) return
       audio.src = url
       audio.playbackRate = Math.min(2, Math.max(0.5, rate))
       audio.onended = () => { if (session === state) session = null; resolveDone({ completed: true }) }
-      audio.onerror = () => { if (session === state) session = null; resolveDone({ completed: false, error: 'playback', code: 'playback' }) }
-      return audio.play()
-    }).catch(error => {
-      if (session === state) session = null
-      resolveDone({ completed: false, error: error?.message ?? 'tts', code: error?.code })
-    })
+      audio.onerror = () => fail(null, { code: 'playback' })
+      return audio.play().catch(error => fail(error, { code: 'playback' }))
+    }).catch(error => fail(error, { code: 'tts-failed' }))
     return { done }
   }
 
@@ -266,4 +271,23 @@ export function createSpeech({ fetchAudio }) {
       engines.cloud.clear()
     },
   }
+}
+
+// Failures that will not pass during a lesson: the voice's settings are
+// wrong (no key, a rejected key, a bad address or region, a refused request),
+// the service timed out (each try holds a step for 45 s), or the voice cannot
+// speak at all ('speech': a system voice without permission or engine, or an
+// engine that threw). Other failures (no connection, a rate limit, a server
+// error) may pass, so they stop the voice only when the next step fails too.
+const LASTING_FAILURES = new Set(['tts-no-key', 'tts-auth', 'tts-address', 'tts-app-id', 'tts-azure', 'tts-config', 'tts-request', 'tts-timeout', 'no-credentials', 'speech'])
+
+// What one step's narration means for the rest of a lesson. `failures`
+// counts failed narrations in a row; `stop` ({ code, message }) is set when
+// the voice should stay off and the learner be told why.
+export function afterNarration(failures, result) {
+  if (!result?.error) return { failures: result?.completed && !result.silent ? 0 : failures, stop: null }
+  // The host names its codes aha-tutor/tts-no-key and so on.
+  const code = (typeof result.code === 'string' && result.code ? result.code : 'speech').replace(/^aha-tutor\//u, '')
+  const count = failures + 1
+  return { failures: count, stop: LASTING_FAILURES.has(code) || count >= 2 ? { code, message: String(result.error) } : null }
 }

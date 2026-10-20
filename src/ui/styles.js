@@ -132,6 +132,10 @@ a.aha-btn{text-decoration:none}
 .aha-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center}
 .aha-caption{min-height:44px;padding:8px 16px;text-align:center;font-size:15px;line-height:22px;color:var(--aha-text)}
 .aha-caption .katex{font-size:1em}
+/* Why the lesson went silent, above the controls; the buttons wrap under the text when narrow. */
+.aha-voiceNote{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;align-self:center;width:min(100%,760px);padding:8px 10px 8px 14px;border-radius:12px;background:var(--aha-soft);border:1px solid var(--aha-border);color:var(--aha-text);font-size:13px;line-height:19px}
+.aha-voiceNoteText{flex:1 1 260px;min-width:0;overflow-wrap:anywhere}
+.aha-voiceNoteActions{display:flex;align-items:center;gap:4px;margin-left:auto}
 /* Narrow: the panel goes under the board and the classroom scrolls, with the panel's header peeking in at the bottom. */
 @container classroom (max-width:900px){.aha-classBody{flex-direction:column;overflow-y:auto}.aha-classMain{flex:1 0 auto;min-height:calc(100% - 52px)}.aha-stage{min-height:300px}.aha-panel{flex:0 0 auto;width:auto}.aha-transcript{flex:0 1 auto;max-height:260px}}
 .aha-checkCard{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);width:min(600px,calc(100% - 28px));border-radius:14px;background:var(--aha-surface);border:1px solid var(--aha-border);box-shadow:0 14px 40px rgba(0,0,0,.22);padding:12px 14px 0;display:flex;flex-direction:column;gap:8px;z-index:5;max-height:62%;overflow:auto}

@@ -7,7 +7,7 @@ import { createPlayer } from '../src/ui/board/player.js'
 import { goalStates, transcriptEntries } from '../src/ui/board/sidepanel.js'
 import { createSpeech } from '../src/ui/speech.js'
 
-function harness(voice) {
+function harness(voice, playerOptions = {}) {
   let time = 0
   const frames = []
   const spoken = []
@@ -35,6 +35,7 @@ function harness(voice) {
     frame: callback => { frames.push(callback); return frames.length },
     cancelFrame: () => undefined,
     onChange: snapshot => snapshots.push(snapshot),
+    ...playerOptions,
   })
   const advance = async ms => {
     const target = time + ms
@@ -45,8 +46,8 @@ function harness(voice) {
       await Promise.resolve()
     }
   }
-  const finishSpeech = async () => {
-    for (const resolve of pending.splice(0)) resolve({ completed: true })
+  const finishSpeech = async (result = { completed: true }) => {
+    for (const resolve of pending.splice(0)) resolve(result)
     await Promise.resolve()
     await Promise.resolve()
   }
@@ -115,6 +116,24 @@ test('pause freezes progress; next, prev, seek and inserted steps move the curso
   player.setRate(1.5)
   assert.equal(player.state.rate, 1.5)
   await finishSpeech()
+  player.dispose()
+})
+
+test('the player tells how each narration ended, but not one cut short by moving on', async () => {
+  const heard = []
+  const { player, advance, finishSpeech } = harness(undefined, { onNarration: result => heard.push(result) })
+  player.setSteps(steps, { done: true })
+  player.play()
+  player.next()
+  const noKey = { completed: false, error: 'No key saved for this TTS provider', code: 'aha-tutor/tts-no-key' }
+  // Both narrations end now; the first was left behind by next().
+  await finishSpeech(noKey)
+  assert.deepEqual(heard, [noKey])
+  await advance(5000)
+  assert.equal(player.state.status, 'check', 'the step was written without its narration')
+  player.answer('k2')
+  await finishSpeech()
+  assert.deepEqual(heard.at(-1), { completed: true })
   player.dispose()
 })
 

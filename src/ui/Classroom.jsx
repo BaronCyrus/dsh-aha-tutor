@@ -6,11 +6,13 @@ import { captionSentences } from './board/inline.js'
 import { reidSteps } from './board/layout.js'
 import { createPlayer } from './board/player.js'
 import { goalStates, transcriptEntries } from './board/sidepanel.js'
-import { ErrorLine, Spinner } from './components.jsx'
+import { ErrorLine, errorText, Spinner } from './components.jsx'
+import { openMainScreen } from './context.js'
 import { useApp, useDarkMode, useLasting, usePersistentState } from './hooks.js'
 import { ItemCard } from './ItemCard.jsx'
 import { PREP_DELAY_MS } from './prep.js'
 import { PrepProgress } from './PrepProgress.jsx'
+import { afterNarration } from './speech.js'
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2]
 const STYLES = [['analogy', 'styleAnalogy'], ['visual', 'styleVisual'], ['example', 'styleExample'], ['simpler', 'styleSimpler'], ['deeper', 'styleDeeper']]
@@ -27,7 +29,7 @@ function asideEntry({ id, kind, label, anchorId, steps = [], streaming = false }
 // objectives: the lesson's goals, shown with progress in the side panel.
 // startIndex and onPosition count the board's own steps, not asides.
 export function Classroom({ scope, title, crumb, steps: initialSteps = [], stream = null, asides: savedAsides = [], objectives = [], language, startIndex = 0, autoplay = true, onPosition, onEnded, onStreamDone, header, stageClass, recordChecks = true }) {
-  const { api, t, speech, settings } = useApp()
+  const { api, t, speech, settings, dsh } = useApp()
   const dark = useDarkMode()
   const boardTheme = settings.boardTheme === 'dark' || (settings.boardTheme !== 'light' && dark) ? 'dark' : 'light'
   const styleLabel = style => t(STYLES.find(([value]) => value === style)?.[1] ?? 'reexplain')
@@ -47,6 +49,10 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   const [snapshot, setSnapshot] = useState(null)
   const [captions, setCaptions] = useState(true)
   const [muted, setMuted] = useState(false)
+  // A voice that fails is turned off for the rest of the lesson, with a note
+  // saying why ({ engine, code, message, dismissed }); see afterNarration.
+  const [voiceDown, setVoiceDown] = useState(null)
+  const voice = useRef({ failures: 0, down: false })
   const [asking, setAsking] = useState(false)
   const [question, setQuestion] = useState('')
   const [pendingAside, setPendingAside] = useState(null)
@@ -83,16 +89,30 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   }, [steps, asides])
   const playable = useMemo(() => (held === null ? steps : steps.slice(0, held)), [steps, held])
 
+  // How each narration ended decides whether the voice stays on. The player
+  // outlives renders, so it reaches the current settings through a ref.
+  const narrated = useRef(null)
+  narrated.current = result => {
+    if (voice.current.down) return
+    const next = afterNarration(voice.current.failures, result)
+    voice.current.failures = next.failures
+    if (!next.stop) return
+    voice.current.down = true
+    // Off at once: the next step may start before the effect below runs.
+    speech.configure({ engine: 'off' })
+    setVoiceDown({ engine: settings.voiceEngine ?? 'browser', ...next.stop, dismissed: false })
+  }
   const player = useMemo(() => {
     const target = main[Math.min(startIndex, main.length - 1)]?.id
     const merged = target ? steps.findIndex(step => step.id === target) : -1
-    return createPlayer({ speech, onChange: setSnapshot, startIndex: merged >= 0 ? merged : startIndex })
+    return createPlayer({ speech, onChange: setSnapshot, onNarration: result => narrated.current(result), startIndex: merged >= 0 ? merged : startIndex })
   }, [speech])
   useEffect(() => () => player.dispose(), [player])
   useEffect(() => { player.setSteps(playable, { done: complete && held === null }) }, [player, playable, complete, held])
+  const engine = muted || voiceDown ? 'off' : settings.voiceEngine ?? 'browser'
   useEffect(() => {
-    speech.configure({ engine: muted ? 'off' : settings.voiceEngine ?? 'browser', voiceId: settings.voiceId || undefined, language })
-  }, [speech, muted, settings.voiceEngine, settings.voiceId, language])
+    speech.configure({ engine, voiceId: settings.voiceId || undefined, language })
+  }, [speech, engine, settings.voiceId, language])
   useEffect(() => { player.setRate(settings.voiceRate ?? 1) }, [player, settings.voiceRate])
 
   // Stream steps from a generating lesson. A lesson board's job also says
@@ -328,6 +348,19 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
     player.answer(check.id)
   }
 
+  // The voice back on, with a fresh count of failures: Retry tells the step
+  // on screen again; the sound button lets the next step speak.
+  function voiceBack({ replay }) {
+    voice.current = { failures: 0, down: false }
+    setVoiceDown(null)
+    setMuted(false)
+    speech.configure({ engine: settings.voiceEngine ?? 'browser' })
+    if (replay && (status === 'playing' || status === 'paused')) player.seek(index)
+  }
+  const silent = muted || Boolean(voiceDown)
+  const voiceNote = !voiceDown || voiceDown.dismissed ? null
+    : voiceDown.engine === 'cloud' ? t('voiceDownCloud', { reason: errorText(t, voiceDown) }) : t('voiceDownSystem', { reason: errorText(t, voiceDown) })
+
   return <div className="aha-class" data-panel={panelOpen ? 'open' : 'closed'}>
     <div className="aha-classBar">
       <div className="aha-col" style={{ gap: 0 }}>
@@ -349,6 +382,14 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
         </div>
         {captions && caption ? <div className="aha-caption"><Inline text={caption} /></div> : <div className="aha-caption" />}
         <ErrorLine error={error} style={{ textAlign: 'center' }} />
+        {voiceNote ? <div className="aha-voiceNote" role="status">
+          <span className="aha-voiceNoteText">🔇 {voiceNote}</span>
+          <span className="aha-voiceNoteActions">
+            <button type="button" className="aha-btn" data-size="sm" onClick={() => voiceBack({ replay: true })}>{t('retry')}</button>
+            <button type="button" className="aha-btn" data-size="sm" data-kind="ghost" onClick={() => openMainScreen(dsh, 'settings')}>{t('openSettings')}</button>
+            <button type="button" className="aha-btn" data-size="sm" data-kind="ghost" onClick={() => setVoiceDown(current => current && { ...current, dismissed: true })} title={t('close')} aria-label={t('close')}>×</button>
+          </span>
+        </div> : null}
         <div className="aha-controls">
           <button type="button" className="aha-btn" data-kind="ghost" onClick={() => player.prev()} title={t('prevStep')} aria-label={t('prevStep')}>⏮</button>
           <button type="button" className="aha-btn" data-kind="primary" onClick={() => player.toggle()} disabled={!steps.length} aria-label={status === 'playing' ? t('pause') : t('play')}>{status === 'playing' ? '⏸' : '▶'} {status === 'playing' ? t('pause') : t('play')}</button>
@@ -357,7 +398,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
           <select className="aha-select" style={{ width: 'auto' }} value={snapshot?.rate ?? 1} onChange={event => player.setRate(Number(event.currentTarget.value))} aria-label={t('speed')}>
             {SPEEDS.map(speed => <option key={speed} value={speed}>{speed}×</option>)}
           </select>
-          <button type="button" className="aha-chip" data-active={!muted} onClick={() => setMuted(value => !value)}>{muted ? `🔇 ${t('voiceOff')}` : `🔊 ${t('voiceOn')}`}</button>
+          <button type="button" className="aha-chip" data-active={!silent} onClick={() => (voiceDown ? voiceBack({ replay: false }) : setMuted(value => !value))}>{silent ? `🔇 ${t('voiceOff')}` : `🔊 ${t('voiceOn')}`}</button>
           <button type="button" className="aha-chip" data-active={captions} onClick={() => setCaptions(value => !value)}>CC {t('captions')}</button>
           <button type="button" className="aha-chip" onClick={raiseHand} disabled={!steps.length}>✋ {t('raiseHand')}</button>
           <span style={{ position: 'relative' }}>

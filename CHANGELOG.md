@@ -6,6 +6,7 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 
 ### Added
 
+- **The board is a canvas**: a lesson's pages sit top to bottom on one canvas that pans (drag, scroll wheel or trackpad) and zooms (Ctrl/⌘ with the wheel, a pinch, or the − and + buttons) from 5 % to 300 %. Double-click a page to fit it, and **All** shows every page. During a lesson the view follows the writing; moving it yourself stops that until **Back to the teacher**. **Settings → Board view → Pages** brings back one page at a time with page numbers. Exports are unchanged.
 - **Voice questions**: the ask box in a lesson and the instant-answer box have a microphone. Click it, say the question, click again to stop, and the words are filled into the box to check before asking; a lesson pauses while you speak. Recognition is DSH's experimental Voice input (local SenseVoice, in the language set there), so nothing leaves the computer and the plugin keeps no audio. Until Voice input is enabled in DSH's Plugins page and its model is prepared, the microphone is greyed out and says how to set it up. A recording is at most two minutes.
 
 ## 1.4.0 - 2026-10-20

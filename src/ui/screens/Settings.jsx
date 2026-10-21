@@ -134,6 +134,9 @@ export function SettingsScreen() {
       <div className="aha-row" style={{ gap: 6 }}>{[['auto', 'themeAuto'], ['light', 'themeLight'], ['dark', 'themeDark']].map(([value, label]) => <button key={value} type="button" className="aha-chip" data-active={(settings.boardTheme ?? 'auto') === value} onClick={() => save('board', { boardTheme: value })}>{t(label)}</button>)}</div>
       <b>{t('boardFont')}</b>
       <div className="aha-row" style={{ gap: 6 }}>{[['hand', 'fontHand'], ['standard', 'fontStandard']].map(([value, label]) => <button key={value} type="button" className="aha-chip" data-active={(settings.boardFont ?? 'hand') === value} onClick={() => save('board', { boardFont: value })} style={value === 'hand' ? { fontFamily: BOARD_FONT } : undefined}>{t(label)}</button>)}</div>
+      <b>{t('boardView')}</b>
+      <div className="aha-row" style={{ gap: 6 }}>{[['canvas', 'viewCanvas'], ['pages', 'viewPages']].map(([value, label]) => <button key={value} type="button" className="aha-chip" data-active={(settings.boardView ?? 'canvas') === value} onClick={() => save('board', { boardView: value })}>{t(label)}</button>)}</div>
+      <p className="aha-hint">{t('boardViewHint')}</p>
       <ErrorLine error={errorIn('board')} reveal />
     </section>
 

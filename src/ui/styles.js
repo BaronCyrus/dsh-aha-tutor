@@ -221,10 +221,10 @@ a.aha-btn{text-decoration:none}
 .aha-feedback[data-ok=false]{background:color-mix(in srgb,var(--aha-bad) 10%,var(--aha-surface))}
 
 /* ── the board ─────────────────────────────────────────────────────────── */
-.aha-board{--ink:#23262f;--ink-soft:#4a4f5c;--head:#1f4fb8;--marker:rgba(255,214,79,.62);--accent:#d64545;--accent2:#2f9e6e;--paper:#fdfcf8;--grid:rgba(40,50,80,.05);--note:#fff7da;--note-line:#e9c45a;--pencil:#c98a2c;
+.aha-board{--desk:#ecebe4;--ink:#23262f;--ink-soft:#4a4f5c;--head:#1f4fb8;--marker:rgba(255,214,79,.62);--accent:#d64545;--accent2:#2f9e6e;--paper:#fdfcf8;--grid:rgba(40,50,80,.05);--note:#fff7da;--note-line:#e9c45a;--pencil:#c98a2c;
   position:relative;flex:1 1 auto;min-height:0;container-type:inline-size;container-name:board;background:var(--paper);background-image:radial-gradient(var(--grid) 1px,transparent 1.2px);background-size:22px 22px;color:var(--ink);font-family:${BOARD_FONT};overflow:hidden}
 .aha-board[data-font=standard]{font-family:inherit}
-.aha-board[data-theme=dark]{--ink:#ecebe4;--ink-soft:#c9c8bf;--head:#9cc2ff;--marker:rgba(214,178,58,.45);--accent:#ff8a80;--accent2:#7fd6a8;--paper:#1d2622;--grid:rgba(255,255,255,.05);--note:#2a3530;--note-line:#8f7a2f;--pencil:#e7c27a}
+.aha-board[data-theme=dark]{--desk:#141a17;--ink:#ecebe4;--ink-soft:#c9c8bf;--head:#9cc2ff;--marker:rgba(214,178,58,.45);--accent:#ff8a80;--accent2:#7fd6a8;--paper:#1d2622;--grid:rgba(255,255,255,.05);--note:#2a3530;--note-line:#8f7a2f;--pencil:#e7c27a}
 .aha-boardScroll{position:absolute;inset:0;overflow:auto;padding:22px 30px 40px}
 .aha-boardTitle{font-size:28px;line-height:38px;color:var(--head);margin:0 0 14px;font-weight:700}
 .aha-boardTitle span{background:linear-gradient(transparent 62%,var(--marker) 62%,var(--marker) 92%,transparent 92%)}
@@ -284,7 +284,20 @@ a.aha-btn{text-decoration:none}
 .aha-prepHint{font-size:15px}
 .aha-prepHint[data-hand=true]{font-family:${BOARD_FONT};font-size:16px}
 .aha-buffering{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:max-content;max-width:calc(100% - 28px);display:flex;align-items:center;gap:10px;padding:10px 16px;border-radius:12px;background:var(--aha-surface);border:1px solid var(--aha-border);color:var(--aha-text);font-family:inherit;z-index:4}
-@container board (max-width:640px){.aha-cols{grid-template-columns:1fr}.aha-boardScroll{padding:16px}}
+@container board (max-width:640px){.aha-cols{grid-template-columns:1fr}.aha-boardScroll{padding:16px}.aha-frame{padding:16px}}
+/* The canvas view: every page as a frame on a desk that pans and zooms. */
+.aha-board[data-view=canvas]{background:var(--desk);background-image:none}
+.aha-canvas{position:absolute;inset:0;overflow:hidden;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+.aha-canvas[data-panning=true]{cursor:grabbing}
+.aha-canvasWorld{position:absolute;left:0;top:0;transform-origin:0 0;display:flex;flex-direction:column;gap:28px;will-change:transform}
+.aha-frame{position:relative;padding:22px 30px 40px;border-radius:14px;background:var(--paper);background-image:radial-gradient(var(--grid) 1px,transparent 1.2px);background-size:22px 22px;border:1px solid color-mix(in srgb,var(--ink) 9%,transparent);box-shadow:0 1px 2px rgba(0,0,0,.06),0 10px 28px rgba(0,0,0,.07)}
+.aha-board[data-theme=dark] .aha-frame{box-shadow:0 1px 2px rgba(0,0,0,.4),0 10px 28px rgba(0,0,0,.35)}
+.aha-canvasBar{position:absolute;right:12px;top:10px;display:flex;gap:4px;align-items:center;z-index:4;font-family:system-ui,sans-serif}
+.aha-canvasBar button{min-width:28px;height:28px;padding:0 8px;border-radius:7px;border:1px solid color-mix(in srgb,var(--ink-soft) 60%,transparent);background:var(--paper);color:var(--ink);cursor:pointer;font:inherit;font-size:12.5px;line-height:1}
+.aha-canvasBar button:hover{border-color:var(--ink-soft)}
+.aha-canvasZoom{font-variant-numeric:tabular-nums;min-width:52px}
+.aha-canvasBar .aha-canvasFollow{background:var(--head);border-color:var(--head);color:var(--paper);font-weight:600;padding:0 12px}
+
 /* Board pages laid out off screen for PDF and PNG exports (capture.js). */
 .aha-exportPages{position:fixed;left:-40000px;top:0;display:flex;flex-direction:column;align-items:flex-start;gap:24px;pointer-events:none}
 .aha-board.aha-exportPage{flex:none;width:1200px;min-height:675px;padding:40px 56px 24px;display:flex;flex-direction:column;overflow:visible;box-sizing:border-box}

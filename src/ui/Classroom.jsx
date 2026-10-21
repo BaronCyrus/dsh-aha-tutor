@@ -378,7 +378,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
     <div className="aha-classBody">
       <div className="aha-classMain">
         <div className={`aha-stage ${stageClass ?? ''}`}>
-          <Board steps={steps} position={snapshot ? { index: snapshot.index, op: snapshot.op, progress: snapshot.progress, now: snapshot.now } : { index: 0, op: 0, progress: 0 }} theme={boardTheme} font={settings.boardFont === 'standard' ? 'standard' : 'hand'}
+          <Board steps={steps} position={snapshot ? { index: snapshot.index, op: snapshot.op, progress: snapshot.progress, now: snapshot.now } : { index: 0, op: 0, progress: 0 }} theme={boardTheme} font={settings.boardFont === 'standard' ? 'standard' : 'hand'} view={settings.boardView === 'pages' ? 'pages' : 'canvas'}
             buffering={(buffering || Boolean(asking)) && !preparing} bufferingLabel={bufferingLabel} />
           {preparing ? <PrepProgress prep={prep} label={bufferingLabel} first={!steps.length} hand={settings.boardFont !== 'standard'} /> : null}
           {check ? <div className="aha-checkCard">

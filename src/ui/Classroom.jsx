@@ -14,6 +14,7 @@ import { PREP_DELAY_MS } from './prep.js'
 import { PrepProgress } from './PrepProgress.jsx'
 import { revealTop } from './scroll.js'
 import { afterNarration } from './speech.js'
+import { VoiceButton } from './VoiceButton.jsx'
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2]
 const STYLES = [['analogy', 'styleAnalogy'], ['visual', 'styleVisual'], ['example', 'styleExample'], ['simpler', 'styleSimpler'], ['deeper', 'styleDeeper']]
@@ -442,7 +443,12 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
           <textarea ref={askField} className="aha-textarea" rows={2} value={question} placeholder={t('askPlaceholder')} disabled={!steps.length}
             onChange={event => setQuestion(event.currentTarget.value)}
             onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) ask(event) }} />
-          <button type="submit" className="aha-btn" data-kind="primary" disabled={!question.trim() || writingAside}>{t('ask')}</button>
+          <div className="aha-askActions">
+            {/* A spoken question pauses the lesson and fills the box. */}
+            <VoiceButton disabled={!steps.length} onStart={() => player.pause()}
+              onText={text => { setQuestion(current => (current.trim() ? `${current.trimEnd()} ${text}` : text)); askField.current?.focus() }} />
+            <button type="submit" className="aha-btn" data-kind="primary" disabled={!question.trim() || writingAside}>{t('ask')}</button>
+          </div>
         </form>
       </aside> : null}
     </div>

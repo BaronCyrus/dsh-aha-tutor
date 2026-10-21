@@ -127,7 +127,7 @@ a.aha-btn{text-decoration:none}
 .aha-line[data-kind=question],.aha-line[data-kind=reexplain],.aha-line[data-kind=correction]{color:var(--aha-text);font-weight:600}
 .aha-lineText{flex:1;min-width:0;overflow-wrap:anywhere}
 .aha-panel .aha-askBox{flex-direction:column;align-items:stretch}
-.aha-panel .aha-askBox .aha-btn{align-self:flex-end}
+.aha-panel .aha-askBox .aha-askActions{align-self:flex-end}
 .aha-classBar{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap}
 .aha-crumb{color:var(--aha-muted);font-size:12.5px}
 .aha-stage{position:relative;flex:1 1 auto;min-height:360px;display:flex;flex-direction:column;border-radius:16px;overflow:hidden;border:1px solid var(--aha-border)}
@@ -145,6 +145,18 @@ a.aha-btn{text-decoration:none}
 .aha-options[data-grid=true]{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .aha-checkCard .aha-option{padding:7px 10px}
 .aha-askBox{display:flex;gap:8px;align-items:flex-end}
+.aha-askActions{display:flex;gap:6px;align-items:center}
+.aha-mic{position:relative;display:inline-flex}
+.aha-micBtn{gap:6px;padding-inline:9px;font-variant-numeric:tabular-nums}
+.aha-micBtn[data-unavailable=true]:not([data-state=recording]){opacity:.5}
+.aha-micBtn[data-state=recording]{color:var(--aha-bad);border-color:color-mix(in srgb,var(--aha-bad) 55%,var(--aha-border));background:color-mix(in srgb,var(--aha-bad) 8%,var(--aha-surface))}
+.aha-micBtn[data-state=recording] svg{animation:aha-listen 1.2s ease-in-out infinite}
+@keyframes aha-listen{50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.aha-micBtn[data-state=recording] svg{animation:none}}
+.aha-micTime{font-size:12.5px}
+.aha-micNote{position:absolute;right:0;bottom:calc(100% + 8px);width:min(300px,78vw);padding:8px 26px 8px 10px;border-radius:10px;background:var(--aha-surface);border:1px solid var(--aha-border);box-shadow:0 10px 30px rgba(0,0,0,.18);color:var(--aha-text);font-size:12.5px;line-height:19px;z-index:30;text-align:left}
+.aha-micNote[data-error=true]{border-color:color-mix(in srgb,var(--aha-bad) 60%,var(--aha-border))}
+.aha-micClose{position:absolute;top:4px;right:6px;border:0;background:transparent;color:var(--aha-muted);cursor:pointer;font-size:15px;line-height:1;padding:2px}
 .aha-buildLog{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
 .aha-buildLog li{display:flex;gap:10px;align-items:center;font-size:14px;color:var(--aha-muted)}
 .aha-buildLog li[data-state=done],.aha-buildLog li[data-state=current]{color:var(--aha-text)}

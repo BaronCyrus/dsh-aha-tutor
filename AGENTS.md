@@ -8,7 +8,7 @@ This file governs the entire `dsh-aha-tutor` repository.
 - npm package: `dsh-aha-tutor`
 - DSH plugin rows: `aha-tutor` (the plugin) and `preset-aha-tutor` (the conversation preset), both inserted by `cordis.patch.yml`
 - Product name: 「开窍 · AI 私人老师」, English "Aha Tutor"; mascot 「小窍」
-- RPC channel `/aha-tutor`; HTTP routes `/api/aha-tutor/upload`, `/api/aha-tutor/tts` and `/api/aha-tutor/font`
+- RPC channel `/aha-tutor`; HTTP routes `/api/aha-tutor/upload`, `/api/aha-tutor/tts`, `/api/aha-tutor/speech` and `/api/aha-tutor/font`
 - Data directory: `$DSH_HOME/aha-tutor/`; project folders: `~/AhaTutor/projects/`
 
 ## Project boundaries
@@ -21,6 +21,7 @@ This file governs the entire `dsh-aha-tutor` repository.
 - Formulas are rendered by the bundled KaTeX and styled by the KaTeX stylesheet and fonts DSH loads. The bundled version must be the stylesheet's version (0.18.7 in DSH 0.2.1); KaTeX renames layout classes between versions. `tests/package-contract.test.mjs` pins it; change both together when DSH moves.
 - Generation uses only the model the user chose: DSH's default model or the plugin's two overrides ("teach" and "quick"). Never fall back to another provider, model or credential source on a failure.
 - Web research before course design goes through DSH's own web service (`ctx.get('web')`) and whatever search provider DSH is configured with. The plugin never calls a search vendor or touches its credentials; when DSH cannot search, the course is designed without research and the reason is shown.
+- Voice questions go through DSH's own speech service (`ctx.get('speechToText')`, the experimental Voice input bundle with local SenseVoice) with DSH's provider and language choices. The plugin never prepares or downloads a recognizer, keeps no audio and sends it nowhere else; until Voice input is enabled and ready, the microphone explains how to set it up.
 - Generate on demand: course structure when the learner confirms the blueprint, a lesson's board when it is opened plus at most one prefetched next lesson. Never generate a whole course's boards in the background.
 - Cloud TTS keys live in DSH's credential store as records and are used host-side only. Never fall back to environment variables, and never return a key to the browser.
 - The in-plugin update installs an exact registry version with DSH's bundled pnpm in the owning profile, under the profile's own pnpm release-age policy. Never pass `--config.minimumReleaseAge`, never edit `minimumReleaseAgeExclude`, and never use `--force`: bypassing the policy leaves a lockfile entry pnpm later rejects, and the profile then refuses every plugin install until that version is 24 hours old. A version pnpm holds back is reported as pending with the time it becomes installable. Verify the installed version even on exit code 0. `link:` installs are never updated in place. After an update, tell the user to quit and reopen DSH.

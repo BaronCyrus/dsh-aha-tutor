@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## Unreleased
+
+### Added
+
+- **Voice questions**: the ask box in a lesson and the instant-answer box have a microphone. Click it, say the question, click again to stop, and the words are filled into the box to check before asking; a lesson pauses while you speak. Recognition is DSH's experimental Voice input (local SenseVoice, in the language set there), so nothing leaves the computer and the plugin keeps no audio. Until Voice input is enabled in DSH's Plugins page and its model is prepared, the microphone is greyed out and says how to set it up. A recording is at most two minutes.
+
 ## 1.4.0 - 2026-10-20
 
 ### Added

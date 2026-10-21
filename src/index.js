@@ -1,7 +1,8 @@
 // Host entry of 「开窍 · AI 私人老师」 (dsh-aha-tutor).
 // Wires the tutoring services to DSH: the LLM runtime, credentials for cloud
-// voices, an RPC channel and two HTTP routes for the browser page, and a
-// runtime handle for the teacher preset's tools.
+// voices, DSH's Voice Input for spoken questions, an RPC channel and HTTP
+// routes for the browser page, and a runtime handle for the teacher preset's
+// tools.
 
 import { join } from 'node:path'
 
@@ -9,7 +10,7 @@ import { credentialKey } from '@deepseek-ai/dsh-credentials'
 
 import { createCourses } from './host/courses.js'
 import { TutorError } from './host/generate.js'
-import { fontRoute, ttsRoute, uploadRoute } from './host/http.js'
+import { fontRoute, speechRoute, ttsRoute, uploadRoute } from './host/http.js'
 import { createJobs } from './host/jobs.js'
 import { createLearner } from './host/learner.js'
 import { createLessons } from './host/lessons.js'
@@ -21,6 +22,7 @@ import { createRoutes, createRpcHandler } from './host/rpc.js'
 import { publishRuntime } from './host/runtime.js'
 import { createSamples } from './host/samples.js'
 import { createKeyStore, createPrefs, createSettingsService } from './host/settings.js'
+import { createSpeechInput } from './host/speech.js'
 import { createStore, DATA_DIR_NAME, resolveDshHome } from './host/store.js'
 import { createStudio } from './host/studio.js'
 import { createTts } from './host/tts.js'
@@ -56,6 +58,8 @@ export function apply(ctx) {
   const tts = createTts({ cacheDir: store.paths.ttsCache(), getSecret: provider => keys.read(provider) })
   const plugin = createPluginManager()
   const settings = createSettingsService({ prefs, keys, llmPort: llm })
+  // DSH's speechToText exists only while its Voice Input bundle is enabled.
+  const speechInput = createSpeechInput({ getSpeech: () => ctx.get?.('speechToText'), logger })
 
   async function speak({ text, provider, signal }) {
     await ready
@@ -76,7 +80,7 @@ export function apply(ctx) {
   }
 
   const routes = {
-    ...createRoutes({ courses, lessons, learner, studio, projects, jobs, settings, tts: { speak }, plugin, info }),
+    ...createRoutes({ courses, lessons, learner, studio, projects, jobs, settings, tts: { speak }, plugin, info, speechInput }),
     'app/info': payload => info(payload),
     'samples/list': () => samples.list(),
     'samples/import': payload => samples.importSample({ id: payload.id }),
@@ -97,6 +101,7 @@ export function apply(ctx) {
     if (typeof fetchRoutes?.register !== 'function') return
     connectionCtx.effect(() => fetchRoutes.register(uploadRoute({ studio })), 'aha-tutor: upload route')
     connectionCtx.effect(() => fetchRoutes.register(ttsRoute({ speak })), 'aha-tutor: tts route')
+    connectionCtx.effect(() => fetchRoutes.register(speechRoute({ speechInput })), 'aha-tutor: speech route')
     connectionCtx.effect(() => fetchRoutes.register(fontRoute()), 'aha-tutor: font route')
   })
 

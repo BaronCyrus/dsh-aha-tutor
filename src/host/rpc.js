@@ -5,6 +5,7 @@
 
 import { TutorError } from './generate.js'
 import { publicCode, publicMessage } from './jobs.js'
+import { MAX_SPEECH_BYTES } from './speech.js'
 
 const ID = prefix => new RegExp(`^${prefix}_[a-z0-9]{6,40}$`, 'u')
 const IDS = { crs: ID('crs'), les: ID('les'), unt: ID('unt'), prj: ID('prj'), mat: ID('mat'), job: ID('job'), thd: ID('thd'), sht: ID('sht'), chs: ID('chs'), dck: ID('dck'), exm: ID('exm'), nte: ID('nte') }
@@ -39,7 +40,7 @@ const ITEM_KINDS = { sheets: 'chs', decks: 'dck', assist: 'thd', shorts: 'sht' }
 const GRADES = ['again', 'hard', 'good', 'easy']
 const STYLES = ['analogy', 'visual', 'example', 'simpler', 'deeper']
 
-export function createRoutes({ courses, lessons, learner, studio, projects, jobs, settings, tts, plugin, info }) {
+export function createRoutes({ courses, lessons, learner, studio, projects, jobs, settings, tts, plugin, info, speechInput }) {
   return {
     'app/info': () => info(),
 
@@ -150,6 +151,17 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
       const textValue = typeof payload.text === 'string' ? payload.text.slice(0, 4000) : ''
       const result = await tts.speak({ text: textValue, provider: payload.provider })
       return { base64: result.audio.toString('base64'), mime: result.mime, cached: result.cached === true }
+    },
+
+    // Voice questions: whether DSH's Voice Input can transcribe now, and the
+    // base64 route for hosts without HTTP routes.
+    'speech/status': () => speechInput.status(),
+    'speech/transcribe': async payload => {
+      const encoded = typeof payload.base64 === 'string' ? payload.base64 : ''
+      if (encoded.length > Math.ceil(MAX_SPEECH_BYTES / 3) * 4) throw new TutorError('speech-too-long', 'The recording is too long')
+      const audio = Buffer.from(encoded, 'base64')
+      if (!encoded || audio.toString('base64') !== encoded) throw new TutorError('speech-audio', 'The recording could not be read')
+      return speechInput.transcribe({ audio: new Uint8Array(audio.buffer, audio.byteOffset, audio.byteLength) })
     },
 
     'settings/get': () => settings.get(),

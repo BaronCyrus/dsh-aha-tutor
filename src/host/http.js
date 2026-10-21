@@ -1,6 +1,7 @@
 // Exact HTTP routes under DSH's connection (owner-only, same-origin): raw
-// file uploads without base64 inflation, TTS audio as real audio bytes, and
-// the board's bundled handwriting fonts.
+// file uploads without base64 inflation, TTS audio as real audio bytes,
+// recorded questions as raw WAV for transcription, and the board's bundled
+// handwriting fonts.
 
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -9,10 +10,12 @@ import { dirname, join } from 'node:path'
 import { BOARD_FONT_FILES } from '../core/board-fonts.js'
 import { publicCode } from './jobs.js'
 import { MAX_UPLOAD_BYTES } from './materials.js'
+import { MAX_SPEECH_BYTES } from './speech.js'
 
 export const UPLOAD_PATH = '/api/aha-tutor/upload'
 export const TTS_PATH = '/api/aha-tutor/tts'
 export const FONT_PATH = '/api/aha-tutor/font'
+export const SPEECH_PATH = '/api/aha-tutor/speech'
 
 export async function readCapped(stream, max, signal) {
   const parts = []
@@ -48,6 +51,30 @@ export function uploadRoute({ studio }) {
         return json({ ok: true, value: { job: studio.upload({ name, bytes }) } })
       } catch (error) {
         return failure(publicCode(error), error?.name === 'TutorError' ? error.message : 'Upload failed', 400)
+      }
+    },
+  }
+}
+
+// A recorded question (16 kHz mono PCM16 WAV) in, its text out.
+export function speechRoute({ speechInput }) {
+  return {
+    path: SPEECH_PATH,
+    methods: ['POST'],
+    requestBody: 'streaming',
+    fetch: async request => {
+      let audio
+      try {
+        audio = await readCapped(request.body, MAX_SPEECH_BYTES, request.signal)
+      } catch {
+        return failure('aborted', 'Upload interrupted', 400)
+      }
+      if (audio === null) return failure('speech-too-long', 'The recording is too long', 413)
+      try {
+        return json({ ok: true, value: await speechInput.transcribe({ audio: new Uint8Array(audio.buffer, audio.byteOffset, audio.byteLength), signal: request.signal }) })
+      } catch (error) {
+        const known = error?.name === 'TutorError'
+        return failure(known ? publicCode(error) : 'speech-failed', known ? error.message : 'Speech recognition failed', known && error.code !== 'speech-failed' ? 400 : 502)
       }
     },
   }

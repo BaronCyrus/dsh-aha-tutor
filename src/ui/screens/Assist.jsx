@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Classroom } from '../Classroom.jsx'
 import { ErrorLine, MaterialPicker, Spinner } from '../components.jsx'
 import { useApp, useLoad, useOnce } from '../hooks.js'
+import { VoiceButton } from '../VoiceButton.jsx'
 import { newId } from '../../core/ids.js'
 
 const MODES = [['explain', 'modeExplain', '💡'], ['solve', 'modeSolve', '🧮'], ['visualize', 'modeVisualize', '📈']]
@@ -67,6 +68,7 @@ export function AssistScreen({ draftMode, draftRequest, draftMaterials, token })
             <button type="button" className="aha-btn" data-size="sm" onClick={() => setPicking(true)}>{materialIds.length ? t('attached', { count: materialIds.length }) : t('attach')}</button>
             <div className="aha-row">
               {session ? <button type="button" className="aha-btn" data-kind="ghost" onClick={() => setSession(null)}>{t('newThread')}</button> : null}
+              <VoiceButton onText={text => setRequest(current => (current.trim() ? `${current.trimEnd()} ${text}` : text))} />
               <button type="button" className="aha-btn" data-kind="primary" disabled={!request.trim()} onClick={() => send()}>{t('ask')}</button>
             </div>
           </div>

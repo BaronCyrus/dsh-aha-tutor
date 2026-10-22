@@ -1,16 +1,20 @@
 // The classroom: lesson boards generated on demand (and the next one
 // prefetched), raised-hand questions, re-explanations, understanding checks
 // feeding the mastery model, and adaptive follow-ups when a lesson ends.
+// Also practice and quizzes: their questions are checked again when the
+// learner challenges one, and the evidence corrected.
 
 import { applyFixes, boardForCheck, describeFixes, normalizeVerdict, sanitizeStep, stepJson } from '../core/board-fix.js'
 import { boardToPlainText } from '../core/board-script.js'
 import { conceptIndex, findLesson, insertLesson, lessonAfter, normalizeCards, normalizeCheatsheet, normalizePractice, outlineForPrompt, text } from '../core/course-model.js'
+import { correctEvidence, logEvidence, stateBefore, takeEvidence } from '../core/evidence-log.js'
 import { assertId, newId } from '../core/ids.js'
-import { applyEvidence, createConceptState, masteryPercent, recommendNext } from '../core/mastery.js'
-import { createCard, gradeFromScore, review } from '../core/srs.js'
+import { cleanResponse, fixItem, itemForCheck, normalizeItemVerdict, regrade, responseText } from '../core/item-fix.js'
+import { createConceptState, masteryPercent, recommendNext } from '../core/mastery.js'
+import { createCard, review } from '../core/srs.js'
 import { masteryFor, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
 import { generateJson, generateSteps, TutorError } from './generate.js'
-import { askPrompt, challengePrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, flashcardsPrompt, gradePrompt, lessonPrompt, quizPrompt, reexplainPrompt, verifyStepPrompt } from './prompts.js'
+import { askPrompt, challengePrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, flashcardsPrompt, gradePrompt, lessonPrompt, quizPrompt, reexplainPrompt, verifyItemPrompt, verifyStepPrompt } from './prompts.js'
 
 const EVENTS_KEPT = 200
 // Questions and re-explanations kept per lesson, replayed where they were asked.
@@ -341,7 +345,9 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     })
   }
 
-  // Apply one piece of evidence to the concepts it covers.
+  // Apply one piece of evidence to the concepts it covers. It is logged
+  // with what each concept was before it (evidenceId), so an answer graded
+  // wrongly can be graded again.
   async function record({ courseId, lessonId, conceptIds = [], evidence = {} }) {
     const course = await courses.readCourse(courseId)
     const index = conceptIndex(course)
@@ -349,18 +355,19 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       .filter(id => index.has(id))
       .slice(0, 8)
     const at = now().getTime()
+    const evidenceId = newId('evd')
     const next = await store.updateJson(store.paths.progress(courseId), null, progress => {
       const value = progress ?? { courseId, lessons: {}, concepts: {}, reviews: {}, practice: {}, projects: {}, events: [] }
       value.concepts ??= {}
       value.reviews ??= {}
+      const before = {}
       for (const id of ids) {
-        const state = value.concepts[id] ?? createConceptState(id, index.get(id).name)
-        value.concepts[id] = applyEvidence(state, evidence, at)
-        if (evidence.kind !== 'reexplain' && evidence.kind !== 'self' && Number.isFinite(Number(evidence.score))) {
-          const card = value.reviews[id] ?? createCard(id, at)
-          value.reviews[id] = review(card, gradeFromScore(Number(evidence.score), evidence.confidence), at)
-        }
+        before[id] = stateBefore(value.concepts[id], value.reviews[id])
+        const taken = takeEvidence(value.concepts[id] ?? createConceptState(id, index.get(id).name), value.reviews[id], evidence, at)
+        value.concepts[id] = taken.state
+        if (taken.card) value.reviews[id] = taken.card
       }
+      if (ids.length) logEvidence(value, { id: evidenceId, at: new Date(at).toISOString(), lessonId: lessonId ?? null, conceptIds: ids, evidence: JSON.parse(JSON.stringify(evidence)), before })
       pushEvent(value, { type: 'evidence', lessonId: lessonId ?? null, conceptIds: ids, kind: evidence.kind ?? 'practice', score: evidence.score ?? null, confidence: evidence.confidence ?? null, at: new Date(at).toISOString() })
       return value
     })
@@ -368,7 +375,128 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     return {
       mastery: Object.fromEntries(states.map(state => [state.id, masteryPercent(state)])),
       recommendation: recommendNext(states),
+      evidenceId: ids.length ? evidenceId : null,
     }
+  }
+
+  // Grade a recorded answer again (see core/evidence-log.js). Null when the
+  // answer is no longer in the log.
+  async function regradeEvidence(course, evidenceId, patch) {
+    const index = conceptIndex(course)
+    let changed = null
+    const next = await store.updateJson(store.paths.progress(course.id), null, progress => {
+      const value = progress ?? { courseId: course.id, lessons: {}, concepts: {}, reviews: {}, events: [] }
+      changed = correctEvidence(value, evidenceId, patch, { known: id => index.get(id)?.name ?? null, at: stamp() })
+      if (changed) pushEvent(value, { type: 'regrade', evidenceId, conceptIds: changed.conceptIds, score: patch.score, at: stamp() })
+      return value
+    })
+    if (!changed?.conceptIds.length) return null
+    const states = changed.conceptIds.map(id => next.concepts[id]).filter(Boolean)
+    return {
+      mastery: Object.fromEntries(states.map(state => [state.id, masteryPercent(state)])),
+      recommendation: recommendNext(states),
+    }
+  }
+
+  // Where a question the learner challenged is kept: a lesson's practice, a
+  // unit quiz, a quiz from the library, or the check of a lesson step (a
+  // review session draws on practice and checks). save(change) rewrites it
+  // there and returns it as saved.
+  async function itemPlace(source) {
+    const missing = () => new TutorError('not-found', 'Not found')
+    const rewrite = (path, listOf) => async change => {
+      let saved = null
+      await store.updateJson(path, null, value => {
+        const items = listOf(value)
+        const index = Array.isArray(items) ? items.findIndex(entry => entry.id === source.itemId) : -1
+        if (index < 0) throw missing()
+        saved = change(items[index])
+        items[index] = saved
+        return value
+      })
+      return saved
+    }
+    if (source.kind === 'deck') {
+      const path = store.paths.item('decks', source.deckId)
+      const deck = await store.readJson(path, null)
+      const item = deck?.kind === 'quiz' ? deck.items?.find(entry => entry.id === source.itemId) : null
+      if (!item) throw missing()
+      return { item, course: null, lessonId: null, language: deck.language, scope: deck.title, save: rewrite(path, value => (value?.kind === 'quiz' ? value.items : null)) }
+    }
+    const course = await courses.readCourse(source.courseId)
+    if (source.kind === 'quiz') {
+      const unit = course.units?.find(entry => entry.id === source.unitId)
+      const path = unit ? store.paths.unitQuiz(course.id, unit.id) : null
+      const item = path ? (await store.readJson(path, null))?.items?.find(entry => entry.id === source.itemId) : null
+      if (!item) throw missing()
+      return { item, course, lessonId: null, language: course.language, scope: `${course.title} — ${unit.title}`, save: rewrite(path, value => value?.items) }
+    }
+    const row = findLesson(course, source.lessonId)
+    if (!row) throw missing()
+    const scope = `${course.title} — ${row.lesson.title}`
+    if (source.kind === 'check') {
+      const path = store.paths.board(course.id, row.lesson.id)
+      const item = (await store.readJson(path, null))?.steps?.find(step => step.id === source.stepId)?.check
+      if (!item) throw missing()
+      const save = async change => {
+        let saved = null
+        await store.updateJson(path, null, board => {
+          const step = board?.steps?.find(entry => entry.id === source.stepId)
+          if (!step?.check) throw missing()
+          saved = change(step.check)
+          step.check = saved
+          return board
+        })
+        return saved
+      }
+      return { item, course, lessonId: row.lesson.id, language: course.language, scope, save }
+    }
+    const path = store.paths.practice(course.id, row.lesson.id)
+    const item = (await store.readJson(path, null))?.items?.find(entry => entry.id === source.itemId)
+    if (!item) throw missing()
+    return { item, course, lessonId: row.lesson.id, language: course.language, scope, save: rewrite(path, value => value?.items) }
+  }
+
+  // The learner says a practice or quiz question, or the grading of their
+  // answer, is wrong. A model that thinks first checks it. A wrong question
+  // is fixed where it is kept and the answer graded again; an answer
+  // recorded as evidence (evidenceId) is then corrected in the learner's
+  // mastery and review schedule, as if it had been graded right the first
+  // time. shown: the grade the learner saw.
+  function challengeItem({ source, response, shown = {}, evidenceId, note }) {
+    const doubt = text(note, 800)
+    return jobs.start('item/challenge', async api => {
+      const place = await itemPlace(source)
+      const answer = cleanResponse(place.item, response)
+      const told = place.item.kind === 'short' || place.item.kind === 'work'
+        ? [`A grader gave this answer a score of ${shown.score} (${shown.correct ? 'correct' : shown.partial ? 'partial' : 'incorrect'}).`, shown.feedback ? `Feedback shown: ${shown.feedback}` : '', shown.wrongStep ? `First wrong line found: ${shown.wrongStep}` : '', shown.fix ? `Fix shown: ${shown.fix}` : ''].filter(Boolean).join('\n')
+        : `The answer key marked this answer ${shown.correct ? 'correct' : shown.partial ? 'partly correct' : 'incorrect'}.`
+      api.preview({ phase: 'checking' })
+      const checked = await generateJson(llm, {
+        purpose: 'teach',
+        effort: 'low',
+        prompt: verifyItemPrompt({ scope: place.scope, language: place.language, item: itemForCheck(place.item), kind: place.item.kind, response: responseText(place.item, answer), grading: told, note: doubt }),
+        maxTokens: 5000,
+        signal: api.signal,
+        normalize: raw => normalizeItemVerdict(raw, place.item),
+      })
+      const item = checked.item ? await place.save(stored => fixItem(stored, checked.item, { at: stamp() })) : place.item
+      const result = regrade(item, answer, checked)
+      const changed = Boolean(result) && (result.correct !== Boolean(shown.correct) || Math.abs(result.score - (Number(shown.score) || 0)) > 1e-6)
+      const corrected = changed && evidenceId && place.course
+        ? await regradeEvidence(place.course, evidenceId, { score: result.score, ...(result.correct ? { errorTag: '' } : result.errorTag ? { errorTag: result.errorTag } : {}) })
+        : null
+      if (place.course) await logEvent(place.course.id, { type: 'item-challenge', lessonId: place.lessonId, verdict: checked.verdict, changed })
+      return {
+        verdict: checked.verdict,
+        summary: checked.summary,
+        explanation: checked.explanation,
+        item: checked.item ? item : null,
+        result: changed ? result : null,
+        mastery: corrected?.mastery ?? null,
+        recommendation: corrected?.recommendation ?? null,
+      }
+    })
   }
 
   // Open answers. A "work" item (a written-out working) also gets the first
@@ -612,7 +740,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }).catch(() => undefined)
   }
 
-  return Object.freeze({ get, prepare, ask, reexplain, challenge, record, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, flashcards, reviewCard })
+  return Object.freeze({ get, prepare, ask, reexplain, challenge, challengeItem, record, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, flashcards, reviewCard })
 }
 
 function pushEvent(progress, event) {

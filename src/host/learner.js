@@ -238,12 +238,14 @@ export function createLearner({ store, llm, now = () => new Date(), logger }) {
         const lesson = findLesson(course, concept.lessonId)?.lesson
         const set = await store.readJson(store.paths.practice(course.id, concept.lessonId), null)
         const board = await store.readJson(store.paths.board(course.id, concept.lessonId), null)
+        // Each with where it is kept, so a question the learner challenges
+        // is fixed there.
         const candidates = [
-          ...(set?.items ?? []),
-          ...(board?.steps ?? []).map(step => step.check).filter(Boolean),
-        ].filter(item => item.conceptIds?.includes(conceptId) && item.kind !== 'short' && item.kind !== 'work')
-        const item = candidates[Math.floor(Math.random() * candidates.length)]
-        if (item) items.push({ courseId: course.id, courseTitle: course.title, lessonId: concept.lessonId, lessonTitle: lesson?.title ?? '', conceptId, conceptName: concept.name, item })
+          ...(set?.items ?? []).map(item => ({ item, source: { kind: 'practice', courseId: course.id, lessonId: concept.lessonId, itemId: item.id } })),
+          ...(board?.steps ?? []).filter(step => step.check).map(step => ({ item: step.check, source: { kind: 'check', courseId: course.id, lessonId: concept.lessonId, stepId: step.id } })),
+        ].filter(({ item }) => item.conceptIds?.includes(conceptId) && item.kind !== 'short' && item.kind !== 'work')
+        const pick = candidates[Math.floor(Math.random() * candidates.length)]
+        if (pick) items.push({ courseId: course.id, courseTitle: course.title, lessonId: concept.lessonId, lessonTitle: lesson?.title ?? '', conceptId, conceptName: concept.name, item: pick.item, source: pick.source })
       }
     }
     return { items }

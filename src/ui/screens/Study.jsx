@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { Empty, ErrorLine, errorText, JobProgress, Spinner } from '../components.jsx'
 import { ApiError } from '../api.js'
 import { useApp, useJob, useLoad } from '../hooks.js'
+import { checkDone, checkNotice, itemSource, regradeResults, shownGrade } from '../item-check.js'
 import { ItemCard } from '../ItemCard.jsx'
 import { RichText } from '../markdown.jsx'
 import { TeX } from '../math.jsx'
@@ -26,6 +27,16 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
   const [context, setContext] = useState(null)
   const [after, setAfter] = useState({})
   const [recommendation, setRecommendation] = useState(null)
+  // "Something wrong with this question?": each question's check by its
+  // index, the evidence each answer was recorded as (so a check can correct
+  // it), and lines at the top for checks that end after the learner went on.
+  const [checks, setChecks] = useState({})
+  const [notices, setNotices] = useState([])
+  const evidence = useRef(new Map())
+  const round = useRef(0)
+  const noticeCount = useRef(0)
+  const latest = useRef({ index: 0, results: [] })
+  latest.current = { index, results }
 
   useEffect(() => {
     let live = true
@@ -61,10 +72,11 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
 
   const item = set?.items[index]
   const record = result => {
-    setResults(current => [...current, result])
+    const at = index
+    setResults(current => [...current, { ...result, index: at }])
     const targetCourse = item?.context?.courseId ?? courseId
     if (!targetCourse || deckId) return
-    api.call('lesson/record', {
+    evidence.current.set(at, api.call('lesson/record', {
       courseId: targetCourse,
       lessonId: item?.context?.lessonId ?? lessonId,
       conceptIds: item?.conceptIds ?? [],
@@ -72,9 +84,60 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
     }).then(response => {
       if (response?.mastery) setAfter(current => ({ ...current, ...response.mastery }))
       if (response?.recommendation) setRecommendation(response.recommendation)
-    }).catch(() => undefined)
+      return response?.evidenceId ?? null
+    }).catch(() => null))
   }
   const stats = useMemo(() => sessionStats(results), [results])
+
+  function notify(text, retry) {
+    noticeCount.current += 1
+    const key = noticeCount.current
+    setNotices(current => [...current.slice(-2), { key, text, retry }])
+  }
+  const dismiss = key => setNotices(current => current.filter(notice => notice.key !== key))
+
+  // The teacher checks a question the learner doubts, thinking first. The
+  // learner may go on meanwhile: what the check finds still counts (the
+  // question fixed, the answer graded again, mastery corrected), and a line
+  // at the top says what it found.
+  async function challenge(at, note) {
+    const asked = set?.items[at]
+    const answered = latest.current.results.find(result => result.index === at)
+    const source = itemSource({ courseId, lessonId, unitId, deckId }, asked)
+    if (!answered || !source) return
+    const started = round.current
+    setChecks(current => ({ ...current, [at]: { ...current[at], status: 'checking', note, error: null } }))
+    try {
+      const evidenceId = await (evidence.current.get(at) ?? null)
+      const value = await api.run('item/challenge', { source, response: answered.given ?? answered.response ?? '', shown: shownGrade(answered), ...(evidenceId ? { evidenceId } : {}), note })
+      if (round.current !== started) {
+        // The round started over meanwhile: its question is the fixed one.
+        if (value?.item) setSet(current => current && { ...current, items: current.items.map((entry, position) => (position === at ? value.item : entry)) })
+        return
+      }
+      setChecks(current => ({ ...current, [at]: checkDone(current[at], value, latest.current.results.find(result => result.index === at)) }))
+      if (value?.result) setResults(current => regradeResults(current, at, value.result))
+      if (value?.mastery) setAfter(current => ({ ...current, ...value.mastery }))
+      if (value?.recommendation) setRecommendation(value.recommendation)
+      if (latest.current.index !== at) notify(checkNotice(t, { index: at, verdict: value?.verdict, regraded: Boolean(value?.result) }))
+    } catch (failure) {
+      if (round.current !== started) return
+      setChecks(current => ({ ...current, [at]: { ...current[at], status: 'failed', note, error: failure } }))
+      if (latest.current.index !== at) notify(checkNotice(t, { index: at, message: errorText(t, failure) }), () => challenge(at, note))
+    }
+  }
+
+  // Again from the start, with the questions as the checks fixed them.
+  function startOver() {
+    round.current += 1
+    setSet(current => ({ ...current, items: current.items.map((entry, position) => checks[position]?.item ?? entry) }))
+    setChecks({})
+    setNotices([])
+    evidence.current = new Map()
+    setIndex(0)
+    setResults([])
+    setRecommendation(null)
+  }
 
   if (error) return <div className="aha-page"><ErrorLine error={error} /><div><button type="button" className="aha-btn" onClick={() => { setError(null); setAttempt(value => value + 1) }}>{t('retry')}</button></div></div>
   if (!set) return <div className="aha-page"><JobProgress progress={job.progress} label={t('makingPractice')} onCancel={job.running ? job.cancel : undefined} /></div>
@@ -89,12 +152,18 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
         <span className="aha-tag">{Math.min(index + 1, set.items.length)}/{set.items.length}</span>
       </span>
     </div>
+    {notices.map(notice => <div key={notice.key} className="aha-itemNotice" role="status">
+      <span className="aha-itemNoticeText">🧐 {notice.text}</span>
+      {notice.retry ? <button type="button" className="aha-btn" data-size="sm" onClick={() => { dismiss(notice.key); notice.retry() }}>{t('retry')}</button> : null}
+      <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" aria-label={t('close')} onClick={() => dismiss(notice.key)}>×</button>
+    </div>)}
     {item?.context ? <p className="aha-hint">{item.context.courseTitle} · {item.context.conceptName}</p> : null}
     {!done ? <>
-      <div className="aha-card"><ItemCard key={`${index}`} item={item} language={set.language} onResult={record} onContinue={() => setIndex(value => value + 1)} continueLabel={index + 1 < set.items.length ? t('continue') : t('confirm')} keyboard /></div>
+      <div className="aha-card"><ItemCard key={`${index}`} item={item} language={set.language} onResult={record} onContinue={() => setIndex(value => value + 1)} continueLabel={index + 1 < set.items.length ? t('continue') : t('confirm')} keyboard
+        onChallenge={itemSource({ courseId, lessonId, unitId, deckId }, item) ? note => challenge(index, note) : undefined} check={checks[index] ?? null} /></div>
       <p className="aha-hint">{t('keysHint')}</p>
     </> : <PracticeSummary set={set} stats={stats} context={context} after={after} recommendation={recommendation} courseId={courseId} lessonId={lessonId} unitId={unitId}
-      onRetry={() => { setIndex(0); setResults([]); setRecommendation(null) }} />}
+      onRetry={startOver} />}
   </div>
 }
 

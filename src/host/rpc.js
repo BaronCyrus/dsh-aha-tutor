@@ -8,7 +8,7 @@ import { publicCode, publicMessage } from './jobs.js'
 import { MAX_SPEECH_BYTES } from './speech.js'
 
 const ID = prefix => new RegExp(`^${prefix}_[a-z0-9]{6,40}$`, 'u')
-const IDS = { crs: ID('crs'), les: ID('les'), unt: ID('unt'), prj: ID('prj'), mat: ID('mat'), job: ID('job'), thd: ID('thd'), sht: ID('sht'), chs: ID('chs'), dck: ID('dck'), exm: ID('exm'), nte: ID('nte'), asd: ID('asd') }
+const IDS = { crs: ID('crs'), les: ID('les'), unt: ID('unt'), prj: ID('prj'), mat: ID('mat'), job: ID('job'), thd: ID('thd'), sht: ID('sht'), chs: ID('chs'), dck: ID('dck'), exm: ID('exm'), nte: ID('nte'), asd: ID('asd'), evd: ID('evd') }
 
 function need(payload, key, prefix) {
   const value = payload?.[key]
@@ -44,6 +44,39 @@ function challengeTarget(payload) {
   if (target.step && typeof target.step === 'object') return { step: target.step }
   if (typeof target.stepId !== 'string' || !/^s\d{1,4}$/u.test(target.stepId)) throw new TutorError('invalid', 'Invalid step')
   return { stepId: target.stepId, ...(target.asideId === undefined ? {} : { asideId: need(target, 'asideId', 'asd') }) }
+}
+
+// A practice or quiz question the learner challenges, named by where it is
+// kept: a lesson's practice, a unit quiz, a quiz from the library, or the
+// check of a lesson step.
+function itemSource(payload) {
+  const source = payload?.source && typeof payload.source === 'object' ? payload.source : {}
+  const itemId = () => {
+    if (typeof source.itemId !== 'string' || !/^[a-z0-9_-]{1,24}$/iu.test(source.itemId)) throw new TutorError('invalid', 'Invalid question')
+    return source.itemId
+  }
+  if (source.kind === 'practice') return { kind: 'practice', courseId: need(source, 'courseId', 'crs'), lessonId: need(source, 'lessonId', 'les'), itemId: itemId() }
+  if (source.kind === 'quiz') return { kind: 'quiz', courseId: need(source, 'courseId', 'crs'), unitId: need(source, 'unitId', 'unt'), itemId: itemId() }
+  if (source.kind === 'deck') return { kind: 'deck', deckId: need(source, 'deckId', 'dck'), itemId: itemId() }
+  if (source.kind === 'check') {
+    if (typeof source.stepId !== 'string' || !/^s\d{1,4}$/u.test(source.stepId)) throw new TutorError('invalid', 'Invalid step')
+    return { kind: 'check', courseId: need(source, 'courseId', 'crs'), lessonId: need(source, 'lessonId', 'les'), stepId: source.stepId }
+  }
+  throw new TutorError('invalid', 'Invalid question')
+}
+
+// The learner's answer to a challenged question (an option id, a list of
+// them, or text) and the grade they were shown.
+function answerOf(value) {
+  if (typeof value === 'string') return value.slice(0, 4000)
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  return Array.isArray(value) ? value.filter(id => typeof id === 'string' && /^[a-z]$/u.test(id)).slice(0, 12) : ''
+}
+
+function shownGrade(value) {
+  const grade = value && typeof value === 'object' ? value : {}
+  const words = (key, max) => (typeof grade[key] === 'string' ? grade[key].slice(0, max) : '')
+  return { score: Math.min(1, Math.max(0, Number(grade.score) || 0)), correct: grade.correct === true, partial: grade.partial === true, feedback: words('feedback', 1200), wrongStep: words('wrongStep', 400), fix: words('fix', 400) }
 }
 
 const ITEM_KINDS = { sheets: 'chs', decks: 'dck', assist: 'thd', shorts: 'sht' }
@@ -101,6 +134,7 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
       },
     }),
     'lesson/grade': payload => lessons.grade({ item: payload.item, response: payload.response, language: typeof payload.language === 'string' ? payload.language.slice(0, 12) : undefined }),
+    'item/challenge': payload => ({ job: lessons.challengeItem({ source: itemSource(payload), response: answerOf(payload.response), shown: shownGrade(payload.shown), evidenceId: optional(payload, 'evidenceId', 'evd'), note: typeof payload.note === 'string' ? payload.note : '' }) }),
     'lesson/correct': payload => ({ job: lessons.correct({ scope: scopeOf(payload), stepIndex: payload.stepIndex, anchorStepId: payload.anchorStepId, item: payload.item, response: payload.response, grade: payload.grade }) }),
     'lesson/position': payload => lessons.savePosition({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les'), stepIndex: payload.stepIndex }),
     'lesson/complete': payload => lessons.complete({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les'), selfRating: Number(payload.selfRating) || undefined }),

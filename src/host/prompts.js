@@ -363,6 +363,33 @@ Return {"verdict":"wrong|right|unclear","summary":"one sentence for the learner"
   }
 }
 
+// The learner thinks a practice or quiz question, its answer key or the
+// grading of their answer is wrong. One call checks all three, fixes the
+// question and, for an open answer, grades it again.
+export function verifyItemPrompt({ scope, language, item, kind, response, grading, note }) {
+  const graded = kind === 'short' || kind === 'work'
+  const verdicts = graded ? 'wrong|unclear|misgraded|right' : 'wrong|unclear|right'
+  const regrade = graded
+    ? `Unless the verdict is "right" (or "credit" is true), grade the learner's answer again against the corrected question in "grade": {${GRADE_FIELDS}${kind === 'work' ? ',"wrongStep":"the first wrong line of the learner\'s working, copied exactly, or empty","why":"one sentence","fix":"that line written correctly, with inline math $…$"' : ''}}.\n`
+    : ''
+  return {
+    system: join(PERSONA, `The learner thinks a practice question, its answer key or the grading of their answer is wrong. Check it the way a careful examiner would: solve the question yourself first, then recompute every number and check every fact, unit, option, the answer key, the explanation and the grading. Never defend a mistake and never invent one; an equivalent answer in another valid form is right. ${languageRule(language)}`, JSON_ONLY),
+    user: join(
+      block('scope', scope),
+      block('question', item),
+      block('learner_answer', response || '(no answer)'),
+      block('grading', grading),
+      block('learner_says', note || '(no reason given)'),
+      `Decide which is true:
+- "wrong": the question has a mistake: its answer key, an option, the prompt, the explanation or a hint${graded ? ', its model answer or its rubric' : '; a key that rejects a right answer written another valid way is a mistake too'}. Put the whole corrected question in "item", in the same JSON shape, with the same "kind" and the same number of options, and change only what is wrong. Leave out "svg" and "plot" to keep the figure as it is.
+- "unclear": whether an answer is right depends on a convention or an assumption the question does not state. Put the question in "item" with that convention written into the prompt, and the key and explanation under it. Set "credit": true when the learner's answer is right under another reasonable reading.
+${graded ? '- "misgraded": the question is right, but the learner\'s answer was graded wrongly.\n' : ''}- "right": the question, its answer and the grading are all right.
+${regrade}"summary": one sentence for the learner. "explanation": 2–5 sentences that answer the learner's doubt: what was wrong and the right reasoning, or why it is right (inline math $…$). Speak to the learner in plain words: never quote scores, grading labels or field names.
+Return {"verdict":"${verdicts}","summary":"…","explanation":"…","item":{…the corrected question, for wrong or unclear…},"credit":false${graded ? ',"grade":{…}' : ''}}`,
+    ),
+  }
+}
+
 const CHALLENGE_REPLIES = Object.freeze({
   wrong: 'The learner was right: this step had a mistake, and the board has now been corrected (see fixes_made). Answer at the board in 1–3 steps, continuing on the current board. Thank the learner in a few words. Write the mistaken part as it was, in an op with an "id", then {"t":"mark","ref":"<that id>","style":"box"}, and say plainly what was wrong. Then write the corrected version and why it is right. If later steps were corrected too, say so in one sentence. End with a short {"t":"note","tone":"key","text":"…"} only if there is a rule worth remembering.',
   right: 'The step is correct. Answer the learner\'s doubt at the board in 1–3 steps, continuing on the current board: say kindly that it is right, then show why (recompute or re-derive the part in question, or use a tiny example), and name what most likely made it look wrong.',

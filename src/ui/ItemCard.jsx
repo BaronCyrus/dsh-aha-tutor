@@ -3,37 +3,51 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { gradeObjective } from '../core/grading.js'
 import { ErrorLine } from './components.jsx'
 import { useApp } from './hooks.js'
+import { fixedLines, ITEM_VERDICT_KEYS } from './item-check.js'
 import { RichText } from './markdown.jsx'
 import { plotSvg } from './plot.js'
 import { sanitizeSvg } from './sanitize.js'
+import { VoiceButton } from './VoiceButton.jsx'
 
 const CONFIDENCE = [['sure', 'confSure'], ['unsure', 'confUnsure'], ['guess', 'confGuess']]
 
 // One question. onResult({ score, correct, confidence, timeMs, hintsUsed,
-// errorTag, misconception, response }) fires once when the answer is checked;
-// a "work" item (a written-out working) adds wrongStep, why and fix.
+// errorTag, misconception, response, given }) fires once when the answer is
+// checked (given: the answer as picked, an option id, a list or text); a
+// "work" item (a written-out working) adds wrongStep, why and fix.
 // keyboard: 1–9 pick an option, Enter submits or continues, H shows a hint
 // (for the one card on screen).
-export function ItemCard({ item, language, onResult, onContinue, continueLabel, askConfidence = true, compact = false, keyboard = false }) {
+// onChallenge(note), when given, offers "Something wrong with this
+// question?" once the answer is graded; check is that question's check as
+// the screen follows it ({ status: 'checking' | 'done' | 'failed', verdict,
+// summary, explanation, item, result, error, note }). A check that fixed the
+// question or graded the answer again shows the fixed question and the new
+// grade.
+export function ItemCard({ item: asked, language, onResult, onContinue, continueLabel, askConfidence = true, compact = false, keyboard = false, onChallenge, check = null }) {
   const { api, t } = useApp()
+  const item = check?.item ?? asked
   const [response, setResponse] = useState(item.kind === 'multi' || item.kind === 'order' ? [] : '')
   const [confidence, setConfidence] = useState(null)
   const [hints, setHints] = useState(0)
-  const [result, setResult] = useState(null)
+  const [ownResult, setResult] = useState(null)
   const [grading, setGrading] = useState(false)
   const [error, setError] = useState(null)
   const [nudge, setNudge] = useState(false)
+  // The note of "Something wrong with this question?" while its box is open.
+  const [doubt, setDoubt] = useState(null)
   const started = useRef(Date.now())
+  const result = ownResult && check?.result ? check.result : ownResult
 
   useEffect(() => {
-    setResponse(item.kind === 'multi' || item.kind === 'order' ? (item.kind === 'order' ? item.options.map(option => option.id) : []) : '')
+    setResponse(asked.kind === 'multi' || asked.kind === 'order' ? (asked.kind === 'order' ? asked.options.map(option => option.id) : []) : '')
     setConfidence(null)
     setHints(0)
     setResult(null)
     setError(null)
     setNudge(false)
+    setDoubt(null)
     started.current = Date.now()
-  }, [item])
+  }, [asked])
 
   const answered = item.kind === 'multi' ? response.length > 0 : item.kind === 'order' ? true : String(response).trim() !== ''
   const ready = answered && (!askConfidence || confidence)
@@ -59,9 +73,17 @@ export function ItemCard({ item, language, onResult, onContinue, continueLabel, 
       const graded = gradeObjective(item, response)
       outcome = { score: graded.score, correct: graded.correct, partial: !graded.correct && graded.score > 0, errorTag: graded.correct ? '' : wrongLabel(item, response) }
     }
-    const full = { ...outcome, response: typeof response === 'string' ? response : undefined, confidence: confidence ?? undefined, timeMs, hintsUsed: hints }
+    const full = { ...outcome, response: typeof response === 'string' ? response : undefined, given: response, confidence: confidence ?? undefined, timeMs, hintsUsed: hints }
     setResult(full)
     onResult?.(full)
+  }
+
+  function sendDoubt(event) {
+    event?.preventDefault()
+    if (doubt === null) return
+    const note = doubt.trim()
+    setDoubt(null)
+    onChallenge?.(note)
   }
 
   const toggle = id => setResponse(current => (current.includes(id) ? current.filter(value => value !== id) : [...current, id]))
@@ -124,7 +146,11 @@ export function ItemCard({ item, language, onResult, onContinue, continueLabel, 
     return picked ? 'wrong' : undefined
   }
 
+  const fixed = item.fixed ? fixedLines(t, item) : []
+  const fixedTitle = fixed.length ? `${t('fixedWasItem')}\n${fixed.join('\n')}` : ''
+
   return <div className="aha-col" style={{ gap: compact ? 8 : 12 }}>
+    {item.fixed ? <div><span className="aha-itemFixed" tabIndex={0} title={fixedTitle} aria-label={`${t('fixed')}. ${fixedTitle}`}>✎ {t('fixed')}</span></div> : null}
     <RichText text={item.prompt} compact />
     {item.svg ? <ItemFigure svg={item.svg} /> : item.plot ? <ItemFigure plot={item.plot} /> : null}
     {(item.kind === 'choice' || item.kind === 'multi') ? <div className="aha-col aha-options" style={{ gap: 6 }} data-grid={item.options.every(option => option.text.length <= 22)}>
@@ -172,7 +198,7 @@ export function ItemCard({ item, language, onResult, onContinue, continueLabel, 
 
     <ErrorLine error={error} />
     {result ? <div className="aha-feedback" data-ok={result.correct ? 'true' : result.partial ? undefined : 'false'}>
-      <b>{result.correct ? t('correct') : result.partial ? t('partial') : t('incorrect')}</b>
+      <b>{result.correct ? t('correct') : result.partial ? t('partial') : t('incorrect')}{result.regraded ? t('regraded') : ''}</b>
       {result.feedback ? <RichText text={result.feedback} compact /> : null}
       {item.explanation ? <RichText text={item.explanation} compact /> : null}
       {result.wrongStep ? <div className="aha-wrongStep">
@@ -181,6 +207,34 @@ export function ItemCard({ item, language, onResult, onContinue, continueLabel, 
         {result.fix ? <><span className="aha-hint">{t('fixedStep')}</span><RichText text={result.fix} compact /></> : null}
       </div> : null}
       {item.kind !== 'short' && item.kind !== 'work' && !result.correct ? <div className="aha-hint">{answerLabel(item)}</div> : null}
+      {onChallenge && doubt === null && check?.status !== 'checking' ? <button type="button" className="aha-itemFlag" onClick={() => setDoubt('')}>🧐 {t('itemChallenge')}</button> : null}
+    </div> : null}
+
+    {result && doubt !== null ? <form className="aha-challengeBox aha-itemChallenge" onSubmit={sendDoubt}>
+      <b>{t('itemChallengeTitle')}</b>
+      <textarea className="aha-textarea" rows={2} autoFocus value={doubt} placeholder={t('itemChallengePlaceholder')}
+        onChange={event => { const note = event.currentTarget.value; setDoubt(current => (current === null ? current : note)) }}
+        onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) sendDoubt(event); if (event.key === 'Escape') setDoubt(null) }} />
+      <div className="aha-challengeActions">
+        <VoiceButton onText={said => setDoubt(current => (current === null ? current : current.trim() ? `${current.trimEnd()} ${said}` : said))} />
+        <span className="aha-challengeHint">{t('itemChallengeHint')}</span>
+        <button type="button" className="aha-btn" data-kind="ghost" onClick={() => setDoubt(null)}>{t('cancel')}</button>
+        <button type="submit" className="aha-btn" data-kind="primary">{t('challengeSend')}</button>
+      </div>
+    </form> : null}
+
+    {result && check ? <div className="aha-itemCheck" data-verdict={check.status === 'done' ? check.verdict : undefined} role="status">
+      <span className="aha-hint">{t('itemCheckTitle')}</span>
+      {check.status === 'checking' ? <span className="aha-row" style={{ gap: 6 }}><span className="aha-spinner" />{t('itemChecking')}</span> : null}
+      {check.status === 'done' ? <>
+        <b>{t(ITEM_VERDICT_KEYS[check.verdict] ?? ITEM_VERDICT_KEYS.right)}</b>
+        {check.summary ? <RichText text={check.summary} compact /> : null}
+        {check.explanation ? <RichText text={check.explanation} compact /> : null}
+      </> : null}
+      {check.status === 'failed' ? <div className="aha-row" style={{ gap: 6 }}>
+        <ErrorLine error={check.error} />
+        <button type="button" className="aha-btn" data-size="sm" onClick={() => onChallenge?.(check.note ?? '')}>{t('retry')}</button>
+      </div> : null}
     </div> : null}
 
     <div className="aha-row aha-itemActions">

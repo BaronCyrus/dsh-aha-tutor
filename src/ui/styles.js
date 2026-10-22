@@ -229,6 +229,15 @@ a.aha-btn{text-decoration:none}
 .aha-feedback{padding:8px 12px;border-radius:10px;background:var(--aha-soft);font-size:13.5px}
 .aha-feedback[data-ok=true]{background:color-mix(in srgb,var(--aha-ok) 12%,var(--aha-surface))}
 .aha-feedback[data-ok=false]{background:color-mix(in srgb,var(--aha-bad) 10%,var(--aha-surface))}
+/* "Something wrong with this question?", the teacher's check of it, and a question it fixed. */
+.aha-itemFlag{display:block;margin:6px 0 0 auto;padding:0 10px;border:1px solid var(--aha-border);border-radius:999px;background:var(--aha-surface);color:var(--aha-muted);font:inherit;font-size:12.5px;line-height:24px;white-space:nowrap;cursor:pointer}
+.aha-itemFlag:hover{color:var(--aha-text);border-color:var(--aha-muted)}
+.aha-challengeBox.aha-itemChallenge{align-self:stretch;width:auto}
+.aha-itemCheck{display:flex;flex-direction:column;gap:4px;padding:8px 12px;border:1px solid var(--aha-border);border-left:3px solid var(--aha-brand);border-radius:0 10px 10px 0;background:var(--aha-surface);font-size:13.5px}
+.aha-itemCheck[data-verdict=wrong],.aha-itemCheck[data-verdict=unclear],.aha-itemCheck[data-verdict=misgraded]{border-left-color:var(--aha-ok)}
+.aha-itemFixed{display:inline-block;padding:0 8px;border:1.5px solid var(--aha-bad);border-radius:999px;background:var(--aha-surface);color:var(--aha-bad);font-size:12px;line-height:18px;white-space:nowrap;transform:rotate(-2deg);cursor:help}
+.aha-itemNotice{display:flex;align-items:center;gap:6px;padding:6px 6px 6px 12px;border:1px solid var(--aha-border);border-radius:10px;background:var(--aha-soft);font-size:13px;line-height:19px}
+.aha-itemNoticeText{flex:1;min-width:0;overflow-wrap:anywhere}
 
 /* ── the board ─────────────────────────────────────────────────────────── */
 .aha-board{--desk:#ecebe4;--ink:#23262f;--ink-soft:#4a4f5c;--head:#1f4fb8;--marker:rgba(255,214,79,.62);--accent:#d64545;--accent2:#2f9e6e;--paper:#fdfcf8;--grid:rgba(40,50,80,.05);--note:#fff7da;--note-line:#e9c45a;--pencil:#c98a2c;

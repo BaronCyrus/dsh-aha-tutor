@@ -177,6 +177,34 @@ a.aha-btn{text-decoration:none}
 .aha-micNote[data-error=true]{border-color:color-mix(in srgb,var(--aha-bad) 60%,var(--aha-border))}
 .aha-micClose{position:absolute;top:4px;right:6px;border:0;background:transparent;color:var(--aha-muted);cursor:pointer;font-size:15px;line-height:1;padding:2px}
 .aha-buildLog{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px}
+/* The blueprint as a mind map (BlueprintMap.jsx). Paddings, fonts and line
+   heights match MAP_LEVELS in mindmap.js, which sizes the boxes. */
+.aha-map{position:relative;min-width:0}
+.aha-mapView{position:relative;overflow:hidden;height:clamp(320px,58vh,680px);border:1px solid var(--aha-border);border-radius:var(--aha-radius);background:var(--aha-soft);background-image:radial-gradient(color-mix(in srgb,var(--aha-muted) 30%,transparent) 1px,transparent 1.2px);background-size:22px 22px;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+.aha-mapView:active{cursor:grabbing}
+.aha-mapWorld{position:absolute;left:0;top:0;transform-origin:0 0}
+.aha-mapLinks{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+.aha-mapLinks path{fill:none;stroke:color-mix(in srgb,var(--aha-muted) 60%,transparent);stroke-width:1.6;animation:aha-mapIn .5s ease both}
+.aha-mapNode{position:absolute;box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:7px 12px;border:1px solid var(--aha-border);border-radius:12px;background:var(--aha-surface);color:var(--aha-text);font-size:13.5px;line-height:19px;overflow-wrap:anywhere;box-shadow:0 1px 2px rgba(0,0,0,.06);animation:aha-mapIn .45s ease both}
+.aha-mapNode[data-level="0"]{padding:11px 16px;border:0;background:var(--aha-primary-bg);color:var(--aha-primary-fg);font-size:16px;line-height:22px;font-weight:700}
+.aha-mapNode[data-level="1"]{padding:9px 14px;border:1.5px solid var(--aha-brand);font-size:14.5px;line-height:20px;font-weight:650}
+.aha-mapNode[data-level="2"]{padding:8px 12px;background:var(--aha-soft);font-weight:600}
+.aha-mapNode[data-pick]{cursor:pointer}
+.aha-mapNode[data-pick]:hover{border-color:var(--aha-brand)}
+.aha-mapMeta{display:flex;gap:6px;align-items:center;height:18px;font-size:11.5px;line-height:16px;color:var(--aha-muted)}
+.aha-mapMeta .aha-depth{font-size:11px;line-height:15px;padding:0 6px}
+@keyframes aha-mapIn{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.aha-mapNode,.aha-mapLinks path{animation:none}}
+.aha-mapBar{position:absolute;right:10px;top:10px;display:flex;gap:4px;align-items:center;z-index:2}
+.aha-mapBar button{min-width:28px;height:28px;padding:0 8px;border-radius:7px;border:1px solid var(--aha-border);background:var(--aha-surface);color:var(--aha-text);cursor:pointer;font:inherit;font-size:12.5px;line-height:1}
+.aha-mapBar button:hover{border-color:var(--aha-muted)}
+.aha-mapZoom{font-variant-numeric:tabular-nums;min-width:52px}
+.aha-mapBar .aha-mapFollow{background:var(--aha-brand);border-color:var(--aha-brand);color:#fff;font-weight:600;padding:0 12px}
+.aha-viewToggle{display:inline-flex;gap:2px;padding:2px;border-radius:9px;background:var(--aha-soft);align-self:flex-start}
+.aha-viewToggle button{padding:3px 12px;border:0;border-radius:7px;background:transparent;color:var(--aha-muted);font:inherit;font-size:13px;cursor:pointer}
+.aha-viewToggle button[aria-pressed=true]{background:var(--aha-surface);color:var(--aha-text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.aha-lesson[data-flash=true]{animation:aha-flash 1.6s ease}
+@keyframes aha-flash{0%,40%{background:color-mix(in srgb,var(--aha-brand) 16%,transparent)}100%{background:transparent}}
 .aha-buildLog li{display:flex;gap:10px;align-items:center;font-size:14px;color:var(--aha-muted)}
 .aha-buildLog li[data-state=done],.aha-buildLog li[data-state=current]{color:var(--aha-text)}
 .aha-buildLog li[data-state=current]{font-weight:600}
@@ -184,9 +212,6 @@ a.aha-btn{text-decoration:none}
 .aha-buildLog li[data-state=done] .aha-buildMark{background:var(--aha-ok);border-color:var(--aha-ok);color:#fff}
 .aha-buildLog li[data-state=current] .aha-buildMark{border-color:var(--aha-brand)}
 .aha-buildMark .aha-spinner{width:12px;height:12px}
-.aha-outlinePreview{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;align-items:start}
-.aha-outlinePreview .aha-card[data-writing=true]{border-style:dashed;border-color:var(--aha-brand)}
-.aha-outlineLessons{margin:0;padding-left:18px;font-size:13px;line-height:20px}
 .aha-itemFigure{align-self:flex-start;width:min(100%,420px);box-sizing:border-box;padding:8px;border-radius:10px;background:#fffdf8;border:1px solid var(--aha-border)}
 .aha-itemFigure svg{display:block;width:100%;height:auto;max-height:320px}
 .aha-confidence[data-nudge=true]{animation:aha-nudge .5s ease 2;border-radius:10px;outline:2px solid var(--aha-brand);outline-offset:3px}

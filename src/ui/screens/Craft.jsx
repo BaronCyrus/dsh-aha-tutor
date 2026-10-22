@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { blueprintDiff, diffIsEmpty, LESSON_DEPTHS } from '../../core/course-model.js'
+import { BlueprintMap } from '../BlueprintMap.jsx'
 import { Confirm, ErrorLine, JobProgress, SourceList, Spinner } from '../components.jsx'
 import { useApp, useJob, useLoad } from '../hooks.js'
+import { outlineTree } from '../mindmap.js'
 
 const PACES = [['intensive', 'paceIntensive', 'paceIntensiveHint'], ['balanced', 'paceBalanced', 'paceBalancedHint'], ['relaxed', 'paceRelaxed', 'paceRelaxedHint']]
 const SIZES = [['auto', 'sizeAuto', 'sizeAutoHint'], ['short', 'sizeShort', 'sizeShortHint'], ['standard', 'sizeStandard', 'sizeStandardHint'], ['full', 'sizeFull', 'sizeFullHint']]
@@ -149,10 +151,11 @@ function ResearchNote({ research }) {
 }
 
 // While the blueprint is written: what the teacher is doing, and the outline
-// as it grows (the unit being written last).
+// growing as a mind map that follows what is written last.
 function BuildLog({ course, job, research }) {
   const { t } = useApp()
   const units = job.preview?.units ?? []
+  const tree = useMemo(() => outlineTree(job.preview, course.goal), [job.preview, course.goal])
   const lessons = units.reduce((sum, unit) => sum + unit.lectures.reduce((count, lecture) => count + lecture.lessons.length, 0), 0)
   const phase = job.progress?.label === 'materials' ? 'materials' : units.length ? 'lessons' : 'units'
   const steps = [
@@ -174,15 +177,7 @@ function BuildLog({ course, job, research }) {
         <span>{label}</span>
       </li>)}
     </ol>
-    {units.length ? <div className="aha-outlinePreview">
-      {units.map((unit, unitIndex) => <section key={unitIndex} className="aha-card" data-writing={unitIndex === units.length - 1 ? 'true' : undefined}>
-        <div className="aha-cardTitle">{t('unitN', { n: unitIndex + 1 })} · {unit.title}</div>
-        {unit.lectures.map((lecture, lectureIndex) => <div key={lectureIndex} className="aha-col" style={{ gap: 2 }}>
-          {lecture.title ? <span className="aha-hint">{lecture.title}</span> : null}
-          <ul className="aha-outlineLessons">{lecture.lessons.map((lesson, lessonIndex) => <li key={lessonIndex}>{lesson}</li>)}</ul>
-        </div>)}
-      </section>)}
-    </div> : null}
+    {units.length ? <BlueprintMap tree={tree} live /> : null}
     <div className="aha-row"><button type="button" className="aha-btn" data-kind="ghost" onClick={job.cancel}>{t('cancel')}</button></div>
   </div>
 }
@@ -211,6 +206,10 @@ function Blueprint({ course, proposal, progress, boards, job, onChange }) {
   const [removing, setRemoving] = useState(null)
   const [reworkMenu, setReworkMenu] = useState(null)
   const [reworking, setReworking] = useState(null)
+  // A new blueprint opens as a map; a course being edited, as the list.
+  const [view, setView] = useState(ready ? 'list' : 'map')
+  const [flash, setFlash] = useState(null)
+  const tree = useRef(null)
   const rework = useJob()
   useEffect(() => {
     setUnits(cloneUnits(course.units))
@@ -233,6 +232,33 @@ function Blueprint({ course, proposal, progress, boards, job, onChange }) {
   // A lesson that has been started (or already has a board) has something to lose.
   const started = lesson => Boolean(lesson.id) && ((progress?.lessons?.[lesson.id]?.status ?? 'new') !== 'new' || boards.includes(lesson.id))
   const locked = Boolean(diff) || Boolean(reworking)
+
+  const mapTree = useMemo(() => ({
+    title,
+    units: units.map((unit, unitIndex) => ({
+      key: `u${unitIndex}`,
+      title: unit.title,
+      lectures: unit.lectures.map((lecture, lectureIndex) => ({
+        key: `u${unitIndex}.${lectureIndex}`,
+        title: lecture.title,
+        lessons: lecture.lessons.map((lesson, lessonIndex) => ({ key: `u${unitIndex}.${lectureIndex}.${lessonIndex}`, title: lesson.title, meta: { depth: lesson.depth, minutes: lesson.estMinutes } })),
+      })),
+    })),
+  }), [units, title])
+  const mapMeta = meta => <>
+    {meta.depth ? <span className="aha-depth" data-depth={meta.depth}>{t(`depth_${meta.depth}`)}</span> : null}
+    <span>{t('estMinutes', { minutes: meta.minutes })}</span>
+  </>
+
+  // A lesson picked on the map is shown, and its title ready to edit, in the list.
+  useEffect(() => {
+    if (!flash || view !== 'list') return undefined
+    const row = tree.current?.querySelector(`[data-path="${flash}"]`)
+    row?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    row?.querySelector('input')?.focus({ preventScroll: true })
+    const timer = setTimeout(() => setFlash(null), 1700)
+    return () => clearTimeout(timer)
+  }, [flash, view])
 
   async function save() {
     setSaving(true)
@@ -367,7 +393,11 @@ function Blueprint({ course, proposal, progress, boards, job, onChange }) {
     </>}
     <ErrorLine error={error ?? job.error ?? rework.error} />
 
-    <fieldset className="aha-tree" disabled={locked}>
+    <div className="aha-viewToggle" role="group" aria-label={t('outlineView')}>
+      <button type="button" aria-pressed={view === 'list'} onClick={() => setView('list')}>{t('viewList')}</button>
+      <button type="button" aria-pressed={view === 'map'} onClick={() => setView('map')}>{t('viewMap')}</button>
+    </div>
+    {view === 'map' ? <BlueprintMap tree={mapTree} renderMeta={mapMeta} onPick={key => { setFlash(key); setView('list') }} /> : <fieldset ref={tree} className="aha-tree" disabled={locked}>
       {units.map((unit, unitIndex) => <div key={unit.id ?? unitIndex} className="aha-unit">
         <div className="aha-lesson" style={{ fontWeight: 650 }}>
           <span className="aha-tag">{t('unitN', { n: unitIndex + 1 })}</span>
@@ -383,7 +413,7 @@ function Blueprint({ course, proposal, progress, boards, job, onChange }) {
           {lecture.lessons.map((lesson, lessonIndex) => {
             const key = `${unitIndex}.${lectureIndex}.${lessonIndex}`
             const remove = () => edit(next => { next[unitIndex].lectures[lectureIndex].lessons.splice(lessonIndex, 1) })
-            return <div key={lesson.id ?? lessonIndex} className="aha-lesson">
+            return <div key={lesson.id ?? lessonIndex} className="aha-lesson" data-path={`u${key}`} data-flash={flash === `u${key}` ? 'true' : undefined}>
               <span className="aha-dot" />
               <input value={lesson.title} title={lesson.summary} onChange={event => { const value = event.currentTarget.value; edit(next => { next[unitIndex].lectures[lectureIndex].lessons[lessonIndex].title = value }) }} />
               <select className="aha-depthSelect" data-depth={lesson.depth || undefined} value={lesson.depth ?? ''} title={t('depthTitle')} aria-label={t('depthTitle')}
@@ -407,7 +437,7 @@ function Blueprint({ course, proposal, progress, boards, job, onChange }) {
         <div><button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => edit(next => { next[unitIndex].lectures.push({ title: t('untitled'), lessons: [{ title: t('untitled'), objectives: [], concepts: [], estMinutes: 15 }] }) })}>+ {t('addLecture')}</button></div>
       </div>)}
       <div><button type="button" className="aha-btn" data-kind="ghost" onClick={() => edit(next => { next.push({ title: t('untitled'), objectives: [], lectures: [{ title: t('untitled'), lessons: [{ title: t('untitled'), objectives: [], concepts: [], estMinutes: 15 }] }] }) })}>+ {t('addUnit')}</button></div>
-    </fieldset>
+    </fieldset>}
 
     {course.projects?.length ? <section className="aha-col">
       <h3 className="aha-cardTitle">{t('projects')}</h3>

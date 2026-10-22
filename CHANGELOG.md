@@ -8,6 +8,7 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 
 - **How each lesson is taught**: every lesson of a new blueprint has a depth, one of building intuition, making the idea precise, deriving it, applying it and going further, shown beside the lesson on the course page and in the blueprint editor, where it can be changed. The teacher teaches the lesson that way. The sample courses show theirs.
 - **Your name in class**: the profile asks what the tutor should call you, and a lesson's opening says it once.
+- **The blueprint grows as a mind map**: while the teacher writes a blueprint, the outline is drawn as a map that grows to the right (course, units, lectures, lessons) and follows the newest lesson until you drag or zoom it; **Back to the newest** resumes. The editor shows a new blueprint as the map, with each lesson's depth and minutes, and switches to the list for editing; choosing a lesson on the map opens it in the list.
 
 ## 1.6.0 - 2026-10-22
 

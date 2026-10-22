@@ -11,6 +11,7 @@
 [![CI](https://github.com/BaronCyrus/dsh-aha-tutor/actions/workflows/ci.yml/badge.svg)](https://github.com/BaronCyrus/dsh-aha-tutor/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/dsh-aha-tutor?logo=npm&label=npm)](https://www.npmjs.com/package/dsh-aha-tutor)
 [![Total npm downloads](https://img.shields.io/npm/d18m/dsh-aha-tutor?logo=npm&label=total%20downloads)](https://www.npmjs.com/package/dsh-aha-tutor)
+[![GitHub stars](https://img.shields.io/github/stars/BaronCyrus/dsh-aha-tutor?style=flat&logo=github&label=stars)](https://github.com/BaronCyrus/dsh-aha-tutor/stargazers)
 [![MIT](https://img.shields.io/badge/license-MIT-111111.svg)](LICENSE)
 
 [What it does](#what-it-does) · [Install](#install) · [Quick start](#quick-start) · [Voices](#voices) · [Privacy](#privacy-and-data) · [FAQ](#faq) · [Support](#support-the-author)

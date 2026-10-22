@@ -19,9 +19,10 @@ import {
 } from '../core/course-model.js'
 import { assertId, newId } from '../core/ids.js'
 import { extractJson } from '../core/json-extract.js'
-import { emptyProgress, materialImages, materialsSummary, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
+import { formatPassages, spreadPassages } from '../core/retrieval.js'
+import { COURSE_MATERIALS, emptyProgress, materialImages, materialsSummary, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
 import { generateJson, streamCounter, TutorError } from './generate.js'
-import { blueprintPrompt, detectLanguage, practicePrompt, projectsPrompt, questionnairePrompt, revisePrompt, reworkPrompt } from './prompts.js'
+import { blueprintPrompt, detectLanguage, materialsRevisePrompt, practicePrompt, projectsPrompt, questionnairePrompt, revisePrompt, reworkPrompt } from './prompts.js'
 
 const TIMELINES = ['intensive', 'balanced', 'relaxed']
 const SIZES = ['auto', 'short', 'standard', 'full']
@@ -226,12 +227,46 @@ export function createCourses({ store, llm, jobs, research, now = () => new Date
     }, { key: `blueprint:${courseId}`, meta: { courseId } })
   }
 
+  // Materials added after the course was designed: the teacher proposes how
+  // the outline should use them, as a revision the learner applies or
+  // discards. Applying it attaches the materials, so lessons cite them.
+  function addMaterials({ courseId, materialIds = [], instruction }) {
+    const wanted = [...new Set(materialIds)].filter(id => /^mat_[a-z0-9]+$/u.test(id)).slice(0, COURSE_MATERIALS)
+    if (!wanted.length) throw new TutorError('no-materials', 'Choose at least one material')
+    const request = text(instruction, 600)
+    return jobs.start('craft/revise', async api => {
+      const course = await readCourse(courseId)
+      if (!course.units) throw new TutorError('no-blueprint', 'There is no blueprint to revise yet')
+      const known = course.materialIds ?? []
+      const added = (await readMaterials(store, wanted.filter(id => !known.includes(id)))).slice(0, Math.max(0, COURSE_MATERIALS - known.length))
+      if (!added.length) throw new TutorError(wanted.every(id => known.includes(id)) ? 'materials-known' : known.length >= COURSE_MATERIALS ? 'materials-full' : 'not-found', 'These materials cannot be added')
+      const current = { title: course.title, subtitle: course.subtitle, emoji: course.emoji, summary: course.summary, level: course.level, units: course.units, projects: course.projects }
+      const share = Math.floor(9000 / added.length)
+      const passages = added.filter(item => item.chunks.length).map(item => formatPassages(spreadPassages(item.chunks, { maxChars: share, samples: 8 }), item.meta.title)).join('\n\n')
+      api.progress(0, 0, 'blueprint')
+      const revised = await generateJson(llm, {
+        purpose: 'teach',
+        prompt: materialsRevisePrompt({ blueprint: current, materials: materialsSummary(added), passages, instruction: request, language: course.language }),
+        images: llm.supportsImages?.('teach') ? await materialImages(store, added) : undefined,
+        maxTokens: 16000,
+        signal: api.signal,
+        onText: streamCounter('"estMinutes"', count => api.progress(count, 0, 'blueprint')),
+        normalize: raw => attachProjectUnits(raw, normalizeBlueprint(raw, { language: course.language })),
+      })
+      const proposal = { instruction: request, materials: added.map(item => ({ id: item.meta.id, title: item.meta.title })), at: stamp(), blueprint: revised }
+      await store.writeJson(store.paths.proposal(courseId), proposal)
+      return { course, proposal }
+    }, { key: `blueprint:${courseId}`, meta: { courseId } })
+  }
+
   async function applyProposal({ courseId }) {
     const course = await readCourse(courseId)
     const proposal = await store.readJson(store.paths.proposal(courseId), null)
     if (!proposal?.blueprint?.units) throw new TutorError('no-proposal', 'There is no proposed change')
-    // Lessons the revision kept have the same ids, so their progress stays.
-    const next = { ...course, ...proposal.blueprint, language: course.language, status: course.status === 'ready' ? 'ready' : 'blueprint' }
+    // Lessons the revision kept have the same ids, so their progress stays;
+    // materials it was made from join the course.
+    const materialIds = [...new Set([...(course.materialIds ?? []), ...(proposal.materials ?? []).map(item => item.id)])].slice(0, COURSE_MATERIALS)
+    const next = { ...course, ...proposal.blueprint, language: course.language, status: course.status === 'ready' ? 'ready' : 'blueprint', ...(materialIds.length ? { materialIds } : {}) }
     await saveCourse(next)
     await store.removeDir(store.paths.proposal(courseId))
     return { course: next }
@@ -430,7 +465,7 @@ export function createCourses({ store, llm, jobs, research, now = () => new Date
     return summary(course.id)
   }
 
-  return Object.freeze({ list, get, summary, readCourse, saveCourse, startCraft, submitIntake, revise, applyProposal, discardProposal, reworkLesson, saveBlueprint, writeLecturePractice, confirm, update, remove, exportPack, importPack })
+  return Object.freeze({ list, get, summary, readCourse, saveCourse, startCraft, submitIntake, revise, addMaterials, applyProposal, discardProposal, reworkLesson, saveBlueprint, writeLecturePractice, confirm, update, remove, exportPack, importPack })
 }
 
 function sanitizeAnswers(questionnaire, answers) {

@@ -188,6 +188,21 @@ export function revisePrompt({ blueprint, instruction, language }) {
 
 const ITEM_FIGURE = 'When a figure makes a question clearer (a shape to measure, a graph to read, a circuit, a diagram to label), give the item "svg": a small diagram following the same rules as the board\'s svg op (viewBox at most 480×320). For the graph of a formula give "plot" instead: an object shaped like the board\'s plot op, without "params". Most items need no figure.'
 
+// Materials added to a course after it was designed: how the outline should
+// use them. `passages` are excerpts spread across each new material.
+export function materialsRevisePrompt({ blueprint, materials, passages, instruction, language }) {
+  return {
+    system: join(PERSONA, `You revise course blueprints to make good use of materials the learner has added, keeping everything else intact. ${languageRule(language)}`, JSON_ONLY),
+    user: join(
+      block('current_blueprint', blueprint),
+      block('new_materials', materials),
+      block('material_passages', passages),
+      block('learner_request', instruction),
+      `The learner added these materials to the course. Revise the blueprint so the course uses them: add lessons, or a unit, for what they cover that the course lacks, placed where the prerequisites allow; take existing lessons deeper where the materials go further; follow any request above. Keep everything else as it is, and remove a lesson only if the materials show it is wrong. Keep the "id" of every unit, lecture, lesson and concept you do not substantially change; new items get no id. Give every new lesson a "depth". Return the complete revised blueprint in the same JSON shape.`,
+    ),
+  }
+}
+
 // One lesson of a blueprint, rewritten on its own: split in two, or deepened.
 export function reworkPrompt({ outline, unitTitle, lectureTitle, lesson, mode, language }) {
   return {

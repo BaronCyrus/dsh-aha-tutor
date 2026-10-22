@@ -32,9 +32,12 @@ export function masteryFor(course, progress, lessonId) {
   return summarizeForPrompt(states)
 }
 
+// A course uses at most this many materials.
+export const COURSE_MATERIALS = 12
+
 export async function readMaterials(store, materialIds = []) {
   const items = []
-  for (const id of materialIds.slice(0, 8)) {
+  for (const id of materialIds.slice(0, COURSE_MATERIALS)) {
     try {
       const meta = await store.readJson(store.paths.material(id), null)
       if (!meta) continue

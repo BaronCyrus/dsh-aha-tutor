@@ -164,15 +164,16 @@ export function UploadZone({ onAdded, compact = false }) {
   </div>
 }
 
-export function MaterialPicker({ selected, onChange, onClose }) {
+// exclude: materials not to offer (those a course already uses).
+export function MaterialPicker({ selected, onChange, onClose, exclude = [], max = 8 }) {
   const { api, t } = useApp()
   const materials = useLoad(() => api.call('material/list'), [])
-  const toggle = id => onChange(selected.includes(id) ? selected.filter(value => value !== id) : [...selected, id].slice(0, 8))
+  const toggle = id => onChange(selected.includes(id) ? selected.filter(value => value !== id) : [...selected, id].slice(0, max))
   return <Modal title={t('pickMaterials')} onClose={onClose} width={640} footer={<button type="button" className="aha-btn" data-kind="primary" onClick={onClose}>{t('confirm')}</button>}>
-    <UploadZone compact onAdded={added => { materials.reload(); onChange([...selected, ...added.map(item => item.id)].slice(0, 8)) }} />
+    <UploadZone compact onAdded={added => { materials.reload(); onChange([...selected, ...added.map(item => item.id)].slice(0, max)) }} />
     {materials.loading && !materials.value ? <Spinner label={t('loading')} /> : null}
     <div className="aha-col" style={{ gap: 6, maxHeight: 320, overflow: 'auto' }}>
-      {(materials.value ?? []).map(item => <label key={item.id} className="aha-option" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+      {(materials.value ?? []).filter(item => !exclude.includes(item.id)).map(item => <label key={item.id} className="aha-option" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
         <input type="checkbox" checked={selected.includes(item.id)} onChange={() => toggle(item.id)} />
         <span className="aha-col" style={{ gap: 0 }}><b>{item.title}</b><small>{describeMaterial(item, t)}</small></span>
       </label>)}

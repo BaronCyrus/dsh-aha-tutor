@@ -98,6 +98,7 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
     'course/rework-lesson': payload => ({ job: courses.reworkLesson({ courseId: need(payload, 'courseId', 'crs'), lesson: payload.lesson, unitTitle: payload.unitTitle, lectureTitle: payload.lectureTitle, mode: payload.mode === 'split' ? 'split' : 'deepen' }) }),
     'course/intake': payload => ({ job: courses.submitIntake({ courseId: need(payload, 'courseId', 'crs'), answers: payload.answers, timeline: payload.timeline, size: payload.size, weeklyMinutes: payload.weeklyMinutes, deadline: payload.deadline }) }),
     'course/revise': payload => ({ job: courses.revise({ courseId: need(payload, 'courseId', 'crs'), instruction: payload.instruction }) }),
+    'course/add-materials': payload => ({ job: courses.addMaterials({ courseId: need(payload, 'courseId', 'crs'), materialIds: idList(payload.materialIds, 'mat', 12), instruction: payload.instruction }) }),
     'course/save-blueprint': payload => courses.saveBlueprint({ courseId: need(payload, 'courseId', 'crs'), blueprint: payload.blueprint }),
     'course/confirm': payload => ({ job: courses.confirm({ courseId: need(payload, 'courseId', 'crs') }) }),
     'course/update': payload => courses.update({ courseId: need(payload, 'courseId', 'crs'), title: payload.title, archived: payload.archived, settings: payload.settings }),

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { blueprintDiff, diffIsEmpty, LESSON_DEPTHS } from '../../core/course-model.js'
 import { BlueprintMap } from '../BlueprintMap.jsx'
-import { Confirm, ErrorLine, JobProgress, SourceList, Spinner } from '../components.jsx'
+import { Confirm, ErrorLine, JobProgress, MaterialPicker, SourceList, Spinner } from '../components.jsx'
 import { useApp, useJob, useLoad } from '../hooks.js'
 import { outlineTree } from '../mindmap.js'
 
@@ -11,8 +11,9 @@ const SIZES = [['auto', 'sizeAuto', 'sizeAutoHint'], ['short', 'sizeShort', 'siz
 const WEEKLY = [60, 120, 180, 300, 420, 600]
 
 // Course crafting: intake questions → blueprint (edit / revise) → confirm.
-// `edit` reopens the editor for a course that is already running.
-export function CraftScreen({ jobId, courseId, edit = false }) {
+// `edit` reopens the editor for a course that is already running; `add`
+// opens it with the panel for adding materials.
+export function CraftScreen({ jobId, courseId, edit = false, add = false }) {
   const { api, t, navigate } = useApp()
   const [error, setError] = useState(null)
   const [stage, setStage] = useState('questions')
@@ -33,10 +34,10 @@ export function CraftScreen({ jobId, courseId, edit = false }) {
       {error ? <><ErrorLine error={error} /><button type="button" className="aha-btn" onClick={() => navigate('home')}>{t('back')}</button></> : <Spinner label={stage === 'research' ? t('researching') : t('thinkingQuestions')} />}
     </div>
   }
-  return <CraftCourse courseId={courseId} edit={edit} />
+  return <CraftCourse courseId={courseId} edit={edit} add={add} />
 }
 
-function CraftCourse({ courseId, edit }) {
+function CraftCourse({ courseId, edit, add }) {
   const { api, t, navigate } = useApp()
   const detail = useLoad(() => api.call('course/get', { courseId }), [courseId])
   const job = useJob()
@@ -60,7 +61,7 @@ function CraftCourse({ courseId, edit }) {
   if (course.status === 'intake') {
     return <Intake course={course} intake={detail.value.intake} job={job} onDone={() => detail.reload()} />
   }
-  return <Blueprint course={course} proposal={detail.value.proposal} progress={detail.value.progress} boards={detail.value.ready?.boards ?? []} job={job} onChange={() => detail.reload()} />
+  return <Blueprint course={course} proposal={detail.value.proposal} progress={detail.value.progress} boards={detail.value.ready?.boards ?? []} job={job} onChange={() => detail.reload()} adding={add} />
 }
 
 function Intake({ course, intake, job, onDone }) {
@@ -194,7 +195,37 @@ function moveIn(list, index, delta) {
   return next
 }
 
-function Blueprint({ course, proposal, progress, boards, job, onChange }) {
+// Materials added to a course: chosen (or uploaded) here, then the teacher
+// proposes how the outline should use them.
+function AddMaterials({ course, job, onDone, onClose }) {
+  const { api, t } = useApp()
+  const library = useLoad(() => api.call('material/list'), [])
+  const [chosen, setChosen] = useState([])
+  const [picking, setPicking] = useState(false)
+  const [note, setNote] = useState('')
+  const titles = new Map((library.value ?? []).map(item => [item.id, item.title]))
+  async function send() {
+    try {
+      await job.run('course/add-materials', { courseId: course.id, materialIds: chosen, instruction: note.trim() })
+      onDone()
+    } catch {
+      // shown below
+    }
+  }
+  return <section className="aha-card aha-addMaterials">
+    <div className="aha-spread"><b>{t('addMaterialsTitle')}</b><button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={onClose}>{t('cancel')}</button></div>
+    <p className="aha-hint">{t('addMaterialsHint')}</p>
+    <div className="aha-row" style={{ gap: 6 }}>
+      {chosen.map(id => <span key={id} className="aha-tag">{titles.get(id) ?? '…'}</span>)}
+      <button type="button" className="aha-btn" data-size="sm" onClick={() => { library.reload(); setPicking(true) }}>{chosen.length ? t('changeMaterials') : t('pickMaterials')}</button>
+    </div>
+    <input className="aha-input" value={note} placeholder={t('addMaterialsPlaceholder')} aria-label={t('addMaterialsPlaceholder')} onChange={event => setNote(event.currentTarget.value)} />
+    <div className="aha-row"><button type="button" className="aha-btn" data-kind="primary" disabled={!chosen.length} onClick={send}>{t('addMaterialsSend')}</button></div>
+    {picking ? <MaterialPicker selected={chosen} max={12} exclude={course.materialIds ?? []} onChange={value => { setChosen(value); library.reload() }} onClose={() => setPicking(false)} /> : null}
+  </section>
+}
+
+function Blueprint({ course, proposal, progress, boards, job, onChange, adding: startAdding = false }) {
   const { api, t, toast, navigate } = useApp()
   const ready = course.status === 'ready'
   const [units, setUnits] = useState(() => cloneUnits(course.units))
@@ -208,6 +239,7 @@ function Blueprint({ course, proposal, progress, boards, job, onChange }) {
   const [reworking, setReworking] = useState(null)
   // A new blueprint opens as a map; a course being edited, as the list.
   const [view, setView] = useState(ready ? 'list' : 'map')
+  const [adding, setAdding] = useState(startAdding)
   const [flash, setFlash] = useState(null)
   const tree = useRef(null)
   const rework = useJob()
@@ -368,7 +400,8 @@ function Blueprint({ course, proposal, progress, boards, job, onChange }) {
     {diff ? <section className="aha-card aha-proposal">
       <div className="aha-col" style={{ gap: 2 }}>
         <b>{t('proposalTitle')}</b>
-        <span className="aha-hint">“{proposal.instruction}”</span>
+        {proposal.materials?.length ? <span className="aha-hint">{t('proposalMaterials', { titles: proposal.materials.map(item => `《${item.title}》`).join('') })}</span> : null}
+        {proposal.instruction ? <span className="aha-hint">“{proposal.instruction}”</span> : null}
       </div>
       {diffIsEmpty(diff) ? <p className="aha-hint">{t('proposalNoChange')}</p> : <ul className="aha-diff">
         {diff.title ? <li data-kind="renamed"><span className="aha-diffTag">{t('diffRenamed')}</span>{diff.title.from} → {diff.title.to}</li> : null}
@@ -389,7 +422,9 @@ function Blueprint({ course, proposal, progress, boards, job, onChange }) {
         <input className="aha-input" style={{ flex: 1 }} value={instruction} placeholder={t('revisePlaceholder')} onChange={event => setInstruction(event.currentTarget.value)} aria-label={t('reviseLabel')} />
         <button type="submit" className="aha-btn" disabled={!instruction.trim() || locked}>{t('revise')}</button>
         {ready ? <button type="button" className="aha-btn" disabled={locked} onClick={() => revise(null, t('extendInstruction'))}>{t('extendCourse')}</button> : null}
+        <button type="button" className="aha-btn" disabled={locked} aria-expanded={adding} onClick={() => setAdding(value => !value)}>{t('addMaterials')}</button>
       </form>
+      {adding ? <AddMaterials course={course} job={job} onClose={() => setAdding(false)} onDone={() => { setAdding(false); onChange() }} /> : null}
     </>}
     <ErrorLine error={error ?? job.error ?? rework.error} />
 

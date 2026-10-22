@@ -213,6 +213,7 @@ a.aha-btn{text-decoration:none}
 .aha-viewToggle button[aria-pressed=true]{background:var(--aha-surface);color:var(--aha-text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .aha-lesson[data-flash=true],.aha-card[data-flash=true]{animation:aha-flash 1.6s ease}
 .aha-librarySearch .aha-input{flex:1;min-width:0}
+.aha-addMaterials{gap:8px;border-style:dashed}
 .aha-libraryHits{gap:4px}
 .aha-libraryHit{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:8px 10px;border:0;border-radius:10px;background:transparent;color:var(--aha-text);font:inherit;text-align:left;cursor:pointer}
 .aha-libraryHit:hover{background:var(--aha-hover)}

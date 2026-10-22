@@ -56,6 +56,7 @@ export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
         <button type="button" className="aha-btn" onClick={() => setMenu(value => !value)}>⋯</button>
         {menu ? <div className="aha-card" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 20, padding: 6, gap: 2, minWidth: 180 }} onMouseLeave={() => setMenu(false)}>
           <button type="button" className="aha-btn" data-kind="ghost" style={{ justifyContent: 'flex-start' }} onClick={() => { setMenu(false); navigate('craft', { courseId, edit: true }) }}>{t('editOutline')}</button>
+          <button type="button" className="aha-btn" data-kind="ghost" style={{ justifyContent: 'flex-start' }} onClick={() => { setMenu(false); navigate('craft', { courseId, edit: true, add: true }) }}>{t('addMaterials')}</button>
           <button type="button" className="aha-btn" data-kind="ghost" style={{ justifyContent: 'flex-start' }} onClick={() => { setMenu(false); setExporting(true) }}>{t('exportPack')}</button>
           <button type="button" className="aha-btn" data-kind="ghost" style={{ justifyContent: 'flex-start' }} onClick={async () => { setMenu(false); await api.call('course/update', { courseId, archived: !course.archived }); detail.reload() }}>{course.archived ? t('unarchive') : t('archive')}</button>
           <button type="button" className="aha-btn" data-kind="ghost" style={{ justifyContent: 'flex-start', color: 'var(--aha-bad)' }} onClick={() => { setMenu(false); setDeleting(true) }}>{t('deleteCourse')}</button>

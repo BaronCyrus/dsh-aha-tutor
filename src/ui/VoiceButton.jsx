@@ -1,15 +1,17 @@
 // The microphone beside a question box: click to start, click again to stop,
 // and the words go into the box to check before asking. It works through
-// DSH's experimental Voice Input; until that is enabled and its recognizer is
-// ready, the button looks greyed out and, when clicked, says how to set it up.
+// DSH's experimental Voice Input and records from the microphone chosen there;
+// until Voice Input is enabled and its recognizer is ready, the button looks
+// greyed out and, when clicked, says how to set it up.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { ApiError } from './api.js'
 import { errorText } from './components.jsx'
 import { useApp } from './hooks.js'
 import { Icon } from './icons.jsx'
-import { bytesToBase64, createRecorder } from './recorder.js'
+import { bytesToBase64, chosenMicrophone, createRecorder } from './recorder.js'
+import { keepInsideWhileShown } from './scroll.js'
 
 // Raw WAV over the plugin's HTTP route; base64 over RPC on hosts without it.
 async function transcribe(api, wav) {
@@ -33,6 +35,11 @@ async function transcribe(api, wav) {
 
 const clock = seconds => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
 
+// The microphone chosen in DSH is named when DSH saved its name.
+function noteText(t, error) {
+  return error?.code === 'mic-chosen-missing' && error.device ? t('micChosenMissing', { name: error.device }) : errorText(t, error)
+}
+
 // onStart: the recording begins (a lesson pauses so its voice is not
 // recorded). onText(text): what was said.
 export function VoiceButton({ onText, onStart, disabled = false }) {
@@ -41,7 +48,13 @@ export function VoiceButton({ onText, onStart, disabled = false }) {
   const [phase, setPhase] = useState('idle')
   const [seconds, setSeconds] = useState(0)
   const [note, setNote] = useState(null)
+  // Read again on hover: the choice may change in DSH while this page is open.
+  const [micName, setMicName] = useState(() => chosenMicrophone()?.label ?? '')
   const recorder = useRef(null)
+  const noteBox = useRef(null)
+
+  // In a narrow window the note would stick out beside the button.
+  useLayoutEffect(() => (note && noteBox.current ? keepInsideWhileShown(noteBox.current) : undefined), [note])
 
   async function refresh() {
     let value
@@ -105,7 +118,7 @@ export function VoiceButton({ onText, onStart, disabled = false }) {
     } catch (error) {
       recorder.current = null
       setPhase('idle')
-      setNote({ text: errorText(t, error), error: true })
+      setNote({ text: noteText(t, error), error: true })
     }
   }
 
@@ -113,12 +126,14 @@ export function VoiceButton({ onText, onStart, disabled = false }) {
   const recording = phase === 'recording'
   return <span className="aha-mic">
     <button type="button" className="aha-btn aha-micBtn" data-state={phase} data-unavailable={unavailable ? 'true' : undefined}
-      aria-pressed={recording} aria-label={recording ? t('voiceStop') : t('voiceAsk')} title={recording ? t('voiceStop') : unavailable ? t('voiceSetup') : t('voiceAsk')}
-      disabled={(disabled && phase === 'idle') || phase === 'starting' || phase === 'working'} onClick={click}>
+      aria-pressed={recording} aria-label={recording ? t('voiceStop') : t('voiceAsk')}
+      title={recording ? t('voiceStop') : unavailable ? t('voiceSetup') : micName ? t('voiceAskWith', { name: micName }) : t('voiceAsk')}
+      disabled={(disabled && phase === 'idle') || phase === 'starting' || phase === 'working'} onClick={click}
+      onPointerEnter={() => setMicName(chosenMicrophone()?.label ?? '')}>
       {phase === 'working' ? <span className="aha-spinner" /> : <Icon name={recording ? 'stop' : 'mic'} size={16} />}
       {recording ? <span className="aha-micTime">{clock(seconds)}</span> : phase === 'working' ? <span className="aha-micTime">{t('voiceWorking')}</span> : null}
     </button>
-    {note ? <span className="aha-micNote" role="status" data-error={note.error ? 'true' : undefined}>
+    {note ? <span ref={noteBox} className="aha-micNote" role="status" data-error={note.error ? 'true' : undefined}>
       {note.text}
       <button type="button" className="aha-micClose" aria-label={t('close')} onClick={() => setNote(null)}>×</button>
     </span> : null}

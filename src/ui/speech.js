@@ -150,19 +150,30 @@ function browserEngine() {
   return { speak, pause, resume, cancel, setRate }
 }
 
+// The cloud voice the host speaks with, as a key for audio kept in the
+// browser: the service and its settings, which never include a key.
+export function cloudVoiceOf(settings) {
+  const provider = settings?.ttsProvider ?? ''
+  const config = settings?.tts?.[provider] ?? {}
+  return JSON.stringify([provider, Object.keys(config).sort().map(key => [key, config[key]])])
+}
+
 function cloudEngine({ fetchAudio }) {
   let session = null
+  // Audio by voice (cloudVoiceOf) and text: once the voice changes, a
+  // sentence heard before is fetched again in the new voice.
   const cache = new Map()
 
-  async function load(textValue) {
-    if (cache.has(textValue)) return cache.get(textValue)
+  async function load(textValue, voice = '') {
+    const key = `${voice}\n${textValue}`
+    if (cache.has(key)) return cache.get(key)
     const promise = fetchAudio(textValue).then(({ blob, base64, mime }) => {
       if (blob) return URL.createObjectURL(blob)
       const bytes = Uint8Array.from(atob(base64), char => char.charCodeAt(0))
       return URL.createObjectURL(new Blob([bytes], { type: mime || 'audio/mpeg' }))
     })
-    cache.set(textValue, promise)
-    promise.catch(() => cache.delete(textValue))
+    cache.set(key, promise)
+    promise.catch(() => cache.delete(key))
     if (cache.size > 40) {
       const [oldestKey, oldest] = cache.entries().next().value
       cache.delete(oldestKey)
@@ -171,11 +182,11 @@ function cloudEngine({ fetchAudio }) {
     return promise
   }
 
-  function prefetch(textValue) {
-    if (textValue) load(textValue).catch(() => undefined)
+  function prefetch(textValue, voice) {
+    if (textValue) load(textValue, voice).catch(() => undefined)
   }
 
-  function speak(textValue, { rate = 1 } = {}) {
+  function speak(textValue, { rate = 1, cloudVoice } = {}) {
     cancel()
     if (!String(textValue ?? '').trim()) return { done: Promise.resolve({ completed: true }) }
     let resolveDone
@@ -192,7 +203,7 @@ function cloudEngine({ fetchAudio }) {
       const code = typeof error?.code === 'string' && error.code ? error.code : fallback.code
       resolveDone({ completed: false, error: error?.message ?? fallback.code, code })
     }
-    load(textValue).then(url => {
+    load(textValue, cloudVoice).then(url => {
       if (state.cancelled) return
       audio.src = url
       audio.playbackRate = Math.min(2, Math.max(0.5, rate))
@@ -226,7 +237,8 @@ function cloudEngine({ fetchAudio }) {
   }
 }
 
-// settings: { engine: 'browser' | 'cloud' | 'off', voiceId, rate, language }
+// settings: { engine: 'browser' | 'cloud' | 'off', voiceId, rate, language,
+// cloudVoice } — cloudVoice (cloudVoiceOf) is the host's current cloud voice.
 export function createSpeech({ fetchAudio }) {
   const engines = { browser: browserEngine(), cloud: cloudEngine({ fetchAudio }) }
   let settings = { engine: 'browser', rate: 1 }
@@ -256,7 +268,7 @@ export function createSpeech({ fetchAudio }) {
       }
     },
     prefetch(textValue) {
-      if (settings.engine === 'cloud') engines.cloud.prefetch(textValue)
+      if (settings.engine === 'cloud') engines.cloud.prefetch(textValue, settings.cloudVoice)
     },
     pause: () => active?.pause(),
     resume: () => active?.resume(),
@@ -275,11 +287,12 @@ export function createSpeech({ fetchAudio }) {
 
 // Failures that will not pass during a lesson: the voice's settings are
 // wrong (no key, a rejected key, a bad address or region, a refused request),
-// the service timed out (each try holds a step for 45 s), or the voice cannot
-// speak at all ('speech': a system voice without permission or engine, or an
-// engine that threw). Other failures (no connection, a rate limit, a server
-// error) may pass, so they stop the voice only when the next step fails too.
-const LASTING_FAILURES = new Set(['tts-no-key', 'tts-auth', 'tts-address', 'tts-app-id', 'tts-azure', 'tts-config', 'tts-request', 'tts-timeout', 'no-credentials', 'speech'])
+// the service stopped answering or timed out (each try holds a step for 10 to
+// 45 s), or the voice cannot speak at all ('speech': a system voice without
+// permission or engine, or an engine that threw). Other failures (no
+// connection, a rate limit, a server error) may pass, so they stop the voice
+// only when the next step fails too.
+const LASTING_FAILURES = new Set(['tts-no-key', 'tts-auth', 'tts-address', 'tts-app-id', 'tts-azure', 'tts-config', 'tts-request', 'tts-stalled', 'tts-timeout', 'no-credentials', 'speech'])
 
 // What one step's narration means for the rest of a lesson. `failures`
 // counts failed narrations in a row; `stop` ({ code, message }) is set when

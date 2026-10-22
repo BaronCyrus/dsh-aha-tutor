@@ -14,6 +14,14 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 
 - The first lesson of the harmonic-motion sample shows its wave as a plot with sliders for the amplitude and the angular frequency.
 
+### Fixed
+
+- **A cloud voice that stops answering is noticed in seconds.** A voice service that took a request and then sent nothing held the first step of a lesson for the full 45-second limit before the note about the missing voice appeared. Now a service that sends nothing for 10 seconds, or stops sending half way, counts as not responding: the note says so and the lesson goes on silently. A long step gets more time to start, up to the old 45 seconds, since Volcengine, MiniMax and many local servers answer only once the whole text is synthesized, and a slow service that is still sending is waited for as before. **Test** in Settings gives up just as quickly.
+- **A changed cloud voice is heard at once.** After another voice, model, service or address was chosen in Settings, **Test** and every sentence heard before in the same page still played the old voice until the page was reloaded, because the browser kept audio by its words alone. Audio is now kept per voice, so going back to a voice still finds its audio. **Test** waits for a field just left to be saved. Other open views of the plugin pick up changed settings, the system voice included, without being reopened: the side-panel board, the cards in a conversation, and the plugin in another window or tab of the same browser.
+- **Replaying a cloud voice no longer pays for it twice.** Synthesized audio was meant to be kept on this computer so that hearing a lesson again calls the service no more, but the folder for it was never created, so every replay was synthesized and paid for again. The folder is now made with the first audio.
+- **The microphone's note fits a narrow window.** Beside the microphone, a note (how to set up Voice input, a refused or missing microphone) was cut off on the left in a narrow window. It now narrows and moves inward to stay on the page.
+- **Voice questions use the microphone chosen in DSH.** The microphone followed the system default instead of the input device chosen in the details of DSH's Voice input. It now records from that device, and the button's tooltip names it. When the chosen one is unplugged, the plugin says so instead of switching to another microphone, as DSH does. DSH's speech service does not report the device; the plugin reads the choice where DSH's Voice input keeps it in the browser, and falls back to the system default if it cannot.
+
 ## 1.5.0 - 2026-10-21
 
 ### Added

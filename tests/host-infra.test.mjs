@@ -1,19 +1,19 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { pathToFileURL } from 'node:url'
 
 import { BOARD_FONT_FILES } from '../src/core/board-fonts.js'
-import { FONT_PATH, fontRoute } from '../src/host/http.js'
+import { FONT_PATH, fontRoute, ttsRoute } from '../src/host/http.js'
 import { createJobs } from '../src/host/jobs.js'
 import { createLlmPort, outputBudget, pickEffort } from '../src/host/llm.js'
 import { blueprintPrompt, correctionPrompt, gradePrompt, lessonPrompt, STEP_SPEC } from '../src/host/prompts.js'
 import { generateSteps, streamCounter, writingHint } from '../src/host/generate.js'
 import { compareSemver, createPluginManager, findInstall, releaseAgeRefusal, resolveLauncher } from '../src/host/plugin-version.js'
 import { createStore, resolveDshHome } from '../src/host/store.js'
-import { checkEndpoint, createTts, splitForTts, TtsError } from '../src/host/tts.js'
+import { checkEndpoint, createTts, firstByteMs, splitForTts, TTS_LIMITS, TtsError } from '../src/host/tts.js'
 
 const temp = () => mkdtemp(join(tmpdir(), 'aha-tutor-test-'))
 
@@ -115,7 +115,9 @@ test('TTS splits long text, calls each provider correctly and caches audio', asy
     return new Response(Buffer.from('OPENAI'), { status: 200 })
   }
   try {
-    const tts = createTts({ cacheDir: root, fetchImpl, getSecret: async () => 'sk-test' })
+    // Like the plugin's own tts-cache, the folder does not exist yet.
+    const cacheDir = join(root, 'tts-cache')
+    const tts = createTts({ cacheDir, fetchImpl, getSecret: async () => 'sk-test' })
     const openai = await tts.synthesize({ provider: 'openai', config: { baseUrl: 'https://api.siliconflow.cn/v1', model: 'm', voice: 'v' }, text: '你好', rate: 1.2 })
     assert.equal(openai.audio.toString(), 'OPENAI')
     assert.equal(calls[0].url, 'https://api.siliconflow.cn/v1/audio/speech')
@@ -124,6 +126,7 @@ test('TTS splits long text, calls each provider correctly and caches audio', asy
     const again = await tts.synthesize({ provider: 'openai', config: { baseUrl: 'https://api.siliconflow.cn/v1', model: 'm', voice: 'v' }, text: '你好', rate: 1.2 })
     assert.equal(again.cached, true)
     assert.equal(calls.length, 1)
+    assert.equal((await readdir(cacheDir)).filter(name => name.endsWith('.mp3')).length, 1, 'kept on disk for the next lesson')
 
     assert.equal((await tts.synthesize({ provider: 'volcengine', config: { appId: 'app' }, text: '你好' })).audio.toString(), 'VOLC')
     assert.equal(calls[1].init.headers.Authorization, 'Bearer;sk-test')
@@ -139,6 +142,87 @@ test('TTS splits long text, calls each provider correctly and caches audio', asy
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+test('TTS gives up on a service that stops answering, not on one still sending', async () => {
+  // Fake services that behave like fetch: an abort ends the request, or the
+  // body being read.
+  const signals = []
+  const silent = (url, { signal }) => {
+    signals.push(signal)
+    return new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true }))
+  }
+  const late = ms => (url, { signal }) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(new Response(Buffer.from('ID3'))), ms)
+    signal.addEventListener('abort', () => { clearTimeout(timer); reject(signal.reason) }, { once: true })
+  })
+  // `chunks` pieces of audio, one every `every` ms; then the stream ends, or
+  // goes quiet without ending when `end` is false.
+  const streamed = ({ every, chunks = Infinity, end = true }) => async (url, { signal }) => {
+    let timer
+    let sent = 0
+    const body = new ReadableStream({
+      start(controller) {
+        signal.addEventListener('abort', () => { clearInterval(timer); controller.error(signal.reason) }, { once: true })
+        timer = setInterval(() => {
+          if (sent < chunks) {
+            controller.enqueue(new TextEncoder().encode('ID3'))
+            sent += 1
+          } else if (end) {
+            clearInterval(timer)
+            controller.close()
+          }
+        }, every)
+      },
+      cancel() { clearInterval(timer) },
+    })
+    return new Response(body, { status: 200, headers: { 'content-type': 'audio/mpeg' } })
+  }
+  const limits = { totalMs: 2000, quietMs: 200 }
+  const tts = fetchImpl => createTts({ cacheDir: null, fetchImpl, getSecret: async () => 'sk-test', limits })
+  const speak = (fetchImpl, text = '你好', options = {}) => tts(fetchImpl).synthesize({ provider: 'openai', text, ...options })
+  const stalled = error => error instanceof TtsError && error.code === 'stalled'
+
+  // Without a byte for quietMs (plus a tenth of the text's speaking time) a
+  // request is dropped well before totalMs.
+  let started = performance.now()
+  await assert.rejects(speak(silent), stalled)
+  assert.ok(performance.now() - started < limits.totalMs, 'not the whole request time')
+  assert.equal(signals.at(-1).aborted, true, 'the request itself is aborted')
+  await assert.rejects(speak(streamed({ every: 20, chunks: 2, end: false })), stalled, 'audio that stops half way')
+
+  // A slow service still sending is waited for, past quietMs.
+  started = performance.now()
+  const slow = await speak(streamed({ every: 40, chunks: 10 }))
+  assert.equal(slow.audio.toString(), 'ID3'.repeat(10))
+  assert.ok(performance.now() - started > limits.quietMs)
+
+  // A service that answers only when all is synthesized gets longer for
+  // longer text, up to totalMs.
+  await assert.rejects(speak(late(600)), stalled)
+  assert.equal((await speak(late(600), '这一段讲解比较长，要多合成一会儿。'.repeat(12))).audio.toString(), 'ID3')
+
+  // The request time still has an end, and the browser's cancel wins.
+  const short = createTts({ cacheDir: null, fetchImpl: streamed({ every: 20 }), getSecret: async () => 'sk-test', limits: { totalMs: 300, quietMs: 200 } })
+  await assert.rejects(short.synthesize({ provider: 'openai', text: '你好' }), error => error instanceof TtsError && error.code === 'timeout')
+  const leave = new AbortController()
+  setTimeout(() => leave.abort(new Error('left the lesson')), 50)
+  await assert.rejects(speak(silent, '你好', { signal: leave.signal }), /left the lesson/)
+
+  // Audio past the size cap is refused as it arrives.
+  const huge = async () => new Response(new Uint8Array(12 * 1024 * 1024 + 1))
+  await assert.rejects(speak(huge), error => error.code === 'too-large')
+
+  // The wait for a first byte at the real limits.
+  assert.equal(firstByteMs(''), TTS_LIMITS.quietMs)
+  assert.ok(Math.abs(firstByteMs('你好'.repeat(50)) - 12_300) < 200, 'about 12 s for a 100-character step')
+  assert.equal(firstByteMs('长'.repeat(4000)), TTS_LIMITS.totalMs)
+
+  // The browser hears it under its own code, which ends the voice at once.
+  const route = ttsRoute({ speak: () => speak(silent) })
+  const response = await route.fetch(new Request('http://127.0.0.1/api/aha-tutor/tts', { method: 'POST', body: JSON.stringify({ text: '你好' }) }))
+  assert.equal(response.status, 502)
+  assert.equal((await response.json()).error.code, 'aha-tutor/tts-stalled')
 })
 
 test('plugin update follows the cooldown rules', async () => {

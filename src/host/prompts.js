@@ -77,7 +77,8 @@ Board operations (each is a JSON object with field "t"; give an op an "id" only 
 - {"t":"math","tex":"…","text":"…"}  one display formula in KaTeX-compatible LaTeX; "text" is a plain-Unicode reading of it (e.g. "θ(t) = θ₀·cos(ωt + φ)")
 - {"t":"list","items":["…","…"],"ordered":false}
 - {"t":"svg","svg":"<svg viewBox=\\"0 0 480 300\\" xmlns=\\"http://www.w3.org/2000/svg\\">…</svg>","caption":"…"}  a clean hand-drawn-style diagram: viewBox at most 640×420, strokes and simple shapes, <text> labels (font-size 14–18), colors only from ink #2b2b2b, blue #2f6fde, red #d64545, green #2f9e6e, orange #e08a1e, purple #7a4fd6; no scripts, no images, no foreignObject, no external links
-- {"t":"chart","kind":"line|bar|scatter|pie|area","title":"…","xLabel":"…","yLabel":"…","series":[{"name":"…","points":[[x,y],…]}]}  or "data":[{"label":"…","value":n}] for bar/pie; use real, computed numbers
+- {"t":"chart","kind":"line|bar|scatter|pie|area","title":"…","xLabel":"…","yLabel":"…","series":[{"name":"…","points":[[x,y],…]}]}  or "data":[{"label":"…","value":n}] for bar/pie; for data that was measured or counted, with real numbers (a curve given by a formula is a plot)
+- {"t":"plot","fns":[{"y":"A*sin(w*x)","name":"…"}],"x":[-6.28,6.28],"y":[-2,2],"params":[{"name":"A","value":1,"min":0.5,"max":2,"label":"振幅 A"}],"points":[{"x":"pi/2","label":"…"}],"lines":[{"x":0,"label":"…"}],"shade":[{"fn":0,"from":0,"to":"pi"}],"tangents":[{"fn":0,"x":0}],"xLabel":"…","yLabel":"…","caption":"…"}  an exact graph the app computes from formulas: use it for every curve given by a formula. A curve in "fns" is {"y":"f(x)"}, parametric {"x":"…","y":"…","t":[a,b]} or polar {"r":"f(θ)","t":[a,b]}, written in calculator syntax: x (t, θ), numbers, + - * / ^ ( ), pi, e, sin cos tan asin acos atan sinh cosh tanh exp ln log10 sqrt abs min max, always with parentheses as in sin(2*x). "params" (at most 4, used in the formulas) become sliders the learner can drag: mention them in "say" and suggest what to try. Optional: "points" (only an "x" puts the point on curve "fn"), "lines" (dashed guides such as asymptotes), "shade" (the area under curve "fn" from "from" to "to", or between "fn" and "fn2"), "tangents", "equal":true (the same scale on both axes, so circles stay round). Ranges and coordinates may be formulas such as "2*pi".
 - {"t":"table","head":["…"],"rows":[["…","…"]]}
 - {"t":"code","lang":"python","code":"…"}
 - {"t":"note","tone":"key|tip|warn|example","text":"…"}  boxed takeaway or warning
@@ -183,7 +184,7 @@ export function revisePrompt({ blueprint, instruction, language }) {
   }
 }
 
-const ITEM_FIGURE = 'When a figure makes a question clearer (a shape to measure, a graph to read, a circuit, a diagram to label), give the item "svg": a small diagram following the same rules as the board\'s svg op (viewBox at most 480×320). Most items need no figure.'
+const ITEM_FIGURE = 'When a figure makes a question clearer (a shape to measure, a graph to read, a circuit, a diagram to label), give the item "svg": a small diagram following the same rules as the board\'s svg op (viewBox at most 480×320). For the graph of a formula give "plot" instead: an object shaped like the board\'s plot op, without "params". Most items need no figure.'
 
 // One lesson of a blueprint, rewritten on its own: split in two, or deepened.
 export function reworkPrompt({ outline, unitTitle, lectureTitle, lesson, mode, language }) {
@@ -254,7 +255,7 @@ export function lessonPrompt({ course, unit, lecture, lesson, language, learner,
       `Teach this lesson in about ${steps} steps (~${lesson.estMinutes || 15} minutes).
 - Open with a hook: a question, a surprising fact, or a concrete situation the idea explains. Connect to the previous lesson when there is one.
 - Build intuition before formalism; then make it precise; then work at least one example fully on the board.
-- Draw a diagram or chart whenever a picture makes the idea click.
+- Draw a diagram, chart or plot whenever a picture makes the idea click; a plot with a slider is often the clearest way to show how a formula behaves.
 - Put 2–4 checks after the key ideas, plus one at the end; every check must name its conceptIds.
 - If the lesson works through a calculation or a derivation, make exactly one check a "work" check, right after the key worked example: a similar problem the learner solves alone, writing every step. A lesson without a calculation or derivation gets no "work" check.
 - If source passages are given, stay consistent with them and mention the page when you lean on one.
@@ -281,7 +282,7 @@ export function askPrompt({ course, lesson, language, boardSoFar, question, lear
 
 const REEXPLAIN_STYLES = Object.freeze({
   analogy: 'with an everyday analogy that maps closely onto the idea',
-  visual: 'mainly with a diagram or chart, explaining what each part of the picture means',
+  visual: 'mainly with a diagram, chart or plot, explaining what each part of the picture means',
   example: 'through a concrete worked example with real numbers, step by step',
   simpler: 'more simply, with shorter sentences, no jargon, and smaller steps',
   deeper: 'more rigorously, showing why it is true and where it breaks down',
@@ -338,6 +339,49 @@ export function correctionPrompt({ course, lesson, language, boardSoFar, item, r
       block('learner_working', response),
       block('grader_notes', notes),
       'The learner just wrote out their working for this problem and went wrong somewhere. Correct it at the board in 2–3 steps, continuing on the current board: (1) write the learner\'s wrong line as they wrote it, in an op with an "id", then {"t":"mark","ref":"<that id>","style":"box"}, and say kindly what went wrong there and why; (2) write the corrected line and carry the working on to the right answer; (3) end with a short {"t":"note","tone":"key","text":"…"} holding the rule to remember. Speak to the learner directly and keep it brief. Add no check, and do not continue the lesson itself.',
+    ),
+  }
+}
+
+// The learner says a step is wrong: check it, thinking first. `board` and
+// `step` are JSON, so a fix can copy an op's exact shape.
+export function verifyStepPrompt({ course, lesson, language, board, step, stepId, note }) {
+  return {
+    system: join(PERSONA, `The learner thinks a step of your lesson is wrong. Check it the way a careful examiner would: recompute every number, re-derive every formula, and check every fact, unit, sign, label, graph and answer key. Never defend a mistake and never invent one; a different but valid method or notation is not a mistake. ${languageRule(language)}`, JSON_ONLY),
+    user: join(
+      block('course', course ? course.title : ''),
+      block('lesson', lesson ? `${lesson.title}: ${lesson.objectives?.join('; ') ?? ''}` : ''),
+      block('board', board),
+      block('challenged_step', step),
+      block('learner_says', note || '(no reason given)'),
+      `Decide whether step ${stepId} is right, and check the steps it relies on too: a mistake may have started earlier.
+- "wrong": something on the board is wrong. List every fix: an op replaced by its corrected version {"step":"s3","op":"o7","replace":{…the whole op, in the same JSON shape…}}, corrected narration {"step":"s3","say":"…"}, or a corrected check {"step":"s3","check":{…the whole check…}}. Also fix later steps that carried the same mistake forward. Change only what is wrong.
+- "right": the step is correct; "summary" says why in one sentence, answering the learner.
+- "unclear": it depends on a convention or on something the board does not say; "summary" says what.
+Return {"verdict":"wrong|right|unclear","summary":"one sentence for the learner","fixes":[…]}`,
+    ),
+  }
+}
+
+const CHALLENGE_REPLIES = Object.freeze({
+  wrong: 'The learner was right: this step had a mistake, and the board has now been corrected (see fixes_made). Answer at the board in 1–3 steps, continuing on the current board. Thank the learner in a few words. Write the mistaken part as it was, in an op with an "id", then {"t":"mark","ref":"<that id>","style":"box"}, and say plainly what was wrong. Then write the corrected version and why it is right. If later steps were corrected too, say so in one sentence. End with a short {"t":"note","tone":"key","text":"…"} only if there is a rule worth remembering.',
+  right: 'The step is correct. Answer the learner\'s doubt at the board in 1–3 steps, continuing on the current board: say kindly that it is right, then show why (recompute or re-derive the part in question, or use a tiny example), and name what most likely made it look wrong.',
+  unclear: 'Whether the step is right depends on a convention or an assumption (see check_result). In 1–2 steps at the board, continuing on the current board, say which one the lesson uses, what changes under the other, and which one the learner will usually meet.',
+})
+
+// The answer at the board once the step has been checked.
+export function challengePrompt({ course, lesson, language, boardSoFar, step, note, verdict, summary, fixes }) {
+  return {
+    system: join(PERSONA, BOARD_SPEC, STEP_SPEC, languageRule(language), JSONL_ONLY),
+    user: join(
+      block('course', course ? course.title : ''),
+      block('lesson', lesson ? `${lesson.title}: ${lesson.objectives?.join('; ') ?? ''}` : ''),
+      block('board_so_far', boardSoFar),
+      block('challenged_step', step),
+      block('learner_says', note),
+      block('check_result', `${verdict}: ${summary}`),
+      block('fixes_made', fixes),
+      `${CHALLENGE_REPLIES[verdict] ?? CHALLENGE_REPLIES.unclear} Speak to the learner directly and keep it brief. Add no check, and do not continue the lesson itself.`,
     ),
   }
 }
@@ -441,7 +485,7 @@ export function digestPartPrompt({ title, part, parts, range, passages, language
 const ASSIST_MODES = Object.freeze({
   explain: 'Explain the concept the learner asked about, at their level, intuition first, then precise, with one worked example. 5–9 steps, 1–2 checks.',
   solve: 'Solve the problem WITH the learner: restate it, identify the method, then work it step by step on the board, explaining why each move is made. Show the final answer clearly in a key note and add one similar practice check at the end. 4–10 steps.',
-  visualize: 'Make the idea visible: lead with charts, diagrams or an animation built from correct numbers, and narrate what to notice in each picture. 3–7 steps.',
+  visualize: 'Make the idea visible: lead with plots of formulas, charts of data, diagrams or an animation built from correct numbers, and narrate what to notice in each picture. 3–7 steps.',
 })
 
 export function assistPrompt({ mode, request, language, passages, history, learner }) {

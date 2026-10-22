@@ -3,8 +3,8 @@
 // string: the board renders it, and the video exporter rasterizes it.
 
 export const CHART_COLORS = Object.freeze(['#2f6fde', '#d64545', '#2f9e6e', '#e08a1e', '#7a4fd6', '#1f9bb4'])
-const INK = '#2b2b2b'
-const FONT = "'Segoe Print','Bradley Hand','Comic Sans MS','Kaiti SC','STKaiti','KaiTi',cursive"
+export const CHART_INK = '#2b2b2b'
+export const CHART_FONT = "'Segoe Print','Bradley Hand','Comic Sans MS','Kaiti SC','STKaiti','KaiTi',cursive"
 
 export function escapeXml(value) {
   return String(value ?? '').replace(/[&<>"']/gu, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char])
@@ -44,27 +44,27 @@ function legend(names, width) {
   return names.map((name, index) => {
     const x = width - 150
     const y = 14 + index * 18
-    return `<rect x="${x}" y="${y - 9}" width="14" height="4" rx="2" fill="${CHART_COLORS[index % CHART_COLORS.length]}"/><text x="${x + 20}" y="${y - 3}" font-size="12" fill="${INK}">${escapeXml(name)}</text>`
+    return `<rect x="${x}" y="${y - 9}" width="14" height="4" rx="2" fill="${CHART_COLORS[index % CHART_COLORS.length]}"/><text x="${x + 20}" y="${y - 3}" font-size="12" fill="${CHART_INK}">${escapeXml(name)}</text>`
   }).join('')
 }
 
 function axes({ margin, plotW, plotH, width, height, xTicks, yTicks, xScale, yScale, xLabel, yLabel, xFormat = formatTick }) {
   const parts = []
-  parts.push(`<line x1="${margin.left}" y1="${margin.top + plotH}" x2="${margin.left + plotW}" y2="${margin.top + plotH}" stroke="${INK}" stroke-width="1.6" stroke-linecap="round"/>`)
-  parts.push(`<line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotH}" stroke="${INK}" stroke-width="1.6" stroke-linecap="round"/>`)
+  parts.push(`<line x1="${margin.left}" y1="${margin.top + plotH}" x2="${margin.left + plotW}" y2="${margin.top + plotH}" stroke="${CHART_INK}" stroke-width="1.6" stroke-linecap="round"/>`)
+  parts.push(`<line x1="${margin.left}" y1="${margin.top}" x2="${margin.left}" y2="${margin.top + plotH}" stroke="${CHART_INK}" stroke-width="1.6" stroke-linecap="round"/>`)
   for (const tick of yTicks) {
     const y = yScale(tick)
     if (y < margin.top - 1 || y > margin.top + plotH + 1) continue
-    parts.push(`<line x1="${margin.left}" y1="${y}" x2="${margin.left + plotW}" y2="${y}" stroke="${INK}" stroke-opacity="0.08"/>`)
-    parts.push(`<text x="${margin.left - 6}" y="${y + 4}" font-size="11" text-anchor="end" fill="${INK}">${escapeXml(formatTick(tick))}</text>`)
+    parts.push(`<line x1="${margin.left}" y1="${y}" x2="${margin.left + plotW}" y2="${y}" stroke="${CHART_INK}" stroke-opacity="0.08"/>`)
+    parts.push(`<text x="${margin.left - 6}" y="${y + 4}" font-size="11" text-anchor="end" fill="${CHART_INK}">${escapeXml(formatTick(tick))}</text>`)
   }
   for (const tick of xTicks) {
     const x = xScale(tick)
     if (x < margin.left - 1 || x > margin.left + plotW + 1) continue
-    parts.push(`<text x="${x}" y="${margin.top + plotH + 16}" font-size="11" text-anchor="middle" fill="${INK}">${escapeXml(xFormat(tick))}</text>`)
+    parts.push(`<text x="${x}" y="${margin.top + plotH + 16}" font-size="11" text-anchor="middle" fill="${CHART_INK}">${escapeXml(xFormat(tick))}</text>`)
   }
-  if (xLabel) parts.push(`<text x="${margin.left + plotW / 2}" y="${height - 10}" font-size="13" text-anchor="middle" fill="${INK}">${escapeXml(xLabel)}</text>`)
-  if (yLabel) parts.push(`<text transform="translate(16 ${margin.top + plotH / 2}) rotate(-90)" font-size="13" text-anchor="middle" fill="${INK}">${escapeXml(yLabel)}</text>`)
+  if (xLabel) parts.push(`<text x="${margin.left + plotW / 2}" y="${height - 10}" font-size="13" text-anchor="middle" fill="${CHART_INK}">${escapeXml(xLabel)}</text>`)
+  if (yLabel) parts.push(`<text transform="translate(16 ${margin.top + plotH / 2}) rotate(-90)" font-size="13" text-anchor="middle" fill="${CHART_INK}">${escapeXml(yLabel)}</text>`)
   return parts.join('')
 }
 
@@ -118,8 +118,8 @@ function barChart(op, size) {
     const color = CHART_COLORS[index % CHART_COLORS.length]
     parts.push(`<rect x="${x.toFixed(1)}" y="${top.toFixed(1)}" width="${(band * 0.64).toFixed(1)}" height="${Math.max(1, bottom - top).toFixed(1)}" rx="3" fill="${color}" fill-opacity="0.78" stroke="${color}" stroke-width="1.4"/>`)
     const label = item.label.length > 10 ? `${item.label.slice(0, 9)}…` : item.label
-    parts.push(`<text x="${(x + band * 0.32).toFixed(1)}" y="${margin.top + plotH + 16}" font-size="11" text-anchor="middle" fill="${INK}">${escapeXml(label)}</text>`)
-    parts.push(`<text x="${(x + band * 0.32).toFixed(1)}" y="${(top - 5).toFixed(1)}" font-size="11" text-anchor="middle" fill="${INK}">${escapeXml(formatTick(item.value))}</text>`)
+    parts.push(`<text x="${(x + band * 0.32).toFixed(1)}" y="${margin.top + plotH + 16}" font-size="11" text-anchor="middle" fill="${CHART_INK}">${escapeXml(label)}</text>`)
+    parts.push(`<text x="${(x + band * 0.32).toFixed(1)}" y="${(top - 5).toFixed(1)}" font-size="11" text-anchor="middle" fill="${CHART_INK}">${escapeXml(formatTick(item.value))}</text>`)
   })
   return parts.join('')
 }
@@ -147,7 +147,7 @@ function pieChart(op, size) {
     parts.push(`<path d="${path}" fill="${color}" fill-opacity="0.75" stroke="#fff" stroke-width="2"/>`)
     const ly = 30 + index * 20
     parts.push(`<rect x="${width * 0.7}" y="${ly - 10}" width="12" height="12" rx="2" fill="${color}"/>`)
-    parts.push(`<text x="${width * 0.7 + 18}" y="${ly}" font-size="12" fill="${INK}">${escapeXml(item.label)} ${Math.round((item.value / total) * 100)}%</text>`)
+    parts.push(`<text x="${width * 0.7 + 18}" y="${ly}" font-size="12" fill="${CHART_INK}">${escapeXml(item.label)} ${Math.round((item.value / total) * 100)}%</text>`)
     angle = end
   })
   return parts.join('')
@@ -163,6 +163,6 @@ export function chartSvg(op, size = { width: 480, height: 300 }) {
   } catch {
     body = ''
   }
-  const title = op.title ? `<text x="${size.width / 2}" y="20" font-size="15" text-anchor="middle" fill="${INK}" font-weight="600">${escapeXml(op.title)}</text>` : ''
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size.width} ${size.height}" width="${size.width}" height="${size.height}" font-family="${escapeXml(FONT)}">${title}${body}</svg>`
+  const title = op.title ? `<text x="${size.width / 2}" y="20" font-size="15" text-anchor="middle" fill="${CHART_INK}" font-weight="600">${escapeXml(op.title)}</text>` : ''
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size.width} ${size.height}" width="${size.width}" height="${size.height}" font-family="${escapeXml(CHART_FONT)}">${title}${body}</svg>`
 }

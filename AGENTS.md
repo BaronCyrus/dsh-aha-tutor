@@ -17,7 +17,7 @@ This file governs the entire `dsh-aha-tutor` repository.
   - `src/index.js` (host): storage, generation, materials, voices, jobs and the RPC handler, built from `src/host/` and `src/core/`.
   - `src/agent.js` (`dsh-aha-tutor/agent`): the conversation preset's tools and system-prompt section.
   - `src/client.jsx` (browser): the full-page app, sidebar entry, right-sidebar board tab and tool cards, built from `src/ui/` through the client wrapper in `tsdown.config.mjs`.
-- `src/core/` is pure logic shared by host and browser (mastery, SRS, planner, grading, board scripts, course model, retrieval, JSON extraction). Keep it free of Node and DOM APIs.
+- `src/core/` is pure logic shared by host and browser (mastery, SRS, planner, grading, board scripts and their fixes, plot formulas, course model, retrieval, JSON extraction). Keep it free of Node and DOM APIs.
 - Formulas are rendered by the bundled KaTeX and styled by the KaTeX stylesheet and fonts DSH loads. The bundled version must be the stylesheet's version (0.18.7 in DSH 0.2.1); KaTeX renames layout classes between versions. `tests/package-contract.test.mjs` pins it; change both together when DSH moves.
 - Generation uses only the model the user chose: DSH's default model or the plugin's two overrides ("teach" and "quick"). Never fall back to another provider, model or credential source on a failure.
 - Web research before course design goes through DSH's own web service (`ctx.get('web')`) and whatever search provider DSH is configured with. The plugin never calls a search vendor or touches its credentials; when DSH cannot search, the course is designed without research and the reason is shown.
@@ -41,7 +41,7 @@ The plugin runs inside DSH on both systems. Every change must keep working on bo
 
 ## Security requirements
 
-- Model output, uploads, course packs, fetched web pages and web search results are untrusted. Search results keep http(s) links only, are length-capped, reach prompts as reference material (never as instructions) and open outside the app. Keep `src/ui/sanitize.js`'s SVG allow-list, the sandboxed animation iframe (`sandbox="allow-scripts"`, no same-origin, `default-src 'none'` CSP), Markdown without raw HTML and KaTeX with `trust: false`.
+- Model output, uploads, course packs, fetched web pages and web search results are untrusted. Search results keep http(s) links only, are length-capped, reach prompts as reference material (never as instructions) and open outside the app. Keep `src/ui/sanitize.js`'s SVG allow-list, the sandboxed animation iframe (`sandbox="allow-scripts"`, no same-origin, `default-src 'none'` CSP), Markdown without raw HTML and KaTeX with `trust: false`. Plot formulas are read by `src/core/expr.js` and evaluated over numbers only, never as code (no `eval`, `Function` or iframe).
 - Web import refuses non-`http(s)` URLs and localhost, private, link-local and metadata addresses, follows redirects by hand and re-checks each hop.
 - Project files: starter paths go through `safeRelativePath`; existing files are never overwritten; reviews read text files only, skip symlinks and cap the total size.
 - Browser RPC validates every payload and returns only user-facing error messages. Never print, log, commit or return to the browser any API key, token or package-manager output.

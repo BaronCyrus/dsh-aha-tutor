@@ -102,7 +102,7 @@ export function BoardExport({ steps, title, kind = 'ghost' }) {
       <button type="button" role="menuitem" className="aha-btn" data-kind="ghost" onClick={() => start('md')}>{t('exportMarkdown')}</button>
     </div> : null}
     {job ? createPortal(<div ref={pagesRef} className="aha-exportPages" aria-hidden="true">
-      <BoardSheets steps={steps} title={title} theme={theme} font={font} footer={{ left: title, right: `${t('appName')} · ${t('appTagline')}` }} animationLabel={t('animationStill')} />
+      <BoardSheets steps={steps} title={title} theme={theme} font={font} footer={{ left: title, right: `${t('appName')} · ${t('appTagline')}` }} animationLabel={t('animationStill')} fixedLabel={t('fixed')} />
     </div>, document.body) : null}
   </span>
 }

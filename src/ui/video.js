@@ -8,6 +8,7 @@ import { estimateSpeechMs, stepTiming } from '../core/board-script.js'
 import { captionSentences, spokenText, texToText } from './board/inline.js'
 import { boardText } from './board/layout.js'
 import { chartSvg } from './charts.js'
+import { plotSvg } from './plot.js'
 import { sanitizeSvg } from './sanitize.js'
 import { BOARD_FONT } from './styles.js'
 
@@ -143,7 +144,7 @@ async function layout(ctx, steps, palette, theme) {
         place(lines.length * lineHeight + (op.t === 'note' ? 22 : 0), { ...base, kind: 'text', size, weight: op.t === 'h' ? 700 : 400, lines, lineHeight, color: op.t === 'h' ? palette.head : palette.ink, center: op.t === 'math', note: op.t === 'note', marker: op.t === 'h' })
         continue
       }
-      const still = op.t === 'chart' ? chartSvg(op) : op.t === 'svg' ? sanitizeSvg(op.svg) : op.t === 'anim' && op.poster ? sanitizeSvg(op.poster) : ''
+      const still = op.t === 'chart' ? chartSvg(op) : op.t === 'plot' ? plotSvg(op) : op.t === 'svg' ? sanitizeSvg(op.svg) : op.t === 'anim' && op.poster ? sanitizeSvg(op.poster) : ''
       const image = still ? await loadImage(themedSvg(still, palette, theme)) : null
       if (image) {
         const ratio = image.naturalHeight / Math.max(1, image.naturalWidth) || 0.62
@@ -152,7 +153,7 @@ async function layout(ctx, steps, palette, theme) {
         place(height + (op.caption ? 30 : 0), { ...base, kind: 'image', image, w: height / ratio, imageH: height, caption: op.caption ?? '' })
         continue
       }
-      if (op.t === 'svg' || op.t === 'chart') continue
+      if (op.t === 'svg' || op.t === 'chart' || op.t === 'plot') continue
       if (op.t === 'table') {
         const rows = [op.head, ...op.rows].filter(row => row.length).slice(0, 10)
         place(rows.length * 34 + 6, { ...base, kind: 'table', rows })

@@ -2,6 +2,7 @@
 // prefetched), raised-hand questions, re-explanations, understanding checks
 // feeding the mastery model, and adaptive follow-ups when a lesson ends.
 
+import { applyFixes, boardForCheck, describeFixes, normalizeVerdict, sanitizeStep, stepJson } from '../core/board-fix.js'
 import { boardToPlainText } from '../core/board-script.js'
 import { conceptIndex, findLesson, insertLesson, lessonAfter, normalizeCards, normalizeCheatsheet, normalizePractice, outlineForPrompt, text } from '../core/course-model.js'
 import { assertId, newId } from '../core/ids.js'
@@ -9,7 +10,7 @@ import { applyEvidence, createConceptState, masteryPercent, recommendNext } from
 import { createCard, gradeFromScore, review } from '../core/srs.js'
 import { masteryFor, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
 import { generateJson, generateSteps, TutorError } from './generate.js'
-import { askPrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, flashcardsPrompt, gradePrompt, lessonPrompt, quizPrompt, reexplainPrompt } from './prompts.js'
+import { askPrompt, challengePrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, flashcardsPrompt, gradePrompt, lessonPrompt, quizPrompt, reexplainPrompt, verifyStepPrompt } from './prompts.js'
 
 const EVENTS_KEPT = 200
 // Questions and re-explanations kept per lesson, replayed where they were asked.
@@ -151,7 +152,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       const { course, row } = await context(scope.courseId, scope.lessonId)
       const writing = followedJob(scope, BOARD_JOBS, { courseId: course.id, lessonId: row.lesson.id })
       const board = writing ? { steps: writing.partial } : await store.readJson(store.paths.board(course.id, row.lesson.id), null)
-      return { course, lesson: row.lesson, board, language: course.language }
+      return { course, lesson: row.lesson, board, language: course.language, writing }
     }
     if (scope?.kind === 'thread' || scope?.kind === 'short') {
       const thread = scope.kind === 'thread'
@@ -161,7 +162,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       const board = writing ? { steps: writing.partial } : thread ? item.turns?.[Math.max(0, Math.min(item.turns.length - 1, Number(scope.turn) || 0))]?.board : item.board
       // A new thread or short has no saved language yet: its steps are written in it.
       const language = item?.language ?? detectLanguage((board?.steps ?? []).map(step => step.say).join(' '))
-      return { course: null, lesson: { title: item?.title ?? writing.meta?.title ?? '', objectives: [] }, board, language }
+      return { course: null, lesson: { title: item?.title ?? writing.meta?.title ?? '', objectives: [] }, board, language, writing }
     }
     throw new TutorError('invalid', 'Unknown board')
   }
@@ -222,6 +223,121 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
         await record({ courseId: course.id, lessonId: lesson.id, conceptIds, evidence: { kind: 'reexplain' } })
       }
       return { steps: answer.steps, aside }
+    })
+  }
+
+  // The step the learner challenged: one of the board's own steps, a step of
+  // an answer kept with the lesson (asideId), or a step the classroom sends
+  // for an answer the host does not keep (instant answers, shorts), which is
+  // fixed in the classroom only. context: the steps before it, for the answer.
+  async function challengedPlace(scope, board, target) {
+    const stepId = String(target?.stepId ?? '')
+    if (target?.asideId) {
+      const kept = scope.kind === 'lesson' ? await store.readJson(store.paths.asides(scope.courseId, scope.lessonId), null) : null
+      const aside = kept?.items?.find(item => item.id === target.asideId)
+      const index = aside?.steps?.findIndex(item => item.id === stepId) ?? -1
+      if (index < 0) throw new TutorError('not-found', 'Not found')
+      const anchor = board?.steps?.findIndex(step => step.id === aside.anchorStepId) ?? -1
+      return { ref: { asideId: aside.id }, steps: aside.steps, step: aside.steps[index], context: [...(board?.steps ?? []).slice(0, anchor + 1), ...aside.steps.slice(0, index + 1)] }
+    }
+    if (target?.step) {
+      const step = sanitizeStep(target.step)
+      if (!step) throw new TutorError('invalid', 'Nothing to check')
+      const anchor = board?.steps?.findIndex(item => item.id === target.anchorStepId) ?? -1
+      return { ref: { local: true }, steps: [step], step, context: [...(board?.steps ?? []).slice(0, anchor + 1), step] }
+    }
+    const index = board?.steps?.findIndex(step => step.id === stepId) ?? -1
+    if (index < 0) throw new TutorError(board?.steps?.length ? 'not-found' : 'no-board', board?.steps?.length ? 'Not found' : 'The board is not written yet. Try again once its first step is up.')
+    return { ref: { main: true }, steps: board.steps, step: board.steps[index], context: board.steps.slice(0, index + 1) }
+  }
+
+  // Apply fixes where the challenged step is kept: the lesson's board, a
+  // kept answer, or the instant answer or short. A board still being written
+  // is fixed once it is saved; one that never is keeps the fix in the
+  // classroom only. Returns the fixes as applied.
+  async function storeFixes(scope, place, fixes, writing) {
+    let applied = []
+    const fix = steps => {
+      const result = applyFixes(Array.isArray(steps) ? steps : [], fixes)
+      applied = result.applied
+      return result.steps
+    }
+    if (place.ref.local) {
+      fix(place.steps)
+      return applied
+    }
+    if (place.ref.asideId) {
+      await store.updateJson(store.paths.asides(scope.courseId, scope.lessonId), null, value => ({
+        items: (Array.isArray(value?.items) ? value.items : []).map(item => (item.id === place.ref.asideId ? { ...item, steps: fix(item.steps) } : item)),
+      }))
+      return applied
+    }
+    if (writing && (await jobs.wait(writing.id))?.status !== 'done') return applyFixes(place.steps, fixes).applied
+    const missing = () => new TutorError('not-found', 'Not found')
+    if (scope.kind === 'lesson') {
+      await store.updateJson(store.paths.board(scope.courseId, scope.lessonId), null, saved => {
+        if (!saved) throw missing()
+        return { ...saved, steps: fix(saved.steps) }
+      })
+    } else if (scope.kind === 'thread') {
+      await store.updateJson(store.paths.item('assist', scope.id), null, thread => {
+        const turn = thread?.turns?.[Math.max(0, Math.min(thread.turns.length - 1, Number(scope.turn) || 0))]
+        if (!turn?.board) throw missing()
+        turn.board = { ...turn.board, steps: fix(turn.board.steps) }
+        return thread
+      })
+    } else {
+      await store.updateJson(store.paths.item('shorts', scope.id), null, short => {
+        if (!short?.board) throw missing()
+        return { ...short, board: { ...short.board, steps: fix(short.board.steps) } }
+      })
+    }
+    return applied
+  }
+
+  // The learner says a step is wrong. A model that thinks first checks it.
+  // A wrong step is fixed where it is kept (with the later steps that carried
+  // the mistake) and corrected at the board; a right one is explained there.
+  // Either answer stays with the lesson like a raised hand; neither changes
+  // the learner's mastery.
+  function challenge({ scope, stepIndex = 0, anchorStepId, target = {}, note }) {
+    const doubt = text(note, 800)
+    return jobs.start('lesson/challenge', async api => {
+      const { course, lesson, board, language, writing } = await scopeBoard(scope)
+      const place = await challengedPlace(scope, board, { ...target, anchorStepId })
+      api.preview({ phase: 'checking' })
+      const checked = await generateJson(llm, {
+        purpose: 'teach',
+        effort: 'low',
+        prompt: verifyStepPrompt({ course, lesson, language, board: boardForCheck(place.steps, place.step.id), step: stepJson(place.step, { full: true }), stepId: place.step.id, note: doubt }),
+        maxTokens: 6000,
+        signal: api.signal,
+        normalize: raw => normalizeVerdict(raw, place.steps),
+      })
+      api.preview({ phase: 'answering', verdict: checked.verdict })
+      const answer = await generateSteps(llm, {
+        purpose: 'teach',
+        effort: 'lowest',
+        prompt: challengePrompt({
+          course,
+          lesson,
+          language,
+          boardSoFar: boardToPlainText({ steps: place.context }, { maxChars: 5000 }),
+          step: boardToPlainText({ steps: [place.step] }, { maxChars: 3000 }),
+          note: doubt,
+          verdict: checked.verdict,
+          summary: checked.summary,
+          fixes: describeFixes(checked.fixes, place.steps),
+        }),
+        maxTokens: 5000,
+        signal: api.signal,
+        conceptIds: lesson?.concepts?.map(concept => concept.id) ?? [],
+        onStep: step => api.push(step),
+      })
+      const fixes = checked.fixes.length ? await storeFixes(scope, place, checked.fixes, writing) : []
+      const aside = await keepAside(scope, { kind: 'challenge', verdict: checked.verdict, note: doubt, summary: checked.summary, anchorStepId: anchorFor(board, stepIndex, anchorStepId), steps: answer.steps })
+      if (scope.kind === 'lesson') await logEvent(scope.courseId, { type: 'challenge', lessonId: scope.lessonId, verdict: checked.verdict })
+      return { verdict: checked.verdict, summary: checked.summary, target: place.ref, fixes, steps: answer.steps, aside }
     })
   }
 
@@ -496,7 +612,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }).catch(() => undefined)
   }
 
-  return Object.freeze({ get, prepare, ask, reexplain, record, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, flashcards, reviewCard })
+  return Object.freeze({ get, prepare, ask, reexplain, challenge, record, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, flashcards, reviewCard })
 }
 
 function pushEvent(progress, event) {

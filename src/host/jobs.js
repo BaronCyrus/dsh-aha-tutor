@@ -73,7 +73,7 @@ export function createJobs({ logger, now = Date.now } = {}) {
     const aborted = new Promise((_, reject) => {
       controller.signal.addEventListener('abort', () => reject(controller.signal.reason ?? new Error('cancelled')), { once: true })
     })
-    Promise.race([Promise.resolve().then(() => run(api)), aborted])
+    job.settled = Promise.race([Promise.resolve().then(() => run(api)), aborted])
       .then(result => {
         job.status = 'done'
         job.result = result
@@ -124,6 +124,15 @@ export function createJobs({ logger, now = Date.now } = {}) {
     return job && !job.finishedAt && !job.controller.signal.aborted ? snapshot(job) : null
   }
 
+  // The job's last snapshot, once it has finished (null for a job it does
+  // not know).
+  async function wait(id) {
+    const job = jobs.get(id)
+    if (!job) return null
+    await job.settled
+    return snapshot(job)
+  }
+
   // Cancel the job running under `key`, if any (regenerating replaces it).
   function cancelKey(key) {
     const job = running(key)
@@ -136,7 +145,7 @@ export function createJobs({ logger, now = Date.now } = {}) {
     byKey.clear()
   }
 
-  return Object.freeze({ start, get, cancel, cancelKey, running, dispose })
+  return Object.freeze({ start, get, wait, cancel, cancelKey, running, dispose })
 }
 
 // Only messages written for users cross to the browser.

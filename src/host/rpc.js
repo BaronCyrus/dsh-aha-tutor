@@ -8,7 +8,7 @@ import { publicCode, publicMessage } from './jobs.js'
 import { MAX_SPEECH_BYTES } from './speech.js'
 
 const ID = prefix => new RegExp(`^${prefix}_[a-z0-9]{6,40}$`, 'u')
-const IDS = { crs: ID('crs'), les: ID('les'), unt: ID('unt'), prj: ID('prj'), mat: ID('mat'), job: ID('job'), thd: ID('thd'), sht: ID('sht'), chs: ID('chs'), dck: ID('dck'), exm: ID('exm'), nte: ID('nte') }
+const IDS = { crs: ID('crs'), les: ID('les'), unt: ID('unt'), prj: ID('prj'), mat: ID('mat'), job: ID('job'), thd: ID('thd'), sht: ID('sht'), chs: ID('chs'), dck: ID('dck'), exm: ID('exm'), nte: ID('nte'), asd: ID('asd') }
 
 function need(payload, key, prefix) {
   const value = payload?.[key]
@@ -34,6 +34,16 @@ function scopeOf(payload) {
   if (scope.kind === 'thread') return { kind: 'thread', id: need(scope, 'id', 'thd'), turn: Number(scope.turn) || 0, ...writing }
   if (scope.kind === 'short') return { kind: 'short', id: need(scope, 'id', 'sht'), ...writing }
   throw new TutorError('invalid', 'Invalid board scope')
+}
+
+// The step a learner challenges: one of the board's own steps, a step of an
+// answer kept with the lesson, or a step the classroom holds itself (checked
+// op by op by the service).
+function challengeTarget(payload) {
+  const target = payload?.target && typeof payload.target === 'object' ? payload.target : {}
+  if (target.step && typeof target.step === 'object') return { step: target.step }
+  if (typeof target.stepId !== 'string' || !/^s\d{1,4}$/u.test(target.stepId)) throw new TutorError('invalid', 'Invalid step')
+  return { stepId: target.stepId, ...(target.asideId === undefined ? {} : { asideId: need(target, 'asideId', 'asd') }) }
 }
 
 const ITEM_KINDS = { sheets: 'chs', decks: 'dck', assist: 'thd', shorts: 'sht' }
@@ -74,6 +84,7 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
     'lesson/prepare': payload => lessons.prepare({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les'), force: payload.force === true, style: payload.style }),
     'lesson/ask': payload => ({ job: lessons.ask({ scope: scopeOf(payload), stepIndex: payload.stepIndex, question: payload.question, anchorStepId: payload.anchorStepId }) }),
     'lesson/reexplain': payload => ({ job: lessons.reexplain({ scope: scopeOf(payload), stepIndex: payload.stepIndex, style: STYLES.includes(payload.style) ? payload.style : 'example', anchorStepId: payload.anchorStepId }) }),
+    'lesson/challenge': payload => ({ job: lessons.challenge({ scope: scopeOf(payload), stepIndex: payload.stepIndex, anchorStepId: payload.anchorStepId, target: challengeTarget(payload), note: typeof payload.note === 'string' ? payload.note : '' }) }),
     'lesson/record': payload => lessons.record({
       courseId: need(payload, 'courseId', 'crs'),
       lessonId: optional(payload, 'lessonId', 'les'),

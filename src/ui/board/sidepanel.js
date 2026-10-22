@@ -23,11 +23,12 @@ export function goalStates(steps, mainIndex, count, ended = false) {
 
 // steps: everything on the board in playing order, asides included; upto: the
 // furthest step reached; asides: { id, kind, label, streaming, steps }.
-// Entries: { key, kind: 'say' | 'question' | 'reexplain' | 'correction', text,
-// stepIndex, aside, pending } — stepIndex is where clicking the entry jumps to.
+// Entries: { key, kind: 'say' | 'question' | 'reexplain' | 'correction' |
+// 'challenge', text, stepIndex, aside, pending } — stepIndex is where
+// clicking the entry jumps to.
 export function transcriptEntries(steps, upto, asides = []) {
   const entries = []
-  const kindOf = aside => (aside.kind === 'question' || aside.kind === 'correction' ? aside.kind : 'reexplain')
+  const kindOf = aside => (['question', 'correction', 'challenge'].includes(aside.kind) ? aside.kind : 'reexplain')
   const started = new Set()
   const owner = id => asides.find(aside => id.startsWith(`${aside.id}_`))
   steps.forEach((step, stepIndex) => {
@@ -46,4 +47,16 @@ export function transcriptEntries(steps, upto, asides = []) {
     if (aside.streaming && !aside.steps.length) entries.push({ key: `${aside.id}:ask`, kind: kindOf(aside), text: aside.label, stepIndex: -1, aside: true, pending: true })
   }
   return entries
+}
+
+// The furthest of the board's own steps the lesson has reached, by id. An
+// answer inserted earlier in the lesson moves later steps down the list, and
+// must not hide the lines already heard. steps: everything in playing order;
+// index: the step playing; reachedId: the furthest one so far.
+export function furthestStep(steps, index, reachedId = null) {
+  let at = Math.min(index, steps.length - 1)
+  while (at > 0 && steps[at]?.aside) at -= 1
+  const id = steps[at]?.id
+  if (!id) return reachedId
+  return reachedId && steps.findIndex(step => step.id === reachedId) >= at ? reachedId : id
 }

@@ -24,8 +24,9 @@ export class TutorError extends Error {
 const REPAIR = 'Your previous reply could not be parsed as JSON. Reply again with the complete answer as valid JSON only — no code fences, no commentary.'
 
 // onText(delta), when given, streams the first answer (used for progress).
-export async function generateJson(llm, { purpose = 'teach', prompt, maxTokens = 8000, images, signal, normalize = value => value, onText }) {
-  const request = { purpose, system: prompt.system, user: prompt.user, images, maxTokens, signal }
+// effort: as for boards; left out, the model reasons at its default.
+export async function generateJson(llm, { purpose = 'teach', effort, prompt, maxTokens = 8000, images, signal, normalize = value => value, onText }) {
+  const request = { purpose, ...(effort ? { effort } : {}), system: prompt.system, user: prompt.user, images, maxTokens, signal }
   const first = onText ? await llm.stream({ ...request, onText }) : await llm.complete(request)
   try {
     return normalize(extractJson(first))
@@ -33,7 +34,7 @@ export async function generateJson(llm, { purpose = 'teach', prompt, maxTokens =
     if (signal?.aborted) throw signal.reason ?? error
     // One repair round: the model sees its own answer and the problem.
     const retryUser = `${prompt.user}\n\n<previous_reply>\n${String(first).slice(0, 12000)}\n</previous_reply>\n\n${REPAIR}${error instanceof JsonExtractError ? '' : `\nProblem: ${error.message}`}`
-    const second = await llm.complete({ purpose, system: prompt.system, user: retryUser, images, maxTokens, signal })
+    const second = await llm.complete({ ...request, user: retryUser })
     try {
       return normalize(extractJson(second))
     } catch {

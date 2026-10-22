@@ -119,12 +119,22 @@ a.aha-btn{text-decoration:none}
 .aha-goals li[data-state=current] .aha-goalMark{border-color:var(--aha-brand);color:var(--aha-brand)}
 .aha-goals li[data-state=done] .aha-goalMark{background:var(--aha-ok);border-color:var(--aha-ok);color:#fff}
 .aha-transcript{flex:1 1 auto;min-height:80px;overflow:auto;display:flex;flex-direction:column;gap:2px}
-.aha-line{display:flex;gap:6px;align-items:flex-start;width:100%;padding:6px 8px;border:0;border-radius:8px;background:transparent;color:var(--aha-muted);font:inherit;font-size:13px;line-height:19px;text-align:left;cursor:pointer}
+.aha-lineRow{position:relative;display:flex;align-items:flex-start;min-width:0}
+.aha-lineRow[data-aside=true]{margin-left:10px;border-left:2px dashed var(--aha-ok)}
+.aha-line{display:flex;gap:6px;align-items:flex-start;flex:1;min-width:0;padding:6px 8px;border:0;border-radius:8px;background:transparent;color:var(--aha-muted);font:inherit;font-size:13px;line-height:19px;text-align:left;cursor:pointer}
+.aha-lineRow[data-aside=true]>.aha-line{border-radius:0 8px 8px 0}
 .aha-line:hover:not(:disabled){background:var(--aha-hover)}
 .aha-line:disabled{cursor:default}
 .aha-line[data-current=true]{background:var(--aha-soft);color:var(--aha-text)}
-.aha-line[data-aside=true]{margin-left:10px;width:calc(100% - 10px);border-left:2px dashed var(--aha-ok);border-radius:0 8px 8px 0}
-.aha-line[data-kind=question],.aha-line[data-kind=reexplain],.aha-line[data-kind=correction]{color:var(--aha-text);font-weight:600}
+.aha-line[data-kind=question],.aha-line[data-kind=reexplain],.aha-line[data-kind=correction],.aha-line[data-kind=challenge]{color:var(--aha-text);font-weight:600}
+/* "Wrong?" on a transcript line: shown on hover or focus, always on touch screens. */
+.aha-lineFlag{position:absolute;top:4px;right:4px;padding:0 8px;border:1px solid var(--aha-border);border-radius:999px;background:var(--aha-surface);color:var(--aha-muted);font:inherit;font-size:12px;line-height:20px;white-space:nowrap;cursor:pointer;opacity:0;transition:opacity .15s}
+.aha-lineRow:hover>.aha-lineFlag,.aha-lineFlag:focus-visible{opacity:1}
+.aha-lineFlag:hover{color:var(--aha-text);border-color:var(--aha-muted)}
+@media (hover:none){.aha-lineFlag{position:static;align-self:center;margin:0 2px 0 4px;opacity:1}}
+.aha-challengeBox{display:flex;flex-direction:column;gap:6px;align-self:center;width:min(100%,560px);padding:10px 12px;border-radius:12px;background:var(--aha-soft);border:1px solid var(--aha-border);color:var(--aha-text);font-size:13px;line-height:19px}
+.aha-challengeActions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.aha-challengeHint{flex:1 1 140px;min-width:0;color:var(--aha-muted);font-size:12px}
 .aha-lineText{flex:1;min-width:0;overflow-wrap:anywhere}
 .aha-panel .aha-askBox{flex-direction:column;align-items:stretch}
 .aha-panel .aha-askBox .aha-askActions{align-self:flex-end}
@@ -255,6 +265,12 @@ a.aha-btn{text-decoration:none}
 .aha-op-figure>div{width:100%;display:flex;justify-content:center}
 .aha-op-figure svg{width:100%;max-width:560px;height:auto;max-height:380px;overflow:visible}
 .aha-figCaption{font-size:15px;color:var(--ink-soft)}
+.aha-plot{display:flex;flex-direction:column;align-items:center;gap:6px;width:100%}
+.aha-plotSliders{display:grid;gap:4px;width:min(100%,520px);transition:opacity .3s}
+.aha-plotSliders[data-written=false]{opacity:0;pointer-events:none}
+.aha-plotSlider{display:grid;grid-template-columns:minmax(56px,auto) 1fr 3.4em;align-items:center;gap:10px;font-size:15px;line-height:22px;color:var(--ink);cursor:pointer}
+.aha-plotSlider input{width:100%;margin:0;accent-color:var(--head);cursor:pointer}
+.aha-plotValue{font-variant-numeric:tabular-nums;color:var(--ink-soft);text-align:right;white-space:nowrap}
 .aha-board[data-theme=dark] .aha-op-figure svg [stroke="#2b2b2b"],.aha-board[data-theme=dark] .aha-op-figure svg [stroke="#23262f"]{stroke:#ecebe4}
 .aha-board[data-theme=dark] .aha-op-figure svg [fill="#2b2b2b"],.aha-board[data-theme=dark] .aha-op-figure svg text:not([fill]){fill:#ecebe4}
 .aha-op-table{border-collapse:collapse;font-size:16px;line-height:24px}
@@ -264,6 +280,8 @@ a.aha-btn{text-decoration:none}
 .aha-board[data-theme=dark] .aha-op-code{background:rgba(255,255,255,.06)}
 .aha-op-anim{width:100%;border:0;border-radius:10px;background:transparent}
 .aha-op[data-aside=true]{padding-left:10px;border-left:3px dashed var(--accent2)}
+/* An op the teacher corrected after the learner challenged it. */
+.aha-fixed{position:absolute;top:-11px;right:-6px;z-index:2;padding:0 7px;border:1.5px solid var(--accent);border-radius:999px;background:var(--paper);color:var(--accent);font-size:12px;line-height:18px;white-space:nowrap;transform:rotate(-3deg);cursor:help}
 .aha-markRing{position:absolute;inset:-6px -10px;border:2.4px solid var(--accent);border-radius:40% 45% 42% 48%;pointer-events:none;opacity:.85}
 .aha-markLine{position:absolute;left:0;right:0;bottom:-2px;height:3px;background:var(--accent);border-radius:3px;pointer-events:none}
 .aha-markBox{position:absolute;inset:-4px -6px;border:2.4px solid var(--accent);border-radius:6px;pointer-events:none}

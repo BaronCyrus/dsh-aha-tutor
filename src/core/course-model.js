@@ -3,6 +3,7 @@
 // progress. Every limit here protects the UI and the token budget.
 
 import { newId } from './ids.js'
+import { normalizePlot } from './plot.js'
 
 export const COURSE_SCHEMA_VERSION = 1
 export const LIMITS = Object.freeze({
@@ -252,8 +253,13 @@ export function normalizeItem(raw, index = 0, conceptIds = []) {
     conceptIds: (Array.isArray(raw?.conceptIds) ? raw.conceptIds : []).filter(id => conceptIds.includes(id)).slice(0, 4),
   }
   // An optional figure; the client draws it only through the SVG allow-list.
+  // A graph of formulas is a plot the client computes (without sliders).
   const figure = text(raw?.svg ?? raw?.figure, 16000)
   if (/^<svg[\s>]/iu.test(figure)) item.svg = figure
+  else if (raw?.plot && typeof raw.plot === 'object') {
+    const plot = normalizePlot(raw.plot)
+    if (plot) item.plot = plot
+  }
   if (kind === 'choice' || kind === 'multi' || kind === 'order') {
     item.options = list(raw?.options, LIMITS.options4, (option, optionIndex) => {
       const label = text(typeof option === 'string' ? option : option?.text ?? option?.label, 400)

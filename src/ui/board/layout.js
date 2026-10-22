@@ -36,6 +36,9 @@ export function estimateHeight(op) {
     case 'svg':
     case 'chart':
       return 8.5
+    case 'plot':
+      // Equal scales can make a plot taller; each slider adds a line.
+      return (op.equal ? 10 : 9) + op.params.length * 1.1
     case 'anim':
       return Math.round(op.height / 34)
     default:

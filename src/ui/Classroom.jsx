@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
+import { applyFixes, prefixFixes } from '../core/board-fix.js'
 import { boardScope } from './api.js'
 import { Board, Inline } from './board/Board.jsx'
 import { captionSentences } from './board/inline.js'
 import { reidSteps } from './board/layout.js'
 import { createPlayer } from './board/player.js'
-import { goalStates, transcriptEntries } from './board/sidepanel.js'
+import { furthestStep, goalStates, transcriptEntries } from './board/sidepanel.js'
 import { ErrorLine, errorText, Spinner } from './components.jsx'
 import { openMainScreen } from './context.js'
 import { useApp, useDarkMode, useLasting, usePersistentState } from './hooks.js'
@@ -19,10 +20,18 @@ import { VoiceButton } from './VoiceButton.jsx'
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2]
 const STYLES = [['analogy', 'styleAnalogy'], ['visual', 'styleVisual'], ['example', 'styleExample'], ['simpler', 'styleSimpler'], ['deeper', 'styleDeeper']]
 
-// An aside (the answer to a raised hand, a re-explanation, or the correction
-// of a written-out working) is played right after the step it was asked at.
-function asideEntry({ id, kind, label, anchorId, steps = [], streaming = false }) {
-  return { id, kind, label, anchorId, streaming, steps: reidSteps(steps, `${id}_`).map(step => ({ ...step, anchorId })) }
+// An aside (the answer to a raised hand, a re-explanation, the correction
+// of a written-out working, or the answer to "is this step wrong?") is played
+// right after the step it was asked at. serverId: the id the host keeps it
+// under, once it is kept.
+function asideEntry({ id, kind, label, anchorId, steps = [], streaming = false, serverId }) {
+  return { id, kind, label, anchorId, streaming, serverId, steps: reidSteps(steps, `${id}_`).map(step => ({ ...step, anchorId })) }
+}
+
+// The first words of a step, to say which one is meant.
+const opening = say => {
+  const words = [...String(say ?? '').replace(/\s+/gu, ' ').trim()]
+  return words.length > 28 ? `${words.slice(0, 28).join('')}…` : words.join('')
 }
 
 // scope: { kind: 'lesson', courseId, lessonId } | { kind: 'thread', id, turn } | { kind: 'short', id }
@@ -37,14 +46,19 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   const boardTheme = settings.boardTheme === 'dark' || (settings.boardTheme !== 'light' && dark) ? 'dark' : 'light'
   const styleLabel = style => t(STYLES.find(([value]) => value === style)?.[1] ?? 'reexplain')
   const correctionLabel = tag => (tag ? t('correctionOf', { tag }) : t('correction'))
+  const challengeLabel = (note, verdict) => [note || t('challengeLabel'), verdict ? t(`challenge_${verdict}`) : ''].filter(Boolean).join(' · ')
   const [main, setMain] = useState(initialSteps)
   const [asides, setAsides] = useState(() => savedAsides.map(aside => asideEntry({
     id: aside.id,
     kind: aside.kind,
-    label: aside.kind === 'question' ? aside.question : aside.kind === 'correction' ? correctionLabel(aside.errorTag) : t('reexplainedAs', { style: styleLabel(aside.style) }),
+    label: aside.kind === 'question' ? aside.question : aside.kind === 'correction' ? correctionLabel(aside.errorTag) : aside.kind === 'challenge' ? challengeLabel(aside.note, aside.verdict) : t('reexplainedAs', { style: styleLabel(aside.style) }),
     anchorId: aside.anchorStepId,
     steps: aside.steps ?? [],
+    serverId: aside.id,
   })))
+  // Fixes made to the board's own steps, kept to apply again when a board
+  // still being written arrives whole.
+  const boardFixes = useRef([])
   const [panelOpen, setPanelOpen] = usePersistentState('classPanel', true)
   const root = useRef(null)
   const askField = useRef(null)
@@ -64,6 +78,9 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   const [correcting, setCorrecting] = useState(null)
   const correctionStarted = useRef(new Set())
   const [styleMenu, setStyleMenu] = useState(false)
+  // "Is this step wrong?": the step it is about (an index into steps) and
+  // what the learner wrote, while the box is open.
+  const [challenge, setChallenge] = useState(null)
   const [error, setError] = useState(null)
   const asideCounter = useRef(0)
   // Watching an aside's job stops when the classroom closes; the host still
@@ -138,7 +155,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
       onPreview: (preview, job) => setPrep(preview?.phase ? { ...preview, elapsedMs: job?.elapsedMs ?? 0, receivedAt: performance.now() } : null),
     }).then(result => {
       const board = result?.board ?? result?.item?.board ?? result
-      if (board?.steps?.length) setMain(board.steps)
+      if (board?.steps?.length) setMain(boardFixes.current.length ? applyFixes(board.steps, boardFixes.current).steps : board.steps)
       setPrep(null)
       setComplete(true)
       onStreamDone?.(result)
@@ -160,8 +177,9 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
 
   const index = snapshot?.index ?? 0
   // The transcript keeps what was reached, even after stepping back.
-  const [reached, setReached] = useState(0)
-  useEffect(() => { setReached(value => Math.max(value, index)) }, [index])
+  const [reachedId, setReachedId] = useState(null)
+  useEffect(() => { setReachedId(current => furthestStep(steps, index, current)) }, [index, steps])
+  const reached = Math.max(0, steps.findIndex(step => step.id === reachedId))
 
   const ended = snapshot?.status === 'ended' && complete
   const endedNotified = useRef(false)
@@ -216,7 +234,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
 
   // Ask the host for an aside and put its steps on the board as they are
   // written; the lesson continues once the whole answer is there.
-  async function runAside({ endpoint, payload, kind, label, anchorIndex, onStarted, onAdded, onFailed }) {
+  async function runAside({ endpoint, payload, kind, label, anchorIndex, onStarted, onAdded, onFailed, onResult }) {
     const anchorId = anchorOf(anchorIndex)
     asideCounter.current += 1
     const id = `a${asideCounter.current}`
@@ -242,8 +260,9 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
       const written = []
       const result = await api.follow({ job }, { signal, onPartial: partial => { written.push(...partial); show([...written]) } })
       show(result?.steps?.length ? result.steps : written)
-      setAsides(current => current.map(aside => (aside.id === id ? { ...aside, streaming: false } : aside)))
+      setAsides(current => current.map(aside => (aside.id === id ? { ...aside, streaming: false, serverId: result?.aside?.id } : aside)))
       setAsking(false)
+      onResult?.(result, id)
     } catch (failure) {
       if (signal.aborted) return
       setAsides(current => current.flatMap(aside => (aside.id !== id ? [aside] : aside.steps.length ? [{ ...aside, streaming: false }] : [])))
@@ -292,6 +311,60 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
     player.answer(correcting.checkId)
   }, [asides, correcting, player])
 
+  // "Is this step wrong?" opens a box for the step on screen, or for an
+  // earlier one from the transcript; the lesson waits meanwhile.
+  function openChallenge(stepIndex) {
+    player.pause()
+    setStyleMenu(false)
+    setChallenge({ index: Math.max(0, Math.min(stepIndex, steps.length - 1)), note: '' })
+  }
+
+  // What the host needs to find the step: its id on the board, or in an
+  // answer it keeps; an answer it does not keep is sent whole.
+  function challengeTarget(stepIndex) {
+    const step = steps[stepIndex]
+    if (!step?.aside) return step ? { stepId: step.id } : null
+    const owner = asides.find(aside => step.id.startsWith(`${aside.id}_`))
+    if (!owner || owner.streaming) return null
+    if (owner.serverId && scope.kind === 'lesson') return { stepId: step.id.slice(owner.id.length + 1), asideId: owner.serverId }
+    return { step: { id: step.id, say: step.say, ops: step.ops.map(({ fixed, ...op }) => op) } }
+  }
+
+  // The teacher checks the step (thinking first), then answers at the board,
+  // right after the step on screen: a step challenged from the transcript
+  // is answered where the learner is, and the lesson goes on from there.
+  // What was fixed changes on the board at once and stays fixed.
+  async function sendChallenge(event) {
+    event?.preventDefault()
+    if (!challenge) return
+    const target = challengeTarget(challenge.index)
+    const note = challenge.note.trim()
+    setChallenge(null)
+    if (!target) return
+    player.pause()
+    setAsking('checking')
+    await runAside({
+      endpoint: 'lesson/challenge',
+      payload: { target, note },
+      kind: 'challenge',
+      label: challengeLabel(note),
+      anchorIndex: index,
+      onResult: (result, asideId) => {
+        setAsides(current => current.map(aside => (aside.id === asideId ? { ...aside, label: challengeLabel(note, result?.verdict) } : aside)))
+        const fixes = Array.isArray(result?.fixes) ? result.fixes : []
+        if (!fixes.length) return
+        if (result.target?.main) {
+          boardFixes.current.push(...fixes)
+          setMain(current => applyFixes(current, fixes).steps)
+        } else if (result.target?.asideId) {
+          setAsides(current => current.map(aside => (aside.serverId === result.target.asideId ? { ...aside, steps: applyFixes(aside.steps, prefixFixes(fixes, `${aside.id}_`)).steps } : aside)))
+        } else {
+          setAsides(current => current.map(aside => ({ ...aside, steps: applyFixes(aside.steps, fixes).steps })))
+        }
+      },
+    })
+  }
+
   // Raising a hand pauses the lesson and puts the cursor in the ask box.
   function raiseHand() {
     player.pause()
@@ -332,15 +405,16 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   const writing = asides.find(aside => aside.streaming)
   const bufferingLabel = asking === 'answering' || writing?.kind === 'question' ? t('answering')
     : asking === 'correcting' || writing?.kind === 'correction' ? t('correcting')
-      : asking === 'reexplaining' || writing ? t('generating')
-        : steps.length ? t('bufferingLesson') : t('preparingLesson')
+      : asking === 'checking' || (writing?.kind === 'challenge' && !writing.steps.length) ? t('checkingStep')
+        : asking === 'reexplaining' || writing ? t('generating')
+          : steps.length ? t('bufferingLesson') : t('preparingLesson')
 
   // The lesson itself is still being written (not an answer or a correction).
   // The card replaces the small pill only when that wait goes on.
   const waitingForLesson = buffering && !asking && !writing && !complete
   const preparing = useLasting(waitingForLesson, PREP_DELAY_MS) && Boolean(prep)
   const doneGoals = goals ? goals.filter(state => state === 'done').length : 0
-  const writingAside = Boolean(writing) || asking === 'answering' || asking === 'reexplaining' || asking === 'correcting'
+  const writingAside = Boolean(writing) || Boolean(asking)
 
   const needsCorrection = check?.kind === 'work' && checkResult?.checkId === check.id && !checkResult.result.correct && Boolean(checkResult.result.response?.trim())
   function continueCheck() {
@@ -379,7 +453,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
       <div className="aha-classMain">
         <div className={`aha-stage ${stageClass ?? ''}`}>
           <Board steps={steps} position={snapshot ? { index: snapshot.index, op: snapshot.op, progress: snapshot.progress, now: snapshot.now } : { index: 0, op: 0, progress: 0 }} theme={boardTheme} font={settings.boardFont === 'standard' ? 'standard' : 'hand'} view={settings.boardView === 'pages' ? 'pages' : 'canvas'}
-            buffering={(buffering || Boolean(asking)) && !preparing} bufferingLabel={bufferingLabel} />
+            buffering={(buffering || Boolean(asking)) && !preparing} bufferingLabel={bufferingLabel} onInteract={() => player.pause()} />
           {preparing ? <PrepProgress prep={prep} label={bufferingLabel} first={!steps.length} hand={settings.boardFont !== 'standard'} /> : null}
           {check ? <div className="aha-checkCard">
             <div className="aha-spread"><b>{t('checkTitle')}</b></div>
@@ -388,6 +462,18 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
         </div>
         {captions && caption ? <div className="aha-caption"><Inline text={caption} /></div> : <div className="aha-caption" />}
         <ErrorLine error={error} style={{ textAlign: 'center' }} />
+        {challenge ? <form className="aha-challengeBox" onSubmit={sendChallenge}>
+          <b>{challenge.index === index ? t('challengeTitle') : t('challengeTitleStep', { n: challenge.index + 1, text: opening(steps[challenge.index]?.say) })}</b>
+          <textarea className="aha-textarea" rows={2} autoFocus value={challenge.note} placeholder={t('challengePlaceholder')}
+            onChange={event => { const note = event.currentTarget.value; setChallenge(current => current && { ...current, note }) }}
+            onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) sendChallenge(event); if (event.key === 'Escape') setChallenge(null) }} />
+          <div className="aha-challengeActions">
+            <VoiceButton onStart={() => player.pause()} onText={text => setChallenge(current => current && { ...current, note: current.note.trim() ? `${current.note.trimEnd()} ${text}` : text })} />
+            <span className="aha-challengeHint">{t('challengeHint')}</span>
+            <button type="button" className="aha-btn" data-kind="ghost" onClick={() => setChallenge(null)}>{t('cancel')}</button>
+            <button type="submit" className="aha-btn" data-kind="primary" disabled={!challengeTarget(challenge.index)}>{t('challengeSend')}</button>
+          </div>
+        </form> : null}
         {voiceNote ? <div className="aha-voiceNote" role="status">
           <span className="aha-voiceNoteText">🔇 {voiceNote}</span>
           <span className="aha-voiceNoteActions">
@@ -413,6 +499,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
               {STYLES.map(([value, key]) => <button key={value} type="button" className="aha-btn" data-kind="ghost" style={{ justifyContent: 'flex-start' }} onClick={() => reexplain(value)}>{t(key)}</button>)}
             </div> : null}
           </span>
+          <button type="button" className="aha-chip" aria-expanded={Boolean(challenge)} onClick={() => (challenge ? setChallenge(null) : openChallenge(index))} disabled={!steps.length || writingAside}>🧐 {t('challenge')}</button>
           {!panelOpen ? <button type="button" className="aha-chip" aria-expanded={false} onClick={() => setPanelOpen(true)}>📋 {t('showPanel')}</button> : null}
         </div>
       </div>
@@ -432,12 +519,15 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
         </ol> : null}
         {objectives.length ? <b className="aha-panelHead">{t('transcript')}</b> : null}
         <div ref={transcriptBox} className="aha-transcript" role="list">
-          {entries.map(entry => <button key={entry.key} type="button" role="listitem" className="aha-line" data-kind={entry.kind} data-aside={entry.aside ? 'true' : undefined} data-current={entry.stepIndex === index ? 'true' : undefined}
-            disabled={entry.stepIndex < 0} onClick={() => player.seek(entry.stepIndex)}>
-            {entry.kind === 'question' ? <span className="aha-lineTag">✋</span> : entry.kind === 'reexplain' ? <span className="aha-lineTag">🔄</span> : entry.kind === 'correction' ? <span className="aha-lineTag">✏️</span> : null}
-            <span className="aha-lineText"><Inline text={entry.text} /></span>
-            {entry.pending ? <Spinner /> : null}
-          </button>)}
+          {entries.map(entry => <div key={entry.key} role="listitem" className="aha-lineRow" data-aside={entry.aside ? 'true' : undefined}>
+            <button type="button" className="aha-line" data-kind={entry.kind} data-current={entry.stepIndex === index ? 'true' : undefined}
+              disabled={entry.stepIndex < 0} onClick={() => player.seek(entry.stepIndex)}>
+              {entry.kind === 'question' ? <span className="aha-lineTag">✋</span> : entry.kind === 'reexplain' ? <span className="aha-lineTag">🔄</span> : entry.kind === 'correction' ? <span className="aha-lineTag">✏️</span> : entry.kind === 'challenge' ? <span className="aha-lineTag">🧐</span> : null}
+              <span className="aha-lineText"><Inline text={entry.text} /></span>
+              {entry.pending ? <Spinner /> : null}
+            </button>
+            {entry.kind === 'say' && entry.stepIndex >= 0 && !writingAside ? <button type="button" className="aha-lineFlag" title={t('challenge')} aria-label={t('challengeStep', { n: entry.stepIndex + 1 })} onClick={() => openChallenge(entry.stepIndex)}>{t('challengeLine')}</button> : null}
+          </div>)}
         </div>
         <form className="aha-askBox" onSubmit={ask}>
           <textarea ref={askField} className="aha-textarea" rows={2} value={question} placeholder={t('askPlaceholder')} disabled={!steps.length}

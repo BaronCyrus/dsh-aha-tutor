@@ -1,7 +1,7 @@
 {
  "format": "aha-tutor.coursepack",
  "version": 1,
- "exportedAt": "2026-10-19T05:41:04.603Z",
+ "exportedAt": "2026-10-22T04:19:02.137Z",
  "app": {
   "name": "dsh-aha-tutor",
   "version": "sample"
@@ -16,7 +16,7 @@
   "goal": "适合高中到大一的学习者。从“为什么会来回振动”出发，建立回复力、周期、相位的直觉，再推出单摆公式，最后用自己测的数据验证它。",
   "units": [
    {
-    "id": "unt_mvettal5m4joeu",
+    "id": "unt_mvj17cdpk9pmui",
     "title": "振动从哪里来",
     "summary": "回复力让物体来回运动；一个旋转的圆告诉我们它的样子。",
     "objectives": [
@@ -25,12 +25,12 @@
     ],
     "lectures": [
      {
-      "id": "lec_mvettal5s3ucmy",
+      "id": "lec_mvj17cdoh7qzc5",
       "title": "回复力",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvettal2rezjk4",
+        "id": "les_mvj17cdcf6myhj",
         "title": "回复力：为什么会来回振动",
         "summary": "从弹簧振子出发认识回复力与胡克定律。",
         "objectives": [
@@ -39,11 +39,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvettal5cvykpp",
+          "id": "cpt_mvj17cdo5a59oj",
           "name": "回复力"
          },
          {
-          "id": "cpt_mvettal51kykz6",
+          "id": "cpt_mvj17cdoy32mfz",
           "name": "胡克定律"
          }
         ],
@@ -51,7 +51,7 @@
         "kind": "lesson"
        },
        {
-        "id": "les_mvettal5oktisl",
+        "id": "les_mvj17cdoq3x1ix",
         "title": "振幅、周期与频率",
         "summary": "描述振动的三个基本量。",
         "objectives": [
@@ -60,11 +60,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvettal5qw906v",
+          "id": "cpt_mvj17cdo3mc89o",
           "name": "振幅"
          },
          {
-          "id": "cpt_mvettal5jvn19z",
+          "id": "cpt_mvj17cdovjxf7c",
           "name": "周期与频率"
          }
         ],
@@ -74,12 +74,12 @@
       ]
      },
      {
-      "id": "lec_mvettal5gtpjx0",
+      "id": "lec_mvj17cdpbp6o75",
       "title": "运动的样子",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvettal5568qh8",
+        "id": "les_mvj17cdo68p7rq",
         "title": "从圆周运动看简谐运动",
         "summary": "简谐运动是匀速圆周运动的“影子”。",
         "objectives": [
@@ -88,11 +88,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvettal5mwjl3b",
+          "id": "cpt_mvj17cdou3tllg",
           "name": "参考圆"
          },
          {
-          "id": "cpt_mvettal5w76r1s",
+          "id": "cpt_mvj17cdpcg7imn",
           "name": "角频率"
          }
         ],
@@ -100,7 +100,7 @@
         "kind": "lesson"
        },
        {
-        "id": "les_mvettal5w9z6xb",
+        "id": "les_mvj17cdpnusxm0",
         "title": "位移、速度与加速度的相位关系",
         "summary": "三个量依次相差四分之一个周期。",
         "objectives": [
@@ -109,11 +109,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvettal5fop0pr",
+          "id": "cpt_mvj17cdpegcbcc",
           "name": "相位"
          },
          {
-          "id": "cpt_mvettal5fq9dny",
+          "id": "cpt_mvj17cdpj4rh4f",
           "name": "速度与加速度"
          }
         ],
@@ -125,7 +125,7 @@
     ]
    },
    {
-    "id": "unt_mvettal5rdw1wu",
+    "id": "unt_mvj17cdpr0g946",
     "title": "单摆与能量",
     "summary": "把方法用到单摆上，并从能量的角度再看一次振动。",
     "objectives": [
@@ -134,12 +134,12 @@
     ],
     "lectures": [
      {
-      "id": "lec_mvettal5sstiaz",
+      "id": "lec_mvj17cdppaap08",
       "title": "单摆",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvettal5r65d1t",
+        "id": "les_mvj17cdp0gegqn",
         "title": "小角度近似：单摆为什么是简谐运动",
         "summary": "sin θ ≈ θ 让单摆满足回复力的形式。",
         "objectives": [
@@ -148,11 +148,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvettal5ijeu9c",
+          "id": "cpt_mvj17cdphr82vm",
           "name": "小角度近似"
          },
          {
-          "id": "cpt_mvettal5i4m5ya",
+          "id": "cpt_mvj17cdp6rqshn",
           "name": "单摆的回复力"
          }
         ],
@@ -160,7 +160,7 @@
         "kind": "lesson"
        },
        {
-        "id": "les_mvettal5biagfk",
+        "id": "les_mvj17cdpj3whyz",
         "title": "周期公式与测量重力加速度",
         "summary": "T = 2π√(L/g)，以及如何用它测出 g。",
         "objectives": [
@@ -169,11 +169,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvettal5z1uk3i",
+          "id": "cpt_mvj17cdp7g6n6x",
           "name": "单摆周期"
          },
          {
-          "id": "cpt_mvettal5ajaefg",
+          "id": "cpt_mvj17cdplrxs0e",
           "name": "重力加速度"
          }
         ],
@@ -183,12 +183,12 @@
       ]
      },
      {
-      "id": "lec_mvettal5aaj4q4",
+      "id": "lec_mvj17cdpccqg73",
       "title": "能量视角",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvettal5zfvt5l",
+        "id": "les_mvj17cdpm90plp",
         "title": "动能与势能的来回交换",
         "summary": "振动的过程就是能量在两种形式之间流动。",
         "objectives": [
@@ -197,11 +197,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvettal5acrjft",
+          "id": "cpt_mvj17cdp72evar",
           "name": "机械能守恒"
          },
          {
-          "id": "cpt_mvettal5d4e1e0",
+          "id": "cpt_mvj17cdp58aadt",
           "name": "振动的能量"
          }
         ],
@@ -215,7 +215,7 @@
   ],
   "projects": [
    {
-    "id": "prj_mvettal6bgi5j6",
+    "id": "prj_mvj17cdrbnu8es",
     "title": "用一根绳子测出重力加速度",
     "kind": "code",
     "brief": "用手机秒表和一根绳子做一个单摆，测出不同摆长下的周期，再用 Python 画出 T² 与 L 的关系，从直线斜率求出你所在地的重力加速度 g，并和 9.8 m/s² 比较、分析误差来源。",
@@ -286,12 +286,12 @@
       "content": "import csv\nimport math\n\n# 读取数据\nrows = list(csv.DictReader(open(\"data.csv\", encoding=\"utf-8\")))\nL = [float(r[\"length_m\"]) for r in rows]\nT = [float(r[\"time_10_s\"]) / 10 for r in rows]\n\n# TODO 1：计算每个摆长对应的 T 的平方\nT2 = []\n\n# TODO 2：对 T2 关于 L 做最小二乘线性拟合，求斜率 k\n# 提示：k = Σ(L - L̄)(T2 - T̄2) / Σ(L - L̄)²\nk = None\n\n# TODO 3：由 T² = (4π²/g)·L 求 g\ng = None\n\nprint(\"g =\", g)\n"
      }
     ],
-    "unitId": "unt_mvettal5rdw1wu"
+    "unitId": "unt_mvj17cdpr0g946"
    }
   ]
  },
  "boards": {
-  "les_mvettal2rezjk4": {
+  "les_mvj17cdcf6myhj": {
    "title": "回复力：为什么会来回振动",
    "steps": [
     {
@@ -402,7 +402,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvettal5cvykpp"
+       "cpt_mvj17cdo5a59oj"
       ],
       "options": [
        {
@@ -448,7 +448,7 @@
     },
     {
      "id": "s7",
-     "say": "把木块的位置随时间画出来，会得到一条平滑的波浪线。这就是简谐运动的样子。下一讲我们会揭开它和圆的关系。",
+     "say": "把木块的位置随时间画出来，会得到一条平滑的波浪线。这就是简谐运动的样子。拖动图下面的滑块试试：振幅 A 决定波浪有多高，角频率 ω 决定它有多密。下一讲我们会揭开它和圆的关系。",
      "ops": [
       {
        "id": "o16",
@@ -457,343 +457,47 @@
       },
       {
        "id": "o17",
-       "t": "chart",
-       "kind": "line",
+       "t": "plot",
        "title": "位置随时间变化",
+       "caption": "",
+       "x": {
+        "min": 0,
+        "max": 8
+       },
+       "y": null,
        "xLabel": "t / s",
        "yLabel": "x / cm",
-       "series": [
+       "xPi": false,
+       "equal": false,
+       "fns": [
         {
-         "name": "x(t)",
-         "points": [
-          [
-           0,
-           5
-          ],
-          [
-           0.1,
-           4.938
-          ],
-          [
-           0.2,
-           4.755
-          ],
-          [
-           0.3,
-           4.455
-          ],
-          [
-           0.4,
-           4.045
-          ],
-          [
-           0.5,
-           3.536
-          ],
-          [
-           0.6,
-           2.939
-          ],
-          [
-           0.7,
-           2.27
-          ],
-          [
-           0.8,
-           1.545
-          ],
-          [
-           0.9,
-           0.782
-          ],
-          [
-           1,
-           0
-          ],
-          [
-           1.1,
-           -0.782
-          ],
-          [
-           1.2,
-           -1.545
-          ],
-          [
-           1.3,
-           -2.27
-          ],
-          [
-           1.4,
-           -2.939
-          ],
-          [
-           1.5,
-           -3.536
-          ],
-          [
-           1.6,
-           -4.045
-          ],
-          [
-           1.7,
-           -4.455
-          ],
-          [
-           1.8,
-           -4.755
-          ],
-          [
-           1.9,
-           -4.938
-          ],
-          [
-           2,
-           -5
-          ],
-          [
-           2.1,
-           -4.938
-          ],
-          [
-           2.2,
-           -4.755
-          ],
-          [
-           2.3,
-           -4.455
-          ],
-          [
-           2.4,
-           -4.045
-          ],
-          [
-           2.5,
-           -3.536
-          ],
-          [
-           2.6,
-           -2.939
-          ],
-          [
-           2.7,
-           -2.27
-          ],
-          [
-           2.8,
-           -1.545
-          ],
-          [
-           2.9,
-           -0.782
-          ],
-          [
-           3,
-           0
-          ],
-          [
-           3.1,
-           0.782
-          ],
-          [
-           3.2,
-           1.545
-          ],
-          [
-           3.3,
-           2.27
-          ],
-          [
-           3.4,
-           2.939
-          ],
-          [
-           3.5,
-           3.536
-          ],
-          [
-           3.6,
-           4.045
-          ],
-          [
-           3.7,
-           4.455
-          ],
-          [
-           3.8,
-           4.755
-          ],
-          [
-           3.9,
-           4.938
-          ],
-          [
-           4,
-           5
-          ],
-          [
-           4.1,
-           4.938
-          ],
-          [
-           4.2,
-           4.755
-          ],
-          [
-           4.3,
-           4.455
-          ],
-          [
-           4.4,
-           4.045
-          ],
-          [
-           4.5,
-           3.536
-          ],
-          [
-           4.6,
-           2.939
-          ],
-          [
-           4.7,
-           2.27
-          ],
-          [
-           4.8,
-           1.545
-          ],
-          [
-           4.9,
-           0.782
-          ],
-          [
-           5,
-           0
-          ],
-          [
-           5.1,
-           -0.782
-          ],
-          [
-           5.2,
-           -1.545
-          ],
-          [
-           5.3,
-           -2.27
-          ],
-          [
-           5.4,
-           -2.939
-          ],
-          [
-           5.5,
-           -3.536
-          ],
-          [
-           5.6,
-           -4.045
-          ],
-          [
-           5.7,
-           -4.455
-          ],
-          [
-           5.8,
-           -4.755
-          ],
-          [
-           5.9,
-           -4.938
-          ],
-          [
-           6,
-           -5
-          ],
-          [
-           6.1,
-           -4.938
-          ],
-          [
-           6.2,
-           -4.755
-          ],
-          [
-           6.3,
-           -4.455
-          ],
-          [
-           6.4,
-           -4.045
-          ],
-          [
-           6.5,
-           -3.536
-          ],
-          [
-           6.6,
-           -2.939
-          ],
-          [
-           6.7,
-           -2.27
-          ],
-          [
-           6.8,
-           -1.545
-          ],
-          [
-           6.9,
-           -0.782
-          ],
-          [
-           7,
-           0
-          ],
-          [
-           7.1,
-           0.782
-          ],
-          [
-           7.2,
-           1.545
-          ],
-          [
-           7.3,
-           2.27
-          ],
-          [
-           7.4,
-           2.939
-          ],
-          [
-           7.5,
-           3.536
-          ],
-          [
-           7.6,
-           4.045
-          ],
-          [
-           7.7,
-           4.455
-          ],
-          [
-           7.8,
-           4.755
-          ],
-          [
-           7.9,
-           4.938
-          ],
-          [
-           8,
-           5
-          ]
-         ]
+         "kind": "fx",
+         "y": "A*cos(ω*t)",
+         "name": "x(t)"
         }
        ],
-       "data": []
+       "params": [
+        {
+         "name": "A",
+         "value": 5,
+         "min": 1,
+         "max": 8,
+         "step": 0.5,
+         "label": "振幅 A"
+        },
+        {
+         "name": "ω",
+         "value": 1.5707963267948966,
+         "min": 0.5,
+         "max": 4,
+         "step": 0.05,
+         "label": "角频率 ω"
+        }
+       ],
+       "points": [],
+       "lines": [],
+       "shades": [],
+       "tangents": []
       }
      ]
     },
@@ -826,7 +530,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvettal51kykz6"
+       "cpt_mvj17cdoy32mfz"
       ],
       "answer": 4,
       "tolerance": 0.01,
@@ -856,8 +560,8 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvettal5cvykpp",
-       "cpt_mvettal51kykz6"
+       "cpt_mvj17cdo5a59oj",
+       "cpt_mvj17cdoy32mfz"
       ],
       "options": [
        {
@@ -881,9 +585,9 @@
      }
     }
    ],
-   "lessonId": "les_mvettal2rezjk4"
+   "lessonId": "les_mvj17cdcf6myhj"
   },
-  "les_mvettal5568qh8": {
+  "les_mvj17cdo68p7rq": {
    "title": "从圆周运动看简谐运动",
    "steps": [
     {
@@ -950,7 +654,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvettal5mwjl3b"
+       "cpt_mvj17cdou3tllg"
       ],
       "options": [
        {
@@ -1024,7 +728,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvettal5w76r1s"
+       "cpt_mvj17cdpcg7imn"
       ],
       "answer": 10,
       "tolerance": 0.01,
@@ -1730,8 +1434,8 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvettal5w76r1s",
-       "cpt_mvettal5mwjl3b"
+       "cpt_mvj17cdpcg7imn",
+       "cpt_mvj17cdou3tllg"
       ],
       "options": [
        {
@@ -1755,12 +1459,12 @@
      }
     }
    ],
-   "lessonId": "les_mvettal5568qh8"
+   "lessonId": "les_mvj17cdo68p7rq"
   }
  },
  "practice": {
-  "les_mvettal2rezjk4": {
-   "lessonId": "les_mvettal2rezjk4",
+  "les_mvj17cdcf6myhj": {
+   "lessonId": "les_mvj17cdcf6myhj",
    "items": [
     {
      "id": "i1",
@@ -1772,7 +1476,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvettal5cvykpp"
+      "cpt_mvj17cdo5a59oj"
      ],
      "options": [
       {
@@ -1804,7 +1508,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvettal51kykz6"
+      "cpt_mvj17cdoy32mfz"
      ],
      "answer": 5,
      "tolerance": 0.01,
@@ -1820,7 +1524,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvettal51kykz6"
+      "cpt_mvj17cdoy32mfz"
      ],
      "answer": [
       "-kx",
@@ -1840,7 +1544,7 @@
      ],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvettal5cvykpp"
+      "cpt_mvj17cdo5a59oj"
      ],
      "options": [
       {
@@ -1870,7 +1574,7 @@
      "hints": [],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvettal5cvykpp"
+      "cpt_mvj17cdo5a59oj"
      ],
      "answer": "到达平衡位置时回复力为零但速度最大，由于惯性会冲过平衡位置；冲过之后回复力反向，使它减速并被拉回，如此往复。",
      "rubric": [
@@ -1881,8 +1585,8 @@
     }
    ]
   },
-  "les_mvettal5568qh8": {
-   "lessonId": "les_mvettal5568qh8",
+  "les_mvj17cdo68p7rq": {
+   "lessonId": "les_mvj17cdo68p7rq",
    "items": [
     {
      "id": "i1",
@@ -1892,7 +1596,7 @@
      "hints": [],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvettal5mwjl3b"
+      "cpt_mvj17cdou3tllg"
      ],
      "options": [
       {
@@ -1924,7 +1628,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvettal5w76r1s"
+      "cpt_mvj17cdpcg7imn"
      ],
      "answer": 12.566,
      "tolerance": 0.06,
@@ -1938,7 +1642,7 @@
      "hints": [],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvettal5mwjl3b"
+      "cpt_mvj17cdou3tllg"
      ],
      "options": [
       {
@@ -1970,7 +1674,7 @@
      ],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvettal5w76r1s"
+      "cpt_mvj17cdpcg7imn"
      ],
      "answer": 1.2566,
      "tolerance": 0.01,
@@ -1984,7 +1688,7 @@
      "hints": [],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvettal5w76r1s"
+      "cpt_mvj17cdpcg7imn"
      ],
      "options": [
       {

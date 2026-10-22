@@ -2,6 +2,17 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## Unreleased
+
+### Added
+
+- **Is this step wrong?**: a learner who thinks the teacher made a mistake can say so, from the classroom controls (the step on screen) or from any line of the transcript (an earlier step). An optional note, typed or spoken, says what looks wrong. The teacher model checks the step with thinking on (recomputing numbers, re-deriving formulas, checking facts, units and answer keys), which takes a few seconds to half a minute, then answers at the board. A real mistake is boxed and corrected there, and the lesson itself is fixed where it is kept: the wrong ops, later steps that carried the mistake forward, the narration and check answers. Each fixed op shows **✎ Corrected**, with the original on hover, also in PDF and PNG exports. A step that is right is explained, aimed at the learner's doubt. Either answer stays with the lesson and in the transcript, and neither changes mastery. It works in lessons (answers to raised hands included), instant answers, explainer shorts and the conversation board.
+- **Exact function plots**: a new board element draws curves from formulas the app computes point by point, so a sine wave or a parabola is never drawn wrong. It takes y = f(x), parametric and polar curves; labelled points (on a curve from their x alone), dashed guides such as asymptotes, shaded areas and tangents; and textbook axes through the origin with arrows, ticks in π for angles and an optional equal scale. Up to four parameters become sliders under the plot; moving one pauses the lesson. Exports and videos show the plot at its default values. Practice and quiz items can use a plot as their figure. Formulas are read in calculator syntax by the plugin's own parser and evaluated over numbers only, never run as code.
+
+### Changed
+
+- The first lesson of the harmonic-motion sample shows its wave as a plot with sliders for the amplitude and the angular frequency.
+
 ## 1.5.0 - 2026-10-21
 
 ### Added

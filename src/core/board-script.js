@@ -4,6 +4,7 @@
 // loose model output and returns a strictly shaped, size-limited script.
 
 import { normalizeItem, text } from './course-model.js'
+import { normalizePlot, plotToSource, plotToText } from './plot.js'
 
 export const BOARD_LIMITS = Object.freeze({
   steps: 48,
@@ -20,10 +21,10 @@ export const BOARD_LIMITS = Object.freeze({
   chartSeries: 6,
 })
 
-export const OP_TYPES = Object.freeze(['title', 'h', 'p', 'math', 'list', 'svg', 'chart', 'table', 'code', 'note', 'mark', 'anim', 'col', 'page'])
+export const OP_TYPES = Object.freeze(['title', 'h', 'p', 'math', 'list', 'svg', 'chart', 'plot', 'table', 'code', 'note', 'mark', 'anim', 'col', 'page'])
 const OP_ALIASES = Object.freeze({
   heading: 'h', header: 'h', subtitle: 'h', text: 'p', paragraph: 'p', write: 'p', formula: 'math', equation: 'math', latex: 'math',
-  bullets: 'list', bullet: 'list', diagram: 'svg', drawing: 'svg', figure: 'svg', graph: 'chart', plot: 'chart', callout: 'note',
+  bullets: 'list', bullet: 'list', diagram: 'svg', drawing: 'svg', figure: 'svg', graph: 'chart', function: 'plot', curve: 'plot', callout: 'note',
   highlight: 'mark', underline: 'mark', animation: 'anim', interactive: 'anim', column: 'col', newcolumn: 'col', newpage: 'page', clear: 'page',
 })
 const CHART_KINDS = ['line', 'bar', 'scatter', 'pie', 'area']
@@ -75,11 +76,19 @@ export function normalizeOp(raw, index) {
       if (!/^<svg[\s>]/iu.test(svg) || svg.length > BOARD_LIMITS.svgBytes) return null
       return { id, t, svg, caption: text(raw?.caption, 200), wide: raw?.wide === true }
     }
-    case 'chart': {
+    case 'chart':
+    case 'plot': {
+      // A curve given by formulas is a plot, whatever the model called it;
+      // data points are a chart.
+      const formulas = raw?.fns ?? raw?.functions ?? raw?.curves ?? (typeof raw?.y === 'string' || raw?.fn !== undefined || raw?.expr !== undefined ? raw : null)
+      if (formulas) {
+        const plot = normalizePlot(raw)
+        if (plot) return { id, t: 'plot', ...plot }
+      }
       const kind = CHART_KINDS.includes(raw?.kind) ? raw.kind : 'line'
       const { series, data } = chartSeries(raw)
       if (!series.length && !data.length) return null
-      return { id, t, kind, title: text(raw?.title, 120), xLabel: text(raw?.xLabel ?? raw?.x?.label, 60), yLabel: text(raw?.yLabel ?? raw?.y?.label, 60), series, data }
+      return { id, t: 'chart', kind, title: text(raw?.title, 120), xLabel: text(raw?.xLabel ?? raw?.x?.label, 60), yLabel: text(raw?.yLabel ?? raw?.y?.label, 60), series, data }
     }
     case 'table': {
       const head = (Array.isArray(raw?.head ?? raw?.columns) ? raw.head ?? raw.columns : []).slice(0, BOARD_LIMITS.tableCols).map(cell => text(cell, 120))
@@ -222,7 +231,7 @@ export function opVisibleLength(op) {
 export function estimateWriteMs(op) {
   if (op.t === 'col' || op.t === 'page') return 0
   if (op.t === 'mark') return 600
-  if (op.t === 'svg' || op.t === 'chart' || op.t === 'anim') return 2200
+  if (op.t === 'svg' || op.t === 'chart' || op.t === 'plot' || op.t === 'anim') return 2200
   return Math.min(7000, Math.max(450, opVisibleLength(op) * 55))
 }
 
@@ -250,6 +259,7 @@ export function boardToPlainText(board, { maxChars = 8000, uptoStep } = {}) {
       else if (op.t === 'list') lines.push(...op.items.map(item => `  • ${item}`))
       else if (op.t === 'table') lines.push(`  | ${op.head.join(' | ')} |`, ...op.rows.map(row => `  | ${row.join(' | ')} |`))
       else if (op.t === 'code') lines.push(`  \`\`\`${op.lang}\n${op.code}\n  \`\`\``)
+      else if (op.t === 'plot') lines.push(`  (plot: ${plotToSource(op)})`)
       else if (op.text) lines.push(`  ${op.text}`)
       else if (op.caption) lines.push(`  (${op.t}: ${op.caption})`)
     }
@@ -270,6 +280,7 @@ export function boardToMarkdown(board) {
       else if (op.t === 'list') out.push(...op.items.map((item, index) => (op.ordered ? `${index + 1}. ${item}` : `- ${item}`)), '')
       else if (op.t === 'note') out.push(`> ${op.text}`, '')
       else if (op.t === 'code') out.push(`\`\`\`${op.lang}`, op.code, '```', '')
+      else if (op.t === 'plot') out.push(...plotToText(op).split('\n').map(line => `> 📈 ${line}`), '')
       else if (op.t === 'table') {
         const head = op.head.length ? op.head : op.rows[0].map(() => ' ')
         out.push(`| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`, ...op.rows.map(row => `| ${row.join(' | ')} |`), '')

@@ -1,8 +1,10 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
+import { defaultValues, formatPlotNumber } from '../../core/plot.js'
 import { chartSvg } from '../charts.js'
 import { useApp } from '../hooks.js'
 import { TeX } from '../math.jsx'
+import { plotSvg, preparePlot } from '../plot.js'
 import { animationDocument, sanitizeSvg } from '../sanitize.js'
 import { followShift, fitRect, keepInView, wheelPixels, wheelZoomFactor, zoomAt, ZOOM_STEP } from './camera.js'
 import { fitFormula, formulaLines, writtenPart } from './fit.js'
@@ -78,6 +80,35 @@ function DrawnSvg({ markup, reveal, caption }) {
   </div>
 }
 
+// A function plot, computed from its formulas. Its sliders, when it has any
+// and is not an export, move the curves; touching one pauses the lesson.
+function PlotFigure({ op, reveal, still, onInteract }) {
+  const prepared = useMemo(() => preparePlot(op), [op])
+  const [values, setValues] = useState(() => defaultValues(op))
+  // A plot that changes (a corrected one) starts again from its defaults.
+  const shape = JSON.stringify([op.fns, op.params])
+  useEffect(() => { setValues(defaultValues(op)) }, [shape])
+  const markup = useMemo(() => (prepared ? plotSvg(op, values, { prepared }) : ''), [op, prepared, values])
+  if (!prepared) return null
+  const slide = (index, value) => {
+    onInteract?.()
+    setValues(current => current.map((item, position) => (position === index ? value : item)))
+  }
+  const written = reveal >= 1
+  return <div className="aha-plot">
+    <DrawnSvg markup={markup} reveal={reveal} caption="" />
+    {!still && op.params.length ? <div className="aha-plotSliders" data-written={written} aria-hidden={!written}>
+      {op.params.map((param, index) => <label key={param.name} className="aha-plotSlider">
+        <span className="aha-plotName">{param.label || param.name}</span>
+        <input type="range" min={param.min} max={param.max} step={param.step} value={values[index] ?? param.value} disabled={!written}
+          onPointerDown={() => onInteract?.()} onChange={event => slide(index, Number(event.currentTarget.value))} />
+        <span className="aha-plotValue">{formatPlotNumber(values[index] ?? param.value)}</span>
+      </label>)}
+    </div> : null}
+    {op.caption ? <div className="aha-figCaption" style={{ opacity: written ? 1 : 0.4 }}>{op.caption}</div> : null}
+  </div>
+}
+
 // op.height is the height the animation wants at a 560 px wide board column;
 // narrower columns scale it down so the frame keeps the content's proportions.
 function Animation({ op, reveal, theme }) {
@@ -147,7 +178,9 @@ function AnimationStill({ op, label }) {
   return <div className="aha-op-note" data-tone="tip">▶ {op.caption || label}</div>
 }
 
-function OpView({ op, reveal, marks, aside, now, opRef, theme, still = false, animationLabel = '' }) {
+// fixedNote(op): the badge of an op corrected after the learner challenged
+// it ({ label, title }), when the view shows one.
+function OpView({ op, reveal, marks, aside, now, opRef, theme, still = false, animationLabel = '', onInteract, fixedNote }) {
   const markDecor = marks.map(mark => <span key={mark.id} className={mark.style === 'circle' ? 'aha-markRing' : mark.style === 'box' ? 'aha-markBox' : 'aha-markLine'} style={{ opacity: mark.reveal, clipPath: `inset(0 ${100 - mark.reveal * 100}% 0 0)` }} />)
   let body
   switch (op.t) {
@@ -181,6 +214,9 @@ function OpView({ op, reveal, marks, aside, now, opRef, theme, still = false, an
     case 'chart':
       body = <DrawnSvg markup={chartSvg(op)} reveal={reveal} caption="" />
       break
+    case 'plot':
+      body = <PlotFigure op={op} reveal={reveal} still={still} onInteract={onInteract} />
+      break
     case 'table': {
       const rows = reveal >= 1 ? op.rows.length : Math.floor(op.rows.length * reveal)
       body = <table className="aha-op-table">
@@ -201,9 +237,11 @@ function OpView({ op, reveal, marks, aside, now, opRef, theme, still = false, an
     default:
       body = null
   }
+  const fixed = op.fixed && fixedNote && reveal >= 1 ? fixedNote(op) : null
   return <div ref={opRef} className="aha-op" data-t={op.t} data-aside={aside ? 'true' : undefined} data-now={now ? 'true' : undefined} data-op={op.id}>
     {body}
     {markDecor}
+    {fixed ? <span className="aha-fixed" title={fixed.title}>✎ {fixed.label}</span> : null}
   </div>
 }
 
@@ -256,7 +294,7 @@ const PENCIL_OPS = new Set(['p', 'h', 'list', 'note', 'math', 'title'])
 
 // One page as written so far: its title and two columns of ops.
 function PageContent({ page, title, board, activeRef }) {
-  const { reveal, marks, nowIds, opMeta, activeOp, theme } = board
+  const { reveal, marks, nowIds, opMeta, activeOp, theme, onInteract, fixedNote } = board
   const titleReveal = title ? reveal(title.id) : 1
   return <>
     {page.title && titleReveal > 0 ? <h2 className="aha-boardTitle"><span><Inline text={page.title} reveal={titleReveal} /></span></h2> : null}
@@ -266,7 +304,7 @@ function PageContent({ page, title, board, activeRef }) {
           const amount = reveal(op.id)
           if (amount <= 0) return null
           const isActive = activeOp?.id === op.id && amount < 1
-          return <OpView key={op.id} op={op} reveal={amount} marks={marks.get(op.id) ?? []} aside={opMeta.get(op.id)?.aside} now={nowIds.has(op.id)} opRef={isActive ? activeRef : undefined} theme={theme} />
+          return <OpView key={op.id} op={op} reveal={amount} marks={marks.get(op.id) ?? []} aside={opMeta.get(op.id)?.aside} now={nowIds.has(op.id)} opRef={isActive ? activeRef : undefined} theme={theme} onInteract={onInteract} fixedNote={fixedNote} />
         })}
       </div>)}
     </div>
@@ -487,7 +525,9 @@ function CanvasView({ board, layout, position, activePage, pencil }) {
 // font: 'hand' (the bundled handwriting fonts) or 'standard' (the app's font).
 // view: 'canvas' (all pages on a canvas that pans and zooms) or 'pages' (one
 // page at a time with a pager).
-export function Board({ steps, position, theme = 'light', font = 'hand', buffering = false, bufferingLabel = '', view = 'canvas' }) {
+// onInteract: the learner touched something on the board (a plot's slider).
+export function Board({ steps, position, theme = 'light', font = 'hand', buffering = false, bufferingLabel = '', view = 'canvas', onInteract }) {
+  const { t } = useApp()
   const layout = useMemo(() => layoutBoard(steps), [steps])
   const text = useMemo(() => (font === 'hand' ? boardText(steps) : ''), [steps, font])
   useEffect(() => {
@@ -527,7 +567,8 @@ export function Board({ steps, position, theme = 'light', font = 'hand', bufferi
 
   // What the narration is talking about right now (synced steps only).
   const nowIds = new Set(position?.now ?? [])
-  const board = { reveal, marks, nowIds, opMeta, activeOp, theme, titles }
+  const fixedNote = op => ({ label: t('fixed'), title: t('fixedWas', { was: op.fixed.was }) })
+  const board = { reveal, marks, nowIds, opMeta, activeOp, theme, titles, onInteract, fixedNote }
   const pencil = activeOp && position && position.progress < 1 && PENCIL_OPS.has(activeOp.t) ? position : null
   const View = view === 'pages' ? PagedView : CanvasView
 
@@ -542,7 +583,7 @@ export function Board({ steps, position, theme = 'light', font = 'hand', bufferi
 // scrolling. Pages with nothing on them are left out; the first page shows
 // `title` when the board names none. footer: { left, right } beside the
 // page number.
-export function BoardSheets({ steps, title = '', theme = 'light', font = 'hand', footer = {}, animationLabel = '' }) {
+export function BoardSheets({ steps, title = '', theme = 'light', font = 'hand', footer = {}, animationLabel = '', fixedLabel = '' }) {
   const layout = useMemo(() => layoutBoard(steps), [steps])
   const asides = useMemo(() => new Set(steps.flatMap(step => (step.aside ? step.ops.map(op => op.id) : []))), [steps])
   const marks = useMemo(() => {
@@ -557,7 +598,7 @@ export function BoardSheets({ steps, title = '', theme = 'light', font = 'hand',
       {heading ? <h2 className="aha-boardTitle"><span><Inline text={heading} /></span></h2> : null}
       <div className="aha-cols">
         {page.columns.map((column, columnIndex) => <div className="aha-colBody" key={columnIndex}>
-          {column.map(({ op }) => <OpView key={op.id} op={op} reveal={1} marks={marks.get(op.id) ?? []} aside={asides.has(op.id)} now={false} theme={theme} still animationLabel={animationLabel} />)}
+          {column.map(({ op }) => <OpView key={op.id} op={op} reveal={1} marks={marks.get(op.id) ?? []} aside={asides.has(op.id)} now={false} theme={theme} still animationLabel={animationLabel} fixedNote={fixedLabel ? () => ({ label: fixedLabel }) : undefined} />)}
         </div>)}
       </div>
       <div className="aha-exportFoot"><span>{footer.left ?? ''}</span><span>{[footer.right, `${index + 1} / ${pages.length}`].filter(Boolean).join(' · ')}</span></div>

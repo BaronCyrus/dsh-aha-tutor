@@ -4,6 +4,7 @@ import { gradeObjective } from '../core/grading.js'
 import { ErrorLine } from './components.jsx'
 import { useApp } from './hooks.js'
 import { RichText } from './markdown.jsx'
+import { plotSvg } from './plot.js'
 import { sanitizeSvg } from './sanitize.js'
 
 const CONFIDENCE = [['sure', 'confSure'], ['unsure', 'confUnsure'], ['guess', 'confGuess']]
@@ -125,7 +126,7 @@ export function ItemCard({ item, language, onResult, onContinue, continueLabel, 
 
   return <div className="aha-col" style={{ gap: compact ? 8 : 12 }}>
     <RichText text={item.prompt} compact />
-    {item.svg ? <ItemFigure svg={item.svg} /> : null}
+    {item.svg ? <ItemFigure svg={item.svg} /> : item.plot ? <ItemFigure plot={item.plot} /> : null}
     {(item.kind === 'choice' || item.kind === 'multi') ? <div className="aha-col aha-options" style={{ gap: 6 }} data-grid={item.options.every(option => option.text.length <= 22)}>
       {item.options.map(option => {
         const selected = item.kind === 'multi' ? response.includes(option.id) : response === option.id
@@ -190,10 +191,11 @@ export function ItemCard({ item, language, onResult, onContinue, continueLabel, 
   </div>
 }
 
-// A figure drawn by the model, only through the SVG allow-list, on paper so
-// its ink stays readable in the dark theme.
-function ItemFigure({ svg }) {
-  const safe = useMemo(() => sanitizeSvg(svg), [svg])
+// A figure drawn by the model, only through the SVG allow-list, or a plot
+// computed from its formulas, on paper so its ink stays readable in the dark
+// theme.
+function ItemFigure({ svg, plot }) {
+  const safe = useMemo(() => sanitizeSvg(plot ? plotSvg(plot) : svg), [svg, plot])
   return safe ? <div className="aha-itemFigure" dangerouslySetInnerHTML={{ __html: safe }} /> : null
 }
 

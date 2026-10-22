@@ -16,8 +16,27 @@ const MIC_ERRORS = {
 const UNSUPPORTED = { code: 'mic-unsupported' }
 const UNREADABLE = { code: 'speech-audio' }
 
-function recordingError({ code }) {
-  return Object.assign(new Error(code), { name: 'RecordingError', code })
+// device: the name of the microphone chosen in DSH, when that one is missing.
+function recordingError({ code, device }) {
+  return Object.assign(new Error(code), { name: 'RecordingError', code }, device ? { device } : {})
+}
+
+// DSH's speechToText service knows only the recognizer and its language. The
+// input device chosen in Voice input's details is kept by DSH's browser side,
+// in this page's storage under this key, as { id, label } with an empty id for
+// the system default. DSH has no API for it; should DSH keep it elsewhere,
+// recordings fall back to the system default.
+export const DSH_MICROPHONE_KEY = 'dsh.voice-input.microphone'
+
+// The microphone chosen in DSH ({ id, label }), or null for the system default.
+export function chosenMicrophone() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(DSH_MICROPHONE_KEY) ?? 'null')
+    if (typeof saved?.id === 'string' && saved.id && typeof saved.label === 'string') return { id: saved.id, label: saved.label.slice(0, 120) }
+  } catch {
+    // storage unavailable or unreadable
+  }
+  return null
 }
 
 // Float samples (-1…1) at 16 kHz → a canonical PCM16 WAV.
@@ -71,9 +90,9 @@ export function bytesToBase64(bytes) {
   return btoa(binary)
 }
 
-// One recording at a time: start() asks for the microphone, stop() resolves
-// with the WAV bytes, cancel() drops everything. onLimit fires when the
-// recording reaches maxSeconds.
+// One recording at a time: start() asks for the microphone chosen in DSH,
+// stop() resolves with the WAV bytes, cancel() drops everything. onLimit fires
+// when the recording reaches maxSeconds.
 export function createRecorder({ maxSeconds = 120, onLimit } = {}) {
   let stream = null
   let recorder = null
@@ -89,9 +108,12 @@ export function createRecorder({ maxSeconds = 120, onLimit } = {}) {
 
   async function start() {
     if (!globalThis.navigator?.mediaDevices?.getUserMedia || typeof MediaRecorder !== 'function') throw recordingError(UNSUPPORTED)
+    // Like DSH, a chosen microphone that is gone is reported, not replaced.
+    const microphone = chosenMicrophone()
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } })
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, ...(microphone ? { deviceId: { exact: microphone.id } } : {}) } })
     } catch (error) {
+      if (microphone && (error?.name === 'NotFoundError' || error?.name === 'OverconstrainedError')) throw recordingError({ code: 'mic-chosen-missing', device: microphone.label })
       throw recordingError(MIC_ERRORS[error?.name] ?? UNSUPPORTED)
     }
     chunks = []

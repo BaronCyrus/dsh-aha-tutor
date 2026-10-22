@@ -4,7 +4,8 @@ import { test } from 'node:test'
 import { speechRoute } from '../src/host/http.js'
 import { createRoutes } from '../src/host/rpc.js'
 import { createSpeechInput, MAX_SPEECH_BYTES, MAX_SPEECH_SECONDS, wavSeconds } from '../src/host/speech.js'
-import { bytesToBase64, encodeWav } from '../src/ui/recorder.js'
+import { en, format, zh } from '../src/ui/i18n.js'
+import { bytesToBase64, chosenMicrophone, createRecorder, DSH_MICROPHONE_KEY, encodeWav } from '../src/ui/recorder.js'
 
 // A stand-in for DSH's speechToText service with one recognizer.
 function fakeSpeech({ phase = 'standby', answer = '为什么 回复力  和位移相反？', fail = null } = {}) {
@@ -93,4 +94,82 @@ test('a recording reaches the host as raw WAV over HTTP, or as base64 over RPC',
   assert.deepEqual(await routes['speech/transcribe']({ base64: bytesToBase64(second) }), { text: '为什么 回复力 和位移相反？' })
   await assert.rejects(routes['speech/transcribe']({ base64: 'not base64!' }), { code: 'speech-audio' })
   await assert.rejects(routes['speech/transcribe']({ base64: 'A'.repeat(Math.ceil(MAX_SPEECH_BYTES / 3) * 4 + 4) }), { code: 'speech-too-long' })
+})
+
+test('a voice question records from the microphone chosen in DSH\'s Voice input, and says so when it is gone', async () => {
+  // DSH's browser side keeps the choice in the page's storage; the plugin
+  // shares the page, so it reads the same entry. DSH 0.2.1's
+  // @deepseek-ai/dsh-experimental-client-ui-voice-input persists
+  // { id, label } under this name (createMicrophoneDeviceStore); recheck it
+  // when DSH moves.
+  assert.equal(DSH_MICROPHONE_KEY, 'dsh.voice-input.microphone')
+  const saved = new Map()
+  globalThis.window = { localStorage: { getItem: key => saved.get(key) ?? null } }
+  const asked = []
+  let refuse = null
+  const realNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: {
+      mediaDevices: {
+        getUserMedia: async constraints => {
+          asked.push(constraints.audio)
+          if (refuse) throw new DOMException('Requested device not found', refuse)
+          return { getTracks: () => [{ stop() {} }] }
+        },
+      },
+    },
+  })
+  globalThis.MediaRecorder = class {
+    state = 'inactive'
+    start() { this.state = 'recording' }
+    stop() { this.state = 'inactive' }
+  }
+  const record = async () => {
+    const recorder = createRecorder()
+    await recorder.start()
+    recorder.cancel()
+    return asked.at(-1)
+  }
+  try {
+    // Nothing chosen, or DSH's own "system default": the default input.
+    assert.equal(chosenMicrophone(), null)
+    assert.equal((await record()).deviceId, undefined)
+    saved.set(DSH_MICROPHONE_KEY, JSON.stringify({ id: '', label: '' }))
+    assert.equal((await record()).deviceId, undefined)
+
+    // A chosen device is asked for exactly.
+    saved.set(DSH_MICROPHONE_KEY, JSON.stringify({ id: 'usb-mic-1', label: 'USB 麦克风' }))
+    assert.deepEqual(chosenMicrophone(), { id: 'usb-mic-1', label: 'USB 麦克风' })
+    assert.deepEqual(await record(), { channelCount: 1, echoCancellation: true, noiseSuppression: true, deviceId: { exact: 'usb-mic-1' } })
+
+    // Gone (unplugged, or an id the browser no longer knows): said, never
+    // swapped for another input.
+    for (const name of ['OverconstrainedError', 'NotFoundError']) {
+      refuse = name
+      const before = asked.length
+      await assert.rejects(createRecorder().start(), error => error.code === 'mic-chosen-missing' && error.device === 'USB 麦克风')
+      assert.equal(asked.length, before + 1, 'no second try with another microphone')
+    }
+    refuse = 'NotAllowedError'
+    await assert.rejects(createRecorder().start(), error => error.code === 'mic-denied' && error.device === undefined)
+    assert.equal(format(zh.micChosenMissing, { name: 'USB 麦克风' }), 'DSH「语音输入」里选的麦克风「USB 麦克风」现在用不了：插上它，或到 DSH 插件管理的「语音输入」详情里换一个。')
+    assert.equal(format(en.voiceAskWith, { name: 'USB mic' }), 'Ask by voice (microphone: USB mic)')
+    refuse = null
+
+    // An entry DSH might write differently one day reads as the default.
+    for (const value of ['{"deviceId":"usb-mic-1"}', '"usb-mic-1"', 'not json', '{"id":7,"label":"x"}', '{"id":"usb-mic-1"}', 'null']) {
+      saved.set(DSH_MICROPHONE_KEY, value)
+      assert.equal(chosenMicrophone(), null, value)
+    }
+    globalThis.window = { localStorage: { getItem() { throw new DOMException('denied', 'SecurityError') } } }
+    assert.equal(chosenMicrophone(), null, 'storage refused')
+    delete globalThis.window
+    assert.equal(chosenMicrophone(), null, 'no storage at all')
+    assert.equal((await record()).deviceId, undefined)
+  } finally {
+    delete globalThis.window
+    delete globalThis.MediaRecorder
+    Object.defineProperty(globalThis, 'navigator', realNavigator)
+  }
 })

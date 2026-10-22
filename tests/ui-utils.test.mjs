@@ -8,10 +8,10 @@ import { chartSvg, escapeXml, niceTicks } from '../src/ui/charts.js'
 import { en, format, zh } from '../src/ui/i18n.js'
 import { courseNextStep, lessonStage, nextStepFor, sessionStats } from '../src/ui/practice.js'
 import { PREP_DELAY_MS, prepStages } from '../src/ui/prep.js'
-import { revealTop } from '../src/ui/scroll.js'
+import { keepInside, keepInsideWhileShown, revealTop } from '../src/ui/scroll.js'
 import { STYLE } from '../src/ui/styles.js'
 import { animationDocument, sanitizeSvg } from '../src/ui/sanitize.js'
-import { afterNarration, createSpeech, splitSentences } from '../src/ui/speech.js'
+import { afterNarration, cloudVoiceOf, createSpeech, splitSentences } from '../src/ui/speech.js'
 import { syncedStarts, themedSvg, wrap } from '../src/ui/video.js'
 import { captionSentences, inlinePlain, parseInline, sliceInline, spokenText, texToText } from '../src/ui/board/inline.js'
 
@@ -79,6 +79,77 @@ test('in one column, instant answers and shorts scroll as a whole instead of squ
   assert.match(narrow.get('.aha-split .aha-transcript'), /max-height:260px/u)
   // Shorts are no longer boxed into 16:9, which hid the captions, the controls and the panel.
   assert.doesNotMatch(STYLE, /aha-shortStage/u)
+})
+
+test('the microphone\'s note stays inside the box that clips it in a narrow window', () => {
+  // A note hung from the right edge of a button at `layout.anchor`, 300px
+  // wide by its CSS. Above the button come boxes that clip (overflow other
+  // than visible) or not: layout.boxes, nearest first, as [overflowX, rect].
+  const note = layout => {
+    const parents = layout.boxes.reduceRight((parent, [overflowX, rect]) => ({ parentElement: parent, overflowX, getBoundingClientRect: () => rect }), null)
+    return {
+      parentElement: { parentElement: parents, overflowX: 'visible' },
+      style: { width: '', transform: '' },
+      getBoundingClientRect() {
+        const width = this.style.width ? Number.parseFloat(this.style.width) : 300
+        const shift = Number(/translateX\((-?\d+)px\)/u.exec(this.style.transform)?.[1] ?? 0)
+        return { left: layout.anchor - width + shift, right: layout.anchor + shift, width }
+      },
+    }
+  }
+  const box = element => element.getBoundingClientRect()
+  const page = rect => ['auto', rect]
+  globalThis.getComputedStyle = node => ({ overflowX: node.overflowX })
+  const watchers = []
+  globalThis.ResizeObserver = class {
+    constructor(callback) {
+      this.callback = callback
+      watchers.push(this)
+    }
+    observe(target) { this.target = target }
+    disconnect() { this.stopped = true }
+  }
+  try {
+    // Wide: the note fits beside the button and stays where it was.
+    const wide = note({ anchor: 1345, boxes: [page({ left: 468, right: 1440, width: 972 })] })
+    assert.equal(keepInside(wide), 0)
+    assert.deepEqual(box(wide), { left: 1045, right: 1345, width: 300 })
+
+    // 390px instant answers: the page starts at 112px, the button ends at
+    // 293px, and the composer card in between does not clip.
+    const narrow = note({ anchor: 293, boxes: [['visible', { left: 128, right: 373, width: 245 }], page({ left: 112, right: 390, width: 278 })] })
+    assert.equal(keepInside(narrow), 89)
+    assert.deepEqual(box(narrow), { left: 120, right: 382, width: 262 })
+
+    // 390px classroom: its scrolling body clips before the page does.
+    const classroom = note({ anchor: 292, boxes: [['visible', { left: 128, right: 369, width: 241 }], ['auto', { left: 128, right: 374, width: 246 }], page({ left: 112, right: 390, width: 278 })] })
+    keepInside(classroom)
+    assert.deepEqual(box(classroom), { left: 136, right: 366, width: 230 })
+
+    // The same rule pulls it back from the right edge, and a reopened note starts afresh.
+    const right = note({ anchor: 395, boxes: [page({ left: 0, right: 390, width: 390 })] })
+    assert.equal(keepInside(right), -13)
+    assert.equal(keepInside(right), -13)
+    assert.equal(keepInside(note({ anchor: 293, boxes: [] })), 0, 'nothing clips it')
+
+    // While shown, it fits again whenever that box changes size: the
+    // window's resize event comes while DSH's sidebar is still sliding.
+    const layout = { anchor: 150, boxes: [] }
+    const area = { left: 112, right: 166, width: 54 }
+    layout.boxes = [page(area)]
+    const sliding = note(layout)
+    const stop = keepInsideWhileShown(sliding)
+    assert.equal(box(sliding).width, 38, 'measured mid-slide')
+    Object.assign(area, { right: 390, width: 278 })
+    layout.anchor = 293
+    watchers[0].callback()
+    assert.deepEqual(box(sliding), { left: 120, right: 382, width: 262 })
+    stop()
+    assert.equal(watchers[0].stopped, true)
+  } finally {
+    delete globalThis.getComputedStyle
+    delete globalThis.ResizeObserver
+  }
 })
 
 test('a classroom opened out of sight scrolls to the top of the page, only where the page scrolls', () => {
@@ -190,6 +261,48 @@ test('cloud voice plays the host\'s audio, reports a failed request and stops wh
   }
 })
 
+test('cloud audio kept in the browser belongs to the voice that made it', async () => {
+  globalThis.Audio = class {
+    play() {
+      queueMicrotask(() => this.onended?.())
+      return Promise.resolve()
+    }
+    pause() {}
+  }
+  try {
+    const fetched = []
+    const speech = createSpeech({
+      fetchAudio: async textValue => {
+        fetched.push(textValue)
+        return { blob: new Blob(['mp3'], { type: 'audio/mpeg' }) }
+      },
+    })
+    const alloy = cloudVoiceOf({ ttsProvider: 'openai', tts: { openai: { model: 'm', voice: 'alloy' } } })
+    const nova = cloudVoiceOf({ ttsProvider: 'openai', tts: { openai: { model: 'm', voice: 'nova' } } })
+    speech.configure({ engine: 'cloud', cloudVoice: alloy })
+    await speech.speak('你好').done
+    await speech.speak('你好').done
+    assert.deepEqual(fetched, ['你好'], 'the same voice replays what it has')
+    speech.configure({ cloudVoice: nova })
+    assert.deepEqual(await speech.speak('你好').done, { completed: true })
+    assert.deepEqual(fetched, ['你好', '你好'], 'a sentence heard before is fetched in the new voice')
+    speech.prefetch('下一句')
+    await speech.speak('下一句').done
+    assert.deepEqual(fetched.slice(2), ['下一句'], 'prefetched in the voice now set')
+    speech.configure({ cloudVoice: alloy })
+    await speech.speak('你好').done
+    assert.equal(fetched.length, 3, 'back to the first voice, its audio is still here')
+  } finally {
+    delete globalThis.Audio
+  }
+  // The service and its settings make the voice, in whatever order they come.
+  const voice = (provider, config) => cloudVoiceOf({ ttsProvider: provider, tts: { [provider]: config } })
+  assert.equal(voice('openai', { voice: 'alloy', model: 'm' }), voice('openai', { model: 'm', voice: 'alloy' }))
+  assert.notEqual(voice('openai', { voice: 'alloy' }), voice('openai', { voice: 'alloy', baseUrl: 'http://127.0.0.1:8880/v1' }))
+  assert.notEqual(voice('openai', { voice: 'v' }), voice('minimax', { voice: 'v' }))
+  assert.equal(cloudVoiceOf({}), cloudVoiceOf({ ttsProvider: '' }), 'settings not loaded yet')
+})
+
 test('cloud voice keeps the host\'s code and tells a browser that will not play as a playback failure', async () => {
   let refuse = false
   globalThis.Audio = class {
@@ -219,7 +332,7 @@ test('cloud voice keeps the host\'s code and tells a browser that will not play 
 
 test('a failing voice is turned off for the lesson: at once when only its settings can fix it, else on the second failure in a row', () => {
   const failed = code => ({ completed: false, error: 'it failed', code })
-  for (const code of ['tts-no-key', 'tts-auth', 'tts-address', 'tts-app-id', 'tts-azure', 'tts-request', 'tts-timeout', 'no-credentials']) {
+  for (const code of ['tts-no-key', 'tts-auth', 'tts-address', 'tts-app-id', 'tts-azure', 'tts-request', 'tts-stalled', 'tts-timeout', 'no-credentials']) {
     assert.deepEqual(afterNarration(0, failed(`aha-tutor/${code}`)), { failures: 1, stop: { code, message: 'it failed' } }, code)
   }
   // A system voice without permission or engine names no code.
@@ -237,6 +350,7 @@ test('a failing voice is turned off for the lesson: at once when only its settin
 
   // The note puts the reason inside one sentence in either language.
   assert.equal(format(zh.voiceDownCloud, { reason: zh['err_tts-no-key'] }), '云端语音用不了：还没有保存这个语音服务的密钥，请先在设置里填写。这节课先静音往下讲。')
+  assert.equal(format(zh.voiceDownCloud, { reason: zh['err_tts-stalled'] }), '云端语音用不了：语音服务一直没有回应，请检查服务是否在运行、地址是否正确。这节课先静音往下讲。')
   assert.equal(format(en.voiceDownSystem, { reason: en.err_speech }), 'The system voice is not working: Reading aloud did not work. Try another system voice, or switch to a cloud voice. This lesson goes on without sound.')
 })
 

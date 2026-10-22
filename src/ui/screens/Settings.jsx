@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { ApiError } from '../api.js'
 import { ErrorLine, Spinner } from '../components.jsx'
@@ -9,7 +9,7 @@ import { BOARD_FONT } from '../styles.js'
 const PROVIDERS = [['openai', 'providerOpenai'], ['volcengine', 'providerVolcengine'], ['minimax', 'providerMinimax'], ['azure', 'providerAzure']]
 
 export function SettingsScreen() {
-  const { api, t, settings, reloadSettings, setVoiceId, speech, language } = useApp()
+  const { api, t, settings, settingsSaved, setVoiceId, speech, language } = useApp()
   const models = useLoad(() => api.call('models/list'), [])
   // An error shows under the control that failed ({ area, failure }): at the
   // top of the page it would be out of sight on a narrow window.
@@ -29,10 +29,17 @@ export function SettingsScreen() {
     }
   }
 
-  const save = (area, patch) => attempt(area, async () => {
-    await api.call('settings/save', { settings: patch })
-    await reloadSettings()
-  })
+  // Saves still on their way: a field saves when it is left, and leaving it
+  // by clicking Test must not test the old voice.
+  const saving = useRef(Promise.resolve())
+  const save = (area, patch) => {
+    const run = attempt(area, async () => {
+      await api.call('settings/save', { settings: patch })
+      await settingsSaved()
+    })
+    saving.current = saving.current.then(() => run)
+    return run
+  }
 
   const routeValue = (provider, model) => (provider && model ? `${provider}::${model}` : '')
   const setRoute = (prefix, value) => {
@@ -51,6 +58,7 @@ export function SettingsScreen() {
     setError(null)
     setTesting(true)
     try {
+      await saving.current
       speech.configure({ engine: settings.voiceEngine ?? 'browser', voiceId: settings.voiceId || undefined, language: lang, rate: settings.voiceRate ?? 1 })
       const spoken = speech.speak(t('testSentence'), { rate: settings.voiceRate ?? 1 })
       const result = await spoken.done
@@ -115,11 +123,11 @@ export function SettingsScreen() {
             <button type="button" className="aha-btn" disabled={!keyDraft.trim()} onClick={() => attempt('key', async () => {
               await api.call('settings/set-key', { provider, key: keyDraft.trim() })
               setKeyDraft('')
-              await reloadSettings()
+              await settingsSaved()
             })}>{t('saveKey')}</button>
             {settings.keys?.[provider] ? <button type="button" className="aha-btn" data-kind="ghost" onClick={() => attempt('key', async () => {
               await api.call('settings/clear-key', { provider })
-              await reloadSettings()
+              await settingsSaved()
             })}>{t('clearKey')}</button> : null}
           </div>
         </label>

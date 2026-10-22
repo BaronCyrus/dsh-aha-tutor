@@ -144,7 +144,7 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
     'unit/quiz': payload => lessons.unitQuiz({ courseId: need(payload, 'courseId', 'crs'), unitId: need(payload, 'unitId', 'unt'), force: payload.force === true }),
 
     'profile/get': () => learner.getProfile(),
-    'profile/save': payload => learner.saveProfile({ background: payload.background, goals: payload.goals, strengths: payload.strengths, weaknesses: payload.weaknesses, preferences: payload.preferences, notes: payload.notes }),
+    'profile/save': payload => learner.saveProfile({ name: payload.name, background: payload.background, goals: payload.goals, strengths: payload.strengths, weaknesses: payload.weaknesses, preferences: payload.preferences, notes: payload.notes }),
     'profile/clear': () => learner.clearProfile(),
     'profile/remove-note': payload => learner.removeNote({ id: need(payload, 'id', 'nte') }),
     'plan/get': payload => learner.plan({ today: payload.today }),

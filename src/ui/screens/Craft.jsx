@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { blueprintDiff, diffIsEmpty } from '../../core/course-model.js'
+import { blueprintDiff, diffIsEmpty, LESSON_DEPTHS } from '../../core/course-model.js'
 import { Confirm, ErrorLine, JobProgress, SourceList, Spinner } from '../components.jsx'
 import { useApp, useJob, useLoad } from '../hooks.js'
 
@@ -386,6 +386,11 @@ function Blueprint({ course, proposal, progress, boards, job, onChange }) {
             return <div key={lesson.id ?? lessonIndex} className="aha-lesson">
               <span className="aha-dot" />
               <input value={lesson.title} title={lesson.summary} onChange={event => { const value = event.currentTarget.value; edit(next => { next[unitIndex].lectures[lectureIndex].lessons[lessonIndex].title = value }) }} />
+              <select className="aha-depthSelect" data-depth={lesson.depth || undefined} value={lesson.depth ?? ''} title={t('depthTitle')} aria-label={t('depthTitle')}
+                onChange={event => { const value = event.currentTarget.value; edit(next => { const target = next[unitIndex].lectures[lectureIndex].lessons[lessonIndex]; if (value) target.depth = value; else delete target.depth }) }}>
+                <option value="">{t('depthNone')}</option>
+                {LESSON_DEPTHS.map(depth => <option key={depth} value={depth}>{t(`depth_${depth}`)}</option>)}
+              </select>
               <span className="aha-hint">{t('estMinutes', { minutes: lesson.estMinutes })}</span>
               {reworking === key ? <Spinner /> : !started(lesson) ? <span className="aha-menuAnchor">
                 <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" title={t('reworkLesson')} aria-label={t('reworkLesson')} aria-expanded={reworkMenu === key} onClick={() => setReworkMenu(open => (open === key ? null : key))}>✦</button>

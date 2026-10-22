@@ -5,7 +5,7 @@ import { conceptIndex, findLesson } from '../core/course-model.js'
 import { summarizeForPrompt } from '../core/mastery.js'
 import { formatPassages, selectPassages } from '../core/retrieval.js'
 
-export const EMPTY_PROFILE = Object.freeze({ background: '', goals: [], strengths: [], weaknesses: [], preferences: {}, notes: [], updatedAt: null })
+export const EMPTY_PROFILE = Object.freeze({ name: '', background: '', goals: [], strengths: [], weaknesses: [], preferences: {}, notes: [], updatedAt: null })
 
 export async function readProfile(store) {
   return { ...EMPTY_PROFILE, ...((await store.readJson(store.paths.profile(), null)) ?? {}) }

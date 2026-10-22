@@ -80,6 +80,7 @@ export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
             <span className="aha-dot" data-state={status(lesson.id)} />
             <span style={{ flex: 1, cursor: 'pointer' }} onClick={() => navigate('lesson', { courseId, lessonId: lesson.id })} title={lesson.summary}>{lesson.title}</span>
             {lesson.kind === 'remedial' ? <span className="aha-tag">{t('remedial')}</span> : null}
+            {lesson.depth ? <span className="aha-depth" data-depth={lesson.depth} title={t('depthTitle')}>{t(`depth_${lesson.depth}`)}</span> : null}
             <span className="aha-hint">{t('estMinutes', { minutes: lesson.estMinutes })}</span>
             <LessonMeter lesson={lesson} progress={progress} />
             <button type="button" className="aha-btn" data-size="sm" onClick={() => navigate('lesson', { courseId, lessonId: lesson.id })}>{t('learn')}</button>

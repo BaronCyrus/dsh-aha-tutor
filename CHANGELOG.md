@@ -2,6 +2,13 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## Unreleased
+
+### Added
+
+- **How each lesson is taught**: every lesson of a new blueprint has a depth, one of building intuition, making the idea precise, deriving it, applying it and going further, shown beside the lesson on the course page and in the blueprint editor, where it can be changed. The teacher teaches the lesson that way. The sample courses show theirs.
+- **Your name in class**: the profile asks what the tutor should call you, and a lesson's opening says it once.
+
 ## 1.6.0 - 2026-10-22
 
 ### Added

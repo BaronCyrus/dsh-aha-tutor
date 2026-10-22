@@ -119,6 +119,15 @@ a.aha-btn{text-decoration:none}
 .aha-goals li[data-state=current] .aha-goalMark{border-color:var(--aha-brand);color:var(--aha-brand)}
 .aha-goals li[data-state=done] .aha-goalMark{background:var(--aha-ok);border-color:var(--aha-ok);color:#fff}
 .aha-transcript{flex:1 1 auto;min-height:80px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+/* A lesson's depth: how it treats its idea. */
+/* Mixed with the text colour, so the hue stays readable in DSH's dark theme. */
+.aha-depth{flex:none;padding:0 7px;border:1px solid color-mix(in srgb,var(--depth,var(--aha-muted)) 45%,transparent);border-radius:999px;color:color-mix(in srgb,var(--depth,var(--aha-muted)) 78%,var(--aha-text));font-size:11.5px;line-height:18px;white-space:nowrap}
+.aha-depthSelect{flex:none;max-width:7.5em;padding:1px 4px;border:1px solid var(--aha-border);border-radius:8px;background:var(--aha-surface);color:color-mix(in srgb,var(--depth,var(--aha-muted)) 78%,var(--aha-text));font:inherit;font-size:12px}
+:is(.aha-depth,.aha-depthSelect)[data-depth=intuition]{--depth:#2f9e6e}
+:is(.aha-depth,.aha-depthSelect)[data-depth=definition]{--depth:#2f6fde}
+:is(.aha-depth,.aha-depthSelect)[data-depth=derivation]{--depth:#7a4fd6}
+:is(.aha-depth,.aha-depthSelect)[data-depth=application]{--depth:#d9822b}
+:is(.aha-depth,.aha-depthSelect)[data-depth=extension]{--depth:#d64545}
 .aha-lineRow{position:relative;display:flex;align-items:flex-start;min-width:0}
 .aha-lineRow[data-aside=true]{margin-left:10px;border-left:2px dashed var(--aha-ok)}
 .aha-line{display:flex;gap:6px;align-items:flex-start;flex:1;min-width:0;padding:6px 8px;border:0;border-radius:8px;background:transparent;color:var(--aha-muted);font:inherit;font-size:13px;line-height:19px;text-align:left;cursor:pointer}

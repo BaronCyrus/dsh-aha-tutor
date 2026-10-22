@@ -97,12 +97,12 @@ const SHM_BLUEPRINT = {
       objectives: ['说清回复力的方向与大小', '用参考圆理解简谐运动'],
       lectures: [
         { title: '回复力', lessons: [
-          { title: '回复力：为什么会来回振动', summary: '从弹簧振子出发认识回复力与胡克定律。', objectives: ['判断回复力的方向', '用 F = −kx 计算回复力'], concepts: ['回复力', '胡克定律'], estMinutes: 12 },
-          { title: '振幅、周期与频率', summary: '描述振动的三个基本量。', objectives: ['区分振幅、周期和频率', '在图像上读出这三个量'], concepts: ['振幅', '周期与频率'], estMinutes: 12 },
+          { depth: 'intuition', title: '回复力：为什么会来回振动', summary: '从弹簧振子出发认识回复力与胡克定律。', objectives: ['判断回复力的方向', '用 F = −kx 计算回复力'], concepts: ['回复力', '胡克定律'], estMinutes: 12 },
+          { depth: 'definition', title: '振幅、周期与频率', summary: '描述振动的三个基本量。', objectives: ['区分振幅、周期和频率', '在图像上读出这三个量'], concepts: ['振幅', '周期与频率'], estMinutes: 12 },
         ] },
         { title: '运动的样子', lessons: [
-          { title: '从圆周运动看简谐运动', summary: '简谐运动是匀速圆周运动的“影子”。', objectives: ['写出 x = A cos(ωt + φ)', '理解 ω 与周期的关系'], concepts: ['参考圆', '角频率'], estMinutes: 15 },
-          { title: '位移、速度与加速度的相位关系', summary: '三个量依次相差四分之一个周期。', objectives: ['画出 x、v、a 随时间的图像', '判断各点速度与加速度的方向'], concepts: ['相位', '速度与加速度'], estMinutes: 15 },
+          { depth: 'intuition', title: '从圆周运动看简谐运动', summary: '简谐运动是匀速圆周运动的“影子”。', objectives: ['写出 x = A cos(ωt + φ)', '理解 ω 与周期的关系'], concepts: ['参考圆', '角频率'], estMinutes: 15 },
+          { depth: 'derivation', title: '位移、速度与加速度的相位关系', summary: '三个量依次相差四分之一个周期。', objectives: ['画出 x、v、a 随时间的图像', '判断各点速度与加速度的方向'], concepts: ['相位', '速度与加速度'], estMinutes: 15 },
         ] },
       ],
     },
@@ -112,11 +112,11 @@ const SHM_BLUEPRINT = {
       objectives: ['推导单摆周期公式', '用能量守恒分析简谐运动'],
       lectures: [
         { title: '单摆', lessons: [
-          { title: '小角度近似：单摆为什么是简谐运动', summary: 'sin θ ≈ θ 让单摆满足回复力的形式。', objectives: ['解释小角度近似', '推出单摆的回复力'], concepts: ['小角度近似', '单摆的回复力'], estMinutes: 15 },
-          { title: '周期公式与测量重力加速度', summary: 'T = 2π√(L/g)，以及如何用它测出 g。', objectives: ['使用单摆周期公式', '设计测量 g 的实验'], concepts: ['单摆周期', '重力加速度'], estMinutes: 12 },
+          { depth: 'derivation', title: '小角度近似：单摆为什么是简谐运动', summary: 'sin θ ≈ θ 让单摆满足回复力的形式。', objectives: ['解释小角度近似', '推出单摆的回复力'], concepts: ['小角度近似', '单摆的回复力'], estMinutes: 15 },
+          { depth: 'application', title: '周期公式与测量重力加速度', summary: 'T = 2π√(L/g)，以及如何用它测出 g。', objectives: ['使用单摆周期公式', '设计测量 g 的实验'], concepts: ['单摆周期', '重力加速度'], estMinutes: 12 },
         ] },
         { title: '能量视角', lessons: [
-          { title: '动能与势能的来回交换', summary: '振动的过程就是能量在两种形式之间流动。', objectives: ['描述振动中动能与势能的变化', '计算简谐运动的总能量'], concepts: ['机械能守恒', '振动的能量'], estMinutes: 12 },
+          { depth: 'extension', title: '动能与势能的来回交换', summary: '振动的过程就是能量在两种形式之间流动。', objectives: ['描述振动中动能与势能的变化', '计算简谐运动的总能量'], concepts: ['机械能守恒', '振动的能量'], estMinutes: 12 },
         ] },
       ],
     },
@@ -205,11 +205,11 @@ const BAYES_BLUEPRINT = {
       objectives: ['计算条件概率', '区分 P(A|B) 与 P(B|A)'],
       lectures: [
         { title: '条件概率', lessons: [
-          { title: '条件概率：知道一点之后', summary: '在信息划定的小世界里重新数一遍。', objectives: ['用缩小样本空间的方法求条件概率', '使用条件概率公式'], concepts: ['条件概率', 'P(A|B) 与 P(B|A)'], estMinutes: 12 },
-          { title: '独立与不独立', summary: '什么时候一个信息完全不改变另一个事件的概率。', objectives: ['判断两个事件是否独立', '计算独立事件同时发生的概率'], concepts: ['独立事件'], estMinutes: 12 },
+          { depth: 'intuition', title: '条件概率：知道一点之后', summary: '在信息划定的小世界里重新数一遍。', objectives: ['用缩小样本空间的方法求条件概率', '使用条件概率公式'], concepts: ['条件概率', 'P(A|B) 与 P(B|A)'], estMinutes: 12 },
+          { depth: 'definition', title: '独立与不独立', summary: '什么时候一个信息完全不改变另一个事件的概率。', objectives: ['判断两个事件是否独立', '计算独立事件同时发生的概率'], concepts: ['独立事件'], estMinutes: 12 },
         ] },
         { title: '全概率', lessons: [
-          { title: '把世界切成几块：全概率公式', summary: '分情况讨论，再把各部分加起来。', objectives: ['用树状图分情况计算', '使用全概率公式'], concepts: ['全概率公式'], estMinutes: 15 },
+          { depth: 'derivation', title: '把世界切成几块：全概率公式', summary: '分情况讨论，再把各部分加起来。', objectives: ['用树状图分情况计算', '使用全概率公式'], concepts: ['全概率公式'], estMinutes: 15 },
         ] },
       ],
     },
@@ -219,11 +219,11 @@ const BAYES_BLUEPRINT = {
       objectives: ['理解基础比率的作用', '用贝叶斯公式计算后验概率'],
       lectures: [
         { title: '贝叶斯', lessons: [
-          { title: '医学检测悖论：基础比率的力量', summary: '准确率 99% 的检测，阳性也未必意味着得病。', objectives: ['用人数表格计算阳性者的患病概率', '解释基础比率被忽略时会发生什么'], concepts: ['基础比率', '贝叶斯公式'], estMinutes: 15 },
-          { title: '先验、似然与后验', summary: '贝叶斯公式里每一项的含义。', objectives: ['说出先验、似然、后验的含义', '用公式完成一次更新'], concepts: ['先验与后验', '似然'], estMinutes: 12 },
+          { depth: 'application', title: '医学检测悖论：基础比率的力量', summary: '准确率 99% 的检测，阳性也未必意味着得病。', objectives: ['用人数表格计算阳性者的患病概率', '解释基础比率被忽略时会发生什么'], concepts: ['基础比率', '贝叶斯公式'], estMinutes: 15 },
+          { depth: 'definition', title: '先验、似然与后验', summary: '贝叶斯公式里每一项的含义。', objectives: ['说出先验、似然、后验的含义', '用公式完成一次更新'], concepts: ['先验与后验', '似然'], estMinutes: 12 },
         ] },
         { title: '用起来', lessons: [
-          { title: '一次次更新你的判断', summary: '每一个新证据，都让昨天的后验变成今天的先验。', objectives: ['连续多次应用贝叶斯更新', '用贝叶斯思维分析生活中的判断'], concepts: ['贝叶斯更新'], estMinutes: 12 },
+          { depth: 'extension', title: '一次次更新你的判断', summary: '每一个新证据，都让昨天的后验变成今天的先验。', objectives: ['连续多次应用贝叶斯更新', '用贝叶斯思维分析生活中的判断'], concepts: ['贝叶斯更新'], estMinutes: 12 },
         ] },
       ],
     },

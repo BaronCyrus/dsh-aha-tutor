@@ -41,8 +41,10 @@ export function createLearner({ store, llm, now = () => new Date(), logger }) {
     return readProfile(store)
   }
 
+  // Fields left out of the patch keep their values.
   async function saveProfile(patch = {}) {
-    return store.updateJson(store.paths.profile(), { ...EMPTY_PROFILE }, current => cleanProfile({ ...current, ...patch, updatedAt: now().toISOString() }))
+    const given = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined))
+    return store.updateJson(store.paths.profile(), { ...EMPTY_PROFILE }, current => cleanProfile({ ...current, ...given, updatedAt: now().toISOString() }))
   }
 
   async function clearProfile() {
@@ -261,6 +263,8 @@ function list(value) {
 
 function cleanProfile(profile) {
   return {
+    // What the learner likes to be called; a lesson's opening uses it once.
+    name: text(profile.name, 20).replace(/[\r\n]+/gu, ' '),
     background: text(profile.background, 600),
     goals: list(profile.goals) ?? [],
     strengths: list(profile.strengths) ?? [],

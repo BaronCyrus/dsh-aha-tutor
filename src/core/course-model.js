@@ -108,6 +108,11 @@ function keepId(value, prefix) {
   return typeof value === 'string' && new RegExp(`^${prefix}_[a-z0-9]{6,40}$`, 'u').test(value) ? value : newId(prefix)
 }
 
+// How a lesson treats its idea: a feel for it first, then a precise
+// statement, a derivation, its use on problems, or going beyond the basics.
+// It shapes the board and shows beside the lesson.
+export const LESSON_DEPTHS = Object.freeze(['intuition', 'definition', 'derivation', 'application', 'extension'])
+
 export function normalizeLesson(raw) {
   const title = text(raw?.title, 120)
   if (!title) return null
@@ -119,6 +124,7 @@ export function normalizeLesson(raw) {
     concepts: normalizeConcepts(raw?.concepts, title),
     estMinutes: minutes(raw?.estMinutes ?? raw?.minutes),
     kind: ['lesson', 'remedial', 'review', 'challenge'].includes(raw?.kind) ? raw.kind : 'lesson',
+    ...(LESSON_DEPTHS.includes(raw?.depth) ? { depth: raw.depth } : {}),
   }
 }
 
@@ -361,7 +367,7 @@ export function blueprintDiff(before, after) {
     for (const unit of course?.units ?? []) for (const lecture of unit.lectures ?? []) for (const lesson of lecture.lessons ?? []) map.set(lesson.id, { lesson, unit: unit.title })
     return map
   }
-  const shape = lesson => JSON.stringify([lesson.summary ?? '', lesson.objectives ?? [], lesson.estMinutes ?? 0, (lesson.concepts ?? []).map(concept => concept.name)])
+  const shape = lesson => JSON.stringify([lesson.summary ?? '', lesson.objectives ?? [], lesson.estMinutes ?? 0, (lesson.concepts ?? []).map(concept => concept.name), lesson.depth ?? ''])
   const old = lessonsOf(before)
   const next = lessonsOf(after)
   const added = []

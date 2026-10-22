@@ -15,6 +15,7 @@ export function ProfileScreen() {
   useEffect(() => {
     if (!profile.value) return
     setDraft({
+      name: profile.value.name ?? '',
       background: profile.value.background,
       goals: profile.value.goals.join('\n'),
       strengths: profile.value.strengths.join('\n'),
@@ -27,7 +28,7 @@ export function ProfileScreen() {
     setError(null)
     try {
       const lines = value => value.split('\n').map(line => line.trim()).filter(Boolean)
-      profile.setValue(await api.call('profile/save', { background: draft.background, goals: lines(draft.goals), strengths: lines(draft.strengths), weaknesses: lines(draft.weaknesses), preferences: { ...profile.value.preferences, style: draft.style } }))
+      profile.setValue(await api.call('profile/save', { name: draft.name.trim(), background: draft.background, goals: lines(draft.goals), strengths: lines(draft.strengths), weaknesses: lines(draft.weaknesses), preferences: { ...profile.value.preferences, style: draft.style } }))
       toast(t('saved'))
     } catch (failure) {
       setError(failure)
@@ -38,6 +39,7 @@ export function ProfileScreen() {
   return <div className="aha-page" style={{ maxWidth: 820 }}>
     <div className="aha-col" style={{ gap: 4 }}><h2 className="aha-title">{t('profileTitle')}</h2><p className="aha-hint">{t('profileHint')}</p></div>
     <section className="aha-card">
+      <label className="aha-label">{t('profileName')} <span className="aha-hint">（{t('profileNameHint')}）</span><input className="aha-input" maxLength={20} value={draft.name} placeholder={t('profileNamePlaceholder')} onChange={event => setDraft({ ...draft, name: event.currentTarget.value })} /></label>
       <label className="aha-label">{t('background')}<textarea className="aha-textarea" value={draft.background} onChange={event => setDraft({ ...draft, background: event.currentTarget.value })} /></label>
       {LIST_FIELDS.map(([key, label]) => <label key={key} className="aha-label">{t(label)} <span className="aha-hint">（{t('onePerLine')}）</span><textarea className="aha-textarea" value={draft[key]} onChange={event => setDraft({ ...draft, [key]: event.currentTarget.value })} /></label>)}
       <label className="aha-label">{t('learningStyle')}<input className="aha-input" value={draft.style} onChange={event => setDraft({ ...draft, style: event.currentTarget.value })} /></label>

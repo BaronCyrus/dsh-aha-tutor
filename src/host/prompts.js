@@ -50,6 +50,7 @@ function join(...parts) {
 
 function learnerBlock({ profile, mastery } = {}) {
   const lines = []
+  if (profile?.name) lines.push(`The learner likes to be called: ${profile.name} (use it sparingly, as a friendly tutor would)`)
   if (profile?.background) lines.push(`Background: ${profile.background}`)
   if (profile?.goals?.length) lines.push(`Goals: ${profile.goals.join('; ')}`)
   if (profile?.preferences?.style) lines.push(`Prefers explanations that are: ${profile.preferences.style}`)
@@ -165,10 +166,11 @@ export function blueprintPrompt({ goal, language, intake, materialsSummary, prof
 - If materials were provided, follow their scope and order where sensible.
 - If web sources are given, use them for scope, ordering and current practice, and prefer what several of them agree on.
 - Each lesson lists 1–3 learning objectives (observable: "compute…", "explain why…") and 1–4 key concepts (short names).
+- Give each lesson a "depth": "intuition" (a feel for the idea through pictures and cases), "definition" (stating it precisely), "derivation" (deriving or proving it), "application" (using it on problems) or "extension" (edge cases, generalizations, connections). Let ideas be felt before they are formalized.
 - Add 1–3 projects (one is enough for a short course) that apply the course to something real for this learner, placed after the units they depend on. Use "kind":"code" only when the project is mainly programming or data work.
 - Pick one emoji that fits the subject.
 
-Return {"title":"…","subtitle":"one line promise of the course","emoji":"…","summary":"2–3 sentences: who it is for, what they will be able to do","level":"beginner|intermediate|advanced","units":[{"title":"…","summary":"…","objectives":["…"],"lectures":[{"title":"…","summary":"…","lessons":[{"title":"…","summary":"…","objectives":["…"],"concepts":["…"],"estMinutes":15}]}]}],"projects":[{"title":"…","kind":"code|writing|analysis|design|practice|other","brief":"…","skills":["…"],"unitIndex":<0-based unit after which it fits>,"milestones":["…"],"rubric":[{"criterion":"…","points":10}]}]}`,
+Return {"title":"…","subtitle":"one line promise of the course","emoji":"…","summary":"2–3 sentences: who it is for, what they will be able to do","level":"beginner|intermediate|advanced","units":[{"title":"…","summary":"…","objectives":["…"],"lectures":[{"title":"…","summary":"…","lessons":[{"title":"…","summary":"…","objectives":["…"],"concepts":["…"],"estMinutes":15,"depth":"intuition|definition|derivation|application|extension"}]}]}],"projects":[{"title":"…","kind":"code|writing|analysis|design|practice|other","brief":"…","skills":["…"],"unitIndex":<0-based unit after which it fits>,"milestones":["…"],"rubric":[{"criterion":"…","points":10}]}]}`,
     ),
   }
 }
@@ -197,7 +199,7 @@ export function reworkPrompt({ outline, unitTitle, lectureTitle, lesson, mode, l
       mode === 'split'
         ? 'Split this lesson into two consecutive lessons that together cover everything it covers. Each teaches one coherent idea in 10–20 minutes, and the first prepares the second. Stay consistent with the rest of the course.'
         : 'Rewrite this lesson to go deeper. Keep its topic and its place in the course, but aim at why it works, its edge cases and its connections to the rest of the course; adjust the objectives, concepts and minutes (at most 25) to match.',
-      'Return {"lessons":[{"title":"…","summary":"…","objectives":["…"],"concepts":["…"],"estMinutes":15}]}',
+      'Return {"lessons":[{"title":"…","summary":"…","objectives":["…"],"concepts":["…"],"estMinutes":15,"depth":"intuition|definition|derivation|application|extension"}]}',
     ),
   }
 }
@@ -240,6 +242,15 @@ const DIRECTIVES = Object.freeze({
   review: 'This is a REVIEW lesson: retrieve before re-explaining. Open with a question, then consolidate the key ideas with a compact board and mixed checks.',
 })
 
+// What a lesson's depth asks of its board.
+const DEPTH_GUIDANCE = Object.freeze({
+  intuition: 'This lesson builds intuition: lead with pictures, analogies and concrete cases, keep the formalism light, and leave proofs for later lessons.',
+  definition: 'This lesson makes the idea precise: state the definitions and notation carefully, with examples and non-examples.',
+  derivation: 'This lesson derives or proves the result: work every step on the board and say why each step holds.',
+  application: 'This lesson applies the idea: work through varied problems, from routine to less familiar, and show how to choose the method.',
+  extension: 'This lesson goes further: edge cases, generalizations and connections to other topics.',
+})
+
 export function lessonPrompt({ course, unit, lecture, lesson, language, learner, passages, previous, directive, style }) {
   const steps = Math.min(18, Math.max(7, Math.round((lesson.estMinutes || 15) * 0.7)))
   return {
@@ -252,8 +263,9 @@ export function lessonPrompt({ course, unit, lecture, lesson, language, learner,
       block('source_passages', passages),
       style ? block('style_request', style) : '',
       DIRECTIVES[directive] ?? '',
+      DEPTH_GUIDANCE[lesson.depth] ?? '',
       `Teach this lesson in about ${steps} steps (~${lesson.estMinutes || 15} minutes).
-- Open with a hook: a question, a surprising fact, or a concrete situation the idea explains. Connect to the previous lesson when there is one.
+- Open with a hook: a question, a surprising fact, or a concrete situation the idea explains. Connect to the previous lesson when there is one.${learner?.profile?.name ? ' Call the learner by name once, in the opening step.' : ''}
 - Build intuition before formalism; then make it precise; then work at least one example fully on the board.
 - Draw a diagram, chart or plot whenever a picture makes the idea click; a plot with a slider is often the clearest way to show how a formula behaves.
 - Put 2–4 checks after the key ideas, plus one at the end; every check must name its conceptIds.

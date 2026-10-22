@@ -1,7 +1,7 @@
 {
  "format": "aha-tutor.coursepack",
  "version": 1,
- "exportedAt": "2026-10-19T05:41:04.608Z",
+ "exportedAt": "2026-10-22T07:38:00.045Z",
  "app": {
   "name": "dsh-aha-tutor",
   "version": "sample"
@@ -16,7 +16,7 @@
   "goal": "不需要高深数学，从掷骰子和人数表格出发，理解条件概率、基础比率和贝叶斯公式，最后亲手写一个会“学习”的垃圾短信过滤器。",
   "units": [
    {
-    "id": "unt_mvettalbbn2kda",
+    "id": "unt_mvj8b7qkxzap73",
     "title": "条件概率的直觉",
     "summary": "新信息会把世界变小，概率要在小世界里重新计算。",
     "objectives": [
@@ -25,12 +25,12 @@
     ],
     "lectures": [
      {
-      "id": "lec_mvettalbqgcijj",
+      "id": "lec_mvj8b7qk199u3n",
       "title": "条件概率",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvettalb3489i1",
+        "id": "les_mvj8b7qkl4u2t0",
         "title": "条件概率：知道一点之后",
         "summary": "在信息划定的小世界里重新数一遍。",
         "objectives": [
@@ -39,19 +39,20 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvettalbr7booh",
+          "id": "cpt_mvj8b7qkt07w9q",
           "name": "条件概率"
          },
          {
-          "id": "cpt_mvettalbf883xz",
+          "id": "cpt_mvj8b7qkh92r21",
           "name": "P(A|B) 与 P(B|A)"
          }
         ],
         "estMinutes": 12,
-        "kind": "lesson"
+        "kind": "lesson",
+        "depth": "intuition"
        },
        {
-        "id": "les_mvettalb5cl7sw",
+        "id": "les_mvj8b7qk387ppx",
         "title": "独立与不独立",
         "summary": "什么时候一个信息完全不改变另一个事件的概率。",
         "objectives": [
@@ -60,22 +61,23 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvettalbvpbysf",
+          "id": "cpt_mvj8b7qk2om3g5",
           "name": "独立事件"
          }
         ],
         "estMinutes": 12,
-        "kind": "lesson"
+        "kind": "lesson",
+        "depth": "definition"
        }
       ]
      },
      {
-      "id": "lec_mvettalbgfqiuc",
+      "id": "lec_mvj8b7qk16yq1q",
       "title": "全概率",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvettalbfzwku4",
+        "id": "les_mvj8b7qk7lrwi2",
         "title": "把世界切成几块：全概率公式",
         "summary": "分情况讨论，再把各部分加起来。",
         "objectives": [
@@ -84,19 +86,20 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvettalb90l4hz",
+          "id": "cpt_mvj8b7qkes1npo",
           "name": "全概率公式"
          }
         ],
         "estMinutes": 15,
-        "kind": "lesson"
+        "kind": "lesson",
+        "depth": "derivation"
        }
       ]
      }
     ]
    },
    {
-    "id": "unt_mvettalbhn9nwv",
+    "id": "unt_mvj8b7qko13f4j",
     "title": "贝叶斯公式",
     "summary": "从结果反推原因，用证据更新信念。",
     "objectives": [
@@ -105,12 +108,12 @@
     ],
     "lectures": [
      {
-      "id": "lec_mvettalbrgha10",
+      "id": "lec_mvj8b7qkrebgtb",
       "title": "贝叶斯",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvettalb0yqhx7",
+        "id": "les_mvj8b7qkqxxu37",
         "title": "医学检测悖论：基础比率的力量",
         "summary": "准确率 99% 的检测，阳性也未必意味着得病。",
         "objectives": [
@@ -119,19 +122,20 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvettalbb84add",
+          "id": "cpt_mvj8b7qkf072gp",
           "name": "基础比率"
          },
          {
-          "id": "cpt_mvettalbh8eot6",
+          "id": "cpt_mvj8b7qkid7qhf",
           "name": "贝叶斯公式"
          }
         ],
         "estMinutes": 15,
-        "kind": "lesson"
+        "kind": "lesson",
+        "depth": "application"
        },
        {
-        "id": "les_mvettalb6i1vvh",
+        "id": "les_mvj8b7qkck2pka",
         "title": "先验、似然与后验",
         "summary": "贝叶斯公式里每一项的含义。",
         "objectives": [
@@ -140,26 +144,27 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvettalbx5h9qc",
+          "id": "cpt_mvj8b7qkepj9pp",
           "name": "先验与后验"
          },
          {
-          "id": "cpt_mvettalbfgnoeb",
+          "id": "cpt_mvj8b7qkk18djq",
           "name": "似然"
          }
         ],
         "estMinutes": 12,
-        "kind": "lesson"
+        "kind": "lesson",
+        "depth": "definition"
        }
       ]
      },
      {
-      "id": "lec_mvettalb8j0rl9",
+      "id": "lec_mvj8b7qkpsplfw",
       "title": "用起来",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvettalbpsslfv",
+        "id": "les_mvj8b7qkrlzttw",
         "title": "一次次更新你的判断",
         "summary": "每一个新证据，都让昨天的后验变成今天的先验。",
         "objectives": [
@@ -168,12 +173,13 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvettalb03n28y",
+          "id": "cpt_mvj8b7qk3r6ppf",
           "name": "贝叶斯更新"
          }
         ],
         "estMinutes": 12,
-        "kind": "lesson"
+        "kind": "lesson",
+        "depth": "extension"
        }
       ]
      }
@@ -182,7 +188,7 @@
   ],
   "projects": [
    {
-    "id": "prj_mvettalb98jgu4",
+    "id": "prj_mvj8b7qkni92wg",
     "title": "写一个会学习的垃圾短信过滤器",
     "kind": "code",
     "brief": "用朴素贝叶斯的思路，统计正常短信和垃圾短信里各个词出现的频率，对一条新短信计算它是垃圾短信的后验概率。完成后，试着输入几条你自己的短信，看看过滤器的判断是否合理。",
@@ -253,12 +259,12 @@
       "content": "import csv\nimport math\nfrom collections import Counter\n\nrows = list(csv.DictReader(open(\"messages.csv\", encoding=\"utf-8\")))\n\n# TODO 1：分别统计 spam 和 ham 中每个词出现的次数\nspam_words, ham_words = Counter(), Counter()\n\n# TODO 2：计算先验 P(spam) 和 P(ham)\np_spam = None\np_ham = None\n\ndef score(text):\n    \"\"\"返回 log P(spam|text) - log P(ham|text)。大于 0 判为垃圾短信。\"\"\"\n    # TODO 3：对每个词累加 log 似然，记得做拉普拉斯平滑（每个词的计数 +1）\n    return 0.0\n\nfor text in [\"恭喜 中奖 点击 领取\", \"明天 一起 吃饭\"]:\n    print(text, \"->\", \"垃圾\" if score(text) > 0 else \"正常\")\n"
      }
     ],
-    "unitId": "unt_mvettalbhn9nwv"
+    "unitId": "unt_mvj8b7qko13f4j"
    }
   ]
  },
  "boards": {
-  "les_mvettalb3489i1": {
+  "les_mvj8b7qkl4u2t0": {
    "title": "条件概率：知道一点之后",
    "steps": [
     {
@@ -342,7 +348,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvettalbr7booh"
+       "cpt_mvj8b7qkt07w9q"
       ],
       "options": [
        {
@@ -455,7 +461,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvettalbr7booh"
+       "cpt_mvj8b7qkt07w9q"
       ],
       "answer": 0.25,
       "tolerance": 0.005,
@@ -516,7 +522,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvettalbf883xz"
+       "cpt_mvj8b7qkh92r21"
       ],
       "options": [
        {
@@ -540,9 +546,9 @@
      }
     }
    ],
-   "lessonId": "les_mvettalb3489i1"
+   "lessonId": "les_mvj8b7qkl4u2t0"
   },
-  "les_mvettalb0yqhx7": {
+  "les_mvj8b7qkqxxu37": {
    "title": "医学检测悖论：基础比率的力量",
    "steps": [
     {
@@ -578,7 +584,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvettalbb84add"
+       "cpt_mvj8b7qkf072gp"
       ],
       "options": [
        {
@@ -739,8 +745,8 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvettalbh8eot6",
-       "cpt_mvettalbb84add"
+       "cpt_mvj8b7qkid7qhf",
+       "cpt_mvj8b7qkf072gp"
       ],
       "answer": 50,
       "tolerance": 1,
@@ -804,7 +810,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvettalbh8eot6"
+       "cpt_mvj8b7qkid7qhf"
       ],
       "options": [
        {
@@ -828,12 +834,12 @@
      }
     }
    ],
-   "lessonId": "les_mvettalb0yqhx7"
+   "lessonId": "les_mvj8b7qkqxxu37"
   }
  },
  "practice": {
-  "les_mvettalb3489i1": {
-   "lessonId": "les_mvettalb3489i1",
+  "les_mvj8b7qkl4u2t0": {
+   "lessonId": "les_mvj8b7qkl4u2t0",
    "items": [
     {
      "id": "i1",
@@ -845,7 +851,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvettalbr7booh"
+      "cpt_mvj8b7qkt07w9q"
      ],
      "options": [
       {
@@ -877,7 +883,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvettalbr7booh"
+      "cpt_mvj8b7qkt07w9q"
      ],
      "answer": 0.3,
      "tolerance": 0.001,
@@ -893,7 +899,7 @@
      ],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvettalbf883xz"
+      "cpt_mvj8b7qkh92r21"
      ],
      "options": [
       {
@@ -923,7 +929,7 @@
      "hints": [],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvettalbr7booh"
+      "cpt_mvj8b7qkt07w9q"
      ],
      "answer": [
       "P(B)",
@@ -939,7 +945,7 @@
      "hints": [],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvettalbf883xz"
+      "cpt_mvj8b7qkh92r21"
      ],
      "answer": "例如：P(会游泳 | 是游泳运动员) 接近 100%，但 P(是游泳运动员 | 会游泳) 很小，因为会游泳的人里只有极少数是运动员。",
      "rubric": [
@@ -950,8 +956,8 @@
     }
    ]
   },
-  "les_mvettalb0yqhx7": {
-   "lessonId": "les_mvettalb0yqhx7",
+  "les_mvj8b7qkqxxu37": {
+   "lessonId": "les_mvj8b7qkqxxu37",
    "items": [
     {
      "id": "i1",
@@ -963,7 +969,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvettalbb84add"
+      "cpt_mvj8b7qkf072gp"
      ],
      "answer": 999,
      "tolerance": 1,
@@ -979,7 +985,7 @@
      ],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvettalbb84add"
+      "cpt_mvj8b7qkf072gp"
      ],
      "options": [
       {
@@ -1011,7 +1017,7 @@
      ],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvettalbh8eot6"
+      "cpt_mvj8b7qkid7qhf"
      ],
      "answer": 0.2687,
      "tolerance": 0.01,
@@ -1025,7 +1031,7 @@
      "hints": [],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvettalbh8eot6"
+      "cpt_mvj8b7qkid7qhf"
      ],
      "options": [
       {
@@ -1055,8 +1061,8 @@
      "hints": [],
      "difficulty": 3,
      "conceptIds": [
-      "cpt_mvettalbh8eot6",
-      "cpt_mvettalbb84add"
+      "cpt_mvj8b7qkid7qhf",
+      "cpt_mvj8b7qkf072gp"
      ],
      "answer": "一次阳性后，患病的后验概率从很低升到较高（如从 0.1% 到约 9%）；复查时这个后验成为新的先验，若再次阳性，患病概率会大幅提高（约 91%），判断更可靠。",
      "rubric": [

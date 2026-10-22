@@ -157,6 +157,22 @@ test('a voice question records from the microphone chosen in DSH\'s Voice input,
     assert.equal(format(en.voiceAskWith, { name: 'USB mic' }), 'Ask by voice (microphone: USB mic)')
     refuse = null
 
+    // Cancelled while the microphone was still opening (the question box
+    // closed meanwhile): it is closed again as soon as it opens.
+    let open = 0
+    let finishOpening
+    const opening = navigator.mediaDevices.getUserMedia
+    navigator.mediaDevices.getUserMedia = () => new Promise(resolve => { finishOpening = resolve })
+    const early = createRecorder()
+    const starting = early.start()
+    early.cancel()
+    finishOpening({ getTracks: () => [{ stop() { open -= 1 } }] })
+    open += 1
+    await starting
+    navigator.mediaDevices.getUserMedia = opening
+    assert.equal(open, 0, 'the microphone is released')
+    await assert.rejects(early.stop(), error => error.code === 'speech-audio', 'and nothing was recorded')
+
     // An entry DSH might write differently one day reads as the default.
     for (const value of ['{"deviceId":"usb-mic-1"}', '"usb-mic-1"', 'not json', '{"id":7,"label":"x"}', '{"id":"usb-mic-1"}', 'null']) {
       saved.set(DSH_MICROPHONE_KEY, value)

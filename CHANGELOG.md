@@ -12,12 +12,17 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 - **Add materials to a course**: **Add materials** in a course's ⋯ menu, or in the outline editor, takes materials from the library or uploaded there, with an optional note on how to use them. The teacher reads them and proposes changes to the outline, such as new lessons where they fit or lessons taken deeper, shown like any other proposal; applying it keeps the progress of lessons left alone and attaches the materials, so later lessons cite them. A course can use up to 12 materials (8 before).
 - **Search the library**: typing above the library filters it by title and topic; Enter searches the text of every material at once and lists the best passages with their material, page or slide and the matching words marked, and choosing one shows its material. It runs on this computer without the model; the index is kept until the library changes.
 - **A tour of the classroom**: the first classroom opened in a browser starts with a six-step tour (the board, the controls, raising a hand, explaining differently, challenging a step and the side panel), each part lit up in turn with a card saying what it does. The lesson starts when the tour ends; it can be skipped, stepped with the arrow keys, and seen again from **?** above the classroom. The narrow conversation board has none.
+- **Hold V to ask**: in a lesson, instant answers or an explainer short, hold V while you speak and let go, or tap V, speak and tap it again. The lesson pauses, the question box opens if the side panel was folded, and the question is recorded through DSH's Voice input like the microphone button; the words land in the box to check before asking. After a spoken question is sent, or Escape in the box, the keyboard is back with the lesson (space, arrows and V). The board beside a DSH conversation leaves V alone, so typing there never records. The tooltips of Raise hand and the microphone name the key, and the tour mentions it.
 - **The blueprint grows as a mind map**: while the teacher writes a blueprint, the outline is drawn as a map that grows to the right (course, units, lectures, lessons) and follows the newest lesson until you drag or zoom it; **Back to the newest** resumes. The editor shows a new blueprint as the map, with each lesson's depth and minutes, and switches to the list for editing; choosing a lesson on the map opens it in the list.
 
 ### Changed
 
 - Printing a cheat sheet or a handout prints only it, across as many pages as it needs, instead of one clipped page beside the hidden app.
 - **Something wrong with this question?** also grades the earlier answers to a question it fixes: another round of practice, a review or the lesson's own check. Each recorded answer now keeps which question it answered and how, and when a check fixes the question, each earlier answer takes its grade against the fixed one, with mastery and the review schedule recomputed as for the answer checked. Under a wrong question a grade can go up or down; under an unclear one it only goes up, since the earlier answer may have been right under the other reading. Short and written-out answers go to the grader again, the latest three. The check says how many earlier answers it graded again. Answers recorded before this version, and those older than the latest 50, keep their grades.
+
+### Fixed
+
+- A microphone that finished opening after its question box had closed (the learner left the page meanwhile) stayed on; it is now closed at once.
 
 ## 1.6.0 - 2026-10-22
 

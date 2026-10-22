@@ -16,6 +16,7 @@ import { PREP_DELAY_MS } from './prep.js'
 import { PrepProgress } from './PrepProgress.jsx'
 import { revealTop } from './scroll.js'
 import { afterNarration } from './speech.js'
+import { isTalkKey, typingInto } from './talk-key.js'
 import { VoiceButton } from './VoiceButton.jsx'
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2]
@@ -42,7 +43,8 @@ const opening = say => {
 // startIndex and onPosition count the board's own steps, not asides.
 // reveal: a new value brings the classroom into view again, as opening it does.
 // tour: offer the first-run tour (not in the narrow conversation board).
-export function Classroom({ scope, title, crumb, steps: initialSteps = [], stream = null, asides: savedAsides = [], objectives = [], language, startIndex = 0, autoplay = true, onPosition, onEnded, onStreamDone, header, stageClass, recordChecks = true, reveal, tour = true }) {
+// talkKey: V asks by voice (not on the conversation board, where V is typing).
+export function Classroom({ scope, title, crumb, steps: initialSteps = [], stream = null, asides: savedAsides = [], objectives = [], language, startIndex = 0, autoplay = true, onPosition, onEnded, onStreamDone, header, stageClass, recordChecks = true, reveal, tour = true, talkKey = true }) {
   const { api, t, speech, settings, dsh } = useApp()
   const dark = useDarkMode()
   const boardTheme = settings.boardTheme === 'dark' || (settings.boardTheme !== 'light' && dark) ? 'dark' : 'light'
@@ -69,6 +71,11 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   const tourDue = tour && !tourSeen
   const root = useRef(null)
   const askField = useRef(null)
+  // Push-to-talk (V): the question box's microphone, a press waiting for the
+  // box to open, and whether the question in the box was spoken.
+  const talkMic = useRef(null)
+  const pendingTalk = useRef(null)
+  const spoken = useRef(false)
   const transcriptBox = useRef(null)
   const [complete, setComplete] = useState(!stream)
   const [snapshot, setSnapshot] = useState(null)
@@ -203,19 +210,48 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
     if (!ended) endedNotified.current = false
   }, [ended])
 
-  // Keyboard: space play/pause, arrows step.
+  // Keyboard: space play/pause, arrows step, and V to ask by voice: held
+  // while speaking, or tapped before and after. Keys typed into a field are
+  // text, and the tour has the keyboard while it is open.
   useEffect(() => {
     const onKey = event => {
-      if (event.target instanceof HTMLElement && /input|textarea|select/iu.test(event.target.tagName)) return
+      if (typingInto(event.target)) return
       if (event.key === ' ') {
         event.preventDefault()
         player.toggle()
       } else if (event.key === 'ArrowRight') player.next()
       else if (event.key === 'ArrowLeft') player.prev()
+      else if (talkKey && !touring && isTalkKey(event) && !event.repeat) {
+        event.preventDefault()
+        if (talkMic.current) talkMic.current.press(event.timeStamp)
+        else {
+          // The question box is folded away: open it, and its microphone
+          // takes the press once it is there.
+          pendingTalk.current = { down: event.timeStamp, up: null }
+          setPanelOpen(true)
+        }
+      }
+    }
+    const onKeyUp = event => {
+      if (!talkKey || !isTalkKey(event)) return
+      if (pendingTalk.current) pendingTalk.current.up = event.timeStamp
+      else talkMic.current?.release(event.timeStamp)
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [player])
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [player, talkKey, touring])
+
+  useEffect(() => {
+    const pending = pendingTalk.current
+    if (!panelOpen || !pending || !talkMic.current) return
+    pendingTalk.current = null
+    talkMic.current.press(pending.down)
+    if (pending.up !== null) talkMic.current.release(pending.up)
+  }, [panelOpen])
 
   const anchorOf = useCallback(stepIndex => {
     for (let cursor = Math.min(stepIndex, steps.length - 1); cursor >= 0; cursor -= 1) if (!steps[cursor]?.aside) return steps[cursor]?.id
@@ -290,6 +326,10 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
     event?.preventDefault()
     const text = question.trim()
     if (!text) return
+    // After a spoken question the keyboard goes back to the lesson, so V
+    // asks the next one.
+    if (spoken.current) askField.current?.blur()
+    spoken.current = false
     player.pause()
     setAsking('answering')
     await runAside({ endpoint: 'lesson/ask', payload: { question: text }, kind: 'question', label: text, anchorIndex: index, onStarted: () => setQuestion('') })
@@ -509,7 +549,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
           </select>
           <button type="button" className="aha-chip" data-active={!silent} onClick={() => (voiceDown ? voiceBack({ replay: false }) : setMuted(value => !value))}>{silent ? `🔇 ${t('voiceOff')}` : `🔊 ${t('voiceOn')}`}</button>
           <button type="button" className="aha-chip" data-active={captions} onClick={() => setCaptions(value => !value)}>CC {t('captions')}</button>
-          <button type="button" className="aha-chip" data-tour="raise" onClick={raiseHand} disabled={!steps.length}>✋ {t('raiseHand')}</button>
+          <button type="button" className="aha-chip" data-tour="raise" onClick={raiseHand} disabled={!steps.length} title={talkKey ? t('raiseHandKey') : undefined}>✋ {t('raiseHand')}</button>
           <span style={{ position: 'relative' }}>
             <button type="button" className="aha-chip" data-tour="reexplain" onClick={() => setStyleMenu(value => !value)} disabled={!steps.length}>🔄 {t('reexplain')}</button>
             {styleMenu ? <div className="aha-card" style={{ position: 'absolute', bottom: '110%', left: 0, zIndex: 10, padding: 6, gap: 2, minWidth: 140 }}>
@@ -549,11 +589,15 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
         <form className="aha-askBox" onSubmit={ask}>
           <textarea ref={askField} className="aha-textarea" rows={2} value={question} placeholder={t('askPlaceholder')} disabled={!steps.length}
             onChange={event => setQuestion(event.currentTarget.value)}
-            onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) ask(event) }} />
+            onKeyDown={event => {
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) ask(event)
+              // Escape hands the keyboard back to the lesson (space, arrows, V).
+              else if (event.key === 'Escape') event.currentTarget.blur()
+            }} />
           <div className="aha-askActions">
             {/* A spoken question pauses the lesson and fills the box. */}
-            <VoiceButton disabled={!steps.length} onStart={() => player.pause()}
-              onText={text => { setQuestion(current => (current.trim() ? `${current.trimEnd()} ${text}` : text)); askField.current?.focus() }} />
+            <VoiceButton ref={talkMic} disabled={!steps.length} keyHint={talkKey ? t('talkKeyHint') : ''} onStart={() => player.pause()}
+              onText={text => { spoken.current = true; setQuestion(current => (current.trim() ? `${current.trimEnd()} ${text}` : text)); askField.current?.focus() }} />
             <button type="submit" className="aha-btn" data-kind="primary" disabled={!question.trim() || writingAside}>{t('ask')}</button>
           </div>
         </form>

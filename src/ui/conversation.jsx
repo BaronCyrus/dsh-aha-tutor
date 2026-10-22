@@ -46,7 +46,7 @@ function ThreadBoard({ threadId, jobId }) {
   }, [threadId, jobId])
   if (!state) return <Spinner label={t('loading')} />
   if (state.error) return <p className="aha-error">{errorText(t, state.error)}</p>
-  return <Classroom scope={{ kind: 'thread', id: threadId, turn: state.turn ?? 0 }} title={state.title || t('boardSession')} steps={state.steps} stream={state.stream} language={state.language} recordChecks={false} tour={false} />
+  return <Classroom scope={{ kind: 'thread', id: threadId, turn: state.turn ?? 0 }} title={state.title || t('boardSession')} steps={state.steps} stream={state.stream} language={state.language} recordChecks={false} tour={false} talkKey={false} />
 }
 
 // ── tool cards in the conversation ──────────────────────────────────────────

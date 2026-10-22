@@ -99,6 +99,8 @@ export function createRecorder({ maxSeconds = 120, onLimit } = {}) {
   let chunks = []
   let timer = null
   let startedAt = 0
+  // Cancelled while the microphone was opening: it is closed as soon as it opens.
+  let cancelled = false
 
   const release = () => {
     clearTimeout(timer)
@@ -115,6 +117,10 @@ export function createRecorder({ maxSeconds = 120, onLimit } = {}) {
     } catch (error) {
       if (microphone && (error?.name === 'NotFoundError' || error?.name === 'OverconstrainedError')) throw recordingError({ code: 'mic-chosen-missing', device: microphone.label })
       throw recordingError(MIC_ERRORS[error?.name] ?? UNSUPPORTED)
+    }
+    if (cancelled) {
+      release()
+      return
     }
     chunks = []
     recorder = new MediaRecorder(stream)
@@ -146,6 +152,7 @@ export function createRecorder({ maxSeconds = 120, onLimit } = {}) {
   }
 
   function cancel() {
+    cancelled = true
     const current = recorder
     recorder = null
     chunks = []

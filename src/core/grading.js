@@ -85,6 +85,13 @@ export function gradeObjective(item, response) {
   return { score: 0, correct: false, gradable: true }
 }
 
+// A short label of a wrong answer, for the mastery model's misconception log.
+export function wrongLabel(item, response) {
+  if (item.kind === 'choice') return `chose ${String(response).toUpperCase()}: ${(item.options?.find(option => option.id === response)?.text ?? '').slice(0, 50)}`
+  if (item.kind === 'number' || item.kind === 'blank') return `answered ${String(response).slice(0, 40)}`
+  return 'wrong'
+}
+
 function round2(value) {
   return Math.round(value * 100) / 100
 }

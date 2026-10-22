@@ -5,7 +5,7 @@
 // and grades the answer again against the fixed question.
 
 import { normalizeItem, text } from './course-model.js'
-import { gradeObjective, OBJECTIVE_KINDS } from './grading.js'
+import { gradeObjective, OBJECTIVE_KINDS, wrongLabel } from './grading.js'
 
 // wrong: the question or its key has a mistake; unclear: it depends on a
 // convention it does not state; misgraded: a question graded by the model
@@ -142,4 +142,29 @@ export function regrade(item, response, checked) {
   if (!checked.grade) return null
   const { verdict, ...grade } = checked.grade
   return { ...grade, correct: verdict === 'correct', partial: verdict === 'partial' }
+}
+
+// An earlier answer to a question a check fixed, graded against the fixed
+// question: by its key, or with grade, the grader's new grade of an open
+// answer. score: what it was given. A wrong question's answers take the new
+// grade either way; an unclear one's only gain (an answer marked wrong may
+// have been right under the reading the question allowed then). Returns
+// { score, correct, errorTag }, or null when the grade stays.
+export function earlierGrade(item, response, { verdict, score, grade = null }) {
+  if (verdict !== 'wrong' && verdict !== 'unclear') return null
+  let next
+  if (OBJECTIVE_KINDS.includes(item.kind)) {
+    const answer = cleanResponse(item, response)
+    const graded = gradeObjective(item, answer)
+    if (!graded.gradable) return null
+    next = { score: graded.score, correct: graded.correct, errorTag: graded.correct ? '' : wrongLabel(item, answer) }
+  } else {
+    if (!grade || !Number.isFinite(Number(grade.score))) return null
+    const value = Math.min(1, Math.max(0, Number(grade.score)))
+    const correct = grade.verdict ? grade.verdict === 'correct' : value >= 0.8
+    next = { score: value, correct, errorTag: correct ? '' : text(grade.errorTag, 80) }
+  }
+  const before = Math.min(1, Math.max(0, Number(score) || 0))
+  if ((verdict === 'unclear' && next.score <= before) || Math.abs(next.score - before) < 1e-6) return null
+  return next
 }

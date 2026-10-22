@@ -76,11 +76,14 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
     setResults(current => [...current, { ...result, index: at }])
     const targetCourse = item?.context?.courseId ?? courseId
     if (!targetCourse || deckId) return
+    // With the question it answered, so a later fix of the question grades it again.
     evidence.current.set(at, api.call('lesson/record', {
       courseId: targetCourse,
       lessonId: item?.context?.lessonId ?? lessonId,
       conceptIds: item?.conceptIds ?? [],
       evidence: { kind: unitId ? 'quiz' : 'practice', score: result.score, confidence: result.confidence, hintsUsed: result.hintsUsed, timeMs: result.timeMs, expectedMs: 60_000, errorTag: result.errorTag },
+      source: itemSource({ courseId, lessonId, unitId }, item),
+      response: result.given ?? result.response ?? '',
     }).then(response => {
       if (response?.mastery) setAfter(current => ({ ...current, ...response.mastery }))
       if (response?.recommendation) setRecommendation(response.recommendation)
@@ -119,7 +122,7 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
       if (value?.result) setResults(current => regradeResults(current, at, value.result))
       if (value?.mastery) setAfter(current => ({ ...current, ...value.mastery }))
       if (value?.recommendation) setRecommendation(value.recommendation)
-      if (latest.current.index !== at) notify(checkNotice(t, { index: at, verdict: value?.verdict, regraded: Boolean(value?.result) }))
+      if (latest.current.index !== at) notify(checkNotice(t, { index: at, verdict: value?.verdict, regraded: Boolean(value?.result), earlier: value?.earlier ?? 0 }))
     } catch (failure) {
       if (round.current !== started) return
       setChecks(current => ({ ...current, [at]: { ...current[at], status: 'failed', note, error: failure } }))

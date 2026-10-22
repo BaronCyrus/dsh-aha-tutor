@@ -74,7 +74,8 @@ export function shownGrade(result) {
 
 // A question's check once the host answers. It keeps what earlier checks of
 // the same question found: the fixed question and the grade, unless this
-// one changed them. result: the answer as last graded.
+// one changed them. result: the answer as last graded. earlier: how many
+// earlier answers to the question were graded again.
 export function checkDone(previous, value, result) {
   return {
     status: 'done',
@@ -84,6 +85,7 @@ export function checkDone(previous, value, result) {
     explanation: value?.explanation ?? '',
     item: value?.item ?? previous?.item ?? null,
     result: value?.result ? { ...result, ...value.result, regraded: true } : previous?.result ?? null,
+    earlier: (previous?.earlier ?? 0) + (Number(value?.earlier) || 0),
   }
 }
 
@@ -95,8 +97,8 @@ export function regradeResults(results, index, regraded) {
 
 // The line at the top of the page when a question the learner has left
 // behind is checked: what the teacher found, or that the check failed.
-export function checkNotice(t, { index, verdict, regraded = false, message }) {
+export function checkNotice(t, { index, verdict, regraded = false, earlier = 0, message }) {
   if (message !== undefined) return t('itemCheckFailedNotice', { n: index + 1, message })
   const found = t('itemCheckDone', { n: index + 1, verdict: t(ITEM_VERDICT_KEYS[verdict] ?? ITEM_VERDICT_KEYS.right) })
-  return regraded ? `${found}${t('itemCheckRegraded')}` : found
+  return `${found}${regraded ? t('itemCheckRegraded') : ''}${earlier ? t('itemCheckEarlier', { count: earlier }) : ''}`
 }

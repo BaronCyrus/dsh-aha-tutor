@@ -62,6 +62,10 @@ test('a check keeps what earlier checks found, and its outcome changes the round
   // Asked again, the teacher finds it right: the fix and the new grade stay.
   const second = checkDone({ ...first, status: 'checking' }, { verdict: 'right', summary: '没错。', item: null, result: null }, first.result)
   assert.deepEqual([second.verdict, second.item, second.result], ['right', FIXED, first.result])
+  // Earlier answers it graded again add up over checks of the question.
+  assert.equal(checkDone({ ...second, status: 'checking' }, { verdict: 'unclear', item: FIXED, earlier: 2 }, first.result).earlier, 2)
+  assert.equal(checkDone({ status: 'checking', earlier: 1 }, { verdict: 'wrong', item: FIXED, earlier: 2 }, answered).earlier, 3)
+  assert.equal(first.earlier, 0)
   const results = [{ score: 1, correct: true, index: 0 }, answered, { score: 1, correct: true, index: 3 }]
   const regraded = regradeResults(results, 2, { score: 1, correct: true, partial: false })
   assert.deepEqual(regraded.map(entry => [entry.index, entry.correct, entry.regraded ?? false]), [[0, true, false], [2, true, true], [3, true, false]])
@@ -70,7 +74,9 @@ test('a check keeps what earlier checks found, and its outcome changes the round
   assert.equal(checkNotice(t, { index: 0, verdict: 'right' }), '第 1 题核对完了：核对过，没有错。')
   assert.equal(checkNotice(t, { index: 4, message: '模型响应超时，请重试。' }), '第 5 题没核对成功：模型响应超时，请重试。')
   assert.equal(checkNotice(tEn, { index: 2, verdict: 'misgraded', regraded: true }), 'Question 3 checked: It was graded wrongly, now regraded. Your answer was graded again.')
-  for (const key of ['itemChallenge', 'itemChallengeTitle', 'itemChecking', 'itemCheck_wrong', 'itemCheck_unclear', 'itemCheck_misgraded', 'itemCheck_right', 'regraded', 'fixedWasItem', 'fixedPart_answer']) {
+  assert.equal(checkNotice(t, { index: 1, verdict: 'wrong', regraded: true, earlier: 2 }), '第 2 题核对完了：确实有错，已更正。已按核对结果重新判分。这道题你之前还答过 2 次，也按改好的题重新判了。')
+  assert.equal(checkNotice(tEn, { index: 1, verdict: 'unclear', earlier: 1 }), 'Question 2 checked: It was unclear, now spelled out. Earlier answers to this question graded again too: 1.')
+  for (const key of ['itemChallenge', 'itemChallengeTitle', 'itemChecking', 'itemCheck_wrong', 'itemCheck_unclear', 'itemCheck_misgraded', 'itemCheck_right', 'itemCheckEarlier', 'regraded', 'fixedWasItem', 'fixedPart_answer']) {
     assert.ok(zh[key] && en[key], `${key} in both languages`)
   }
 })
@@ -152,10 +158,10 @@ test('a graded question offers a check, sends the note and shows what the teache
   assert.ok(buttons(renderer, zh.continue).length, 'the learner may go on meanwhile')
 
   // The question fixed and the answer graded again, on the same card.
-  update({ check: { status: 'done', verdict: 'wrong', summary: '21 = 3 × 7，不是质数。', explanation: '23 只有两个因数。', item: FIXED, result: { ...results[0], score: 1, correct: true, partial: false, regraded: true }, note: '' } })
+  update({ check: { status: 'done', verdict: 'wrong', summary: '21 = 3 × 7，不是质数。', explanation: '23 只有两个因数。', item: FIXED, result: { ...results[0], score: 1, correct: true, partial: false, regraded: true }, earlier: 2, note: '' } })
   const shown = textOf(renderer.root)
   assert.match(shown, /答对了（重新判过）/u)
-  assert.match(shown, /老师核对确实有错，已更正21 = 3 × 7，不是质数。23 只有两个因数。/u)
+  assert.match(shown, /老师核对确实有错，已更正21 = 3 × 7，不是质数。23 只有两个因数。这道题你之前还答过 2 次，也按改好的题重新判了。/u)
   assert.match(shown, /23 只有 1 和它本身两个因数；21 = 3 × 7。/u, 'the fixed explanation')
   assert.doesNotMatch(shown, /✔ A\. 21/u, 'a right answer shows no key')
   const badge = renderer.root.find(node => node.props?.className === 'aha-itemFixed')

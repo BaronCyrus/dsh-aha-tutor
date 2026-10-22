@@ -17,6 +17,7 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 ### Changed
 
 - Printing a cheat sheet or a handout prints only it, across as many pages as it needs, instead of one clipped page beside the hidden app.
+- **Something wrong with this question?** also grades the earlier answers to a question it fixes: another round of practice, a review or the lesson's own check. Each recorded answer now keeps which question it answered and how, and when a check fixes the question, each earlier answer takes its grade against the fixed one, with mastery and the review schedule recomputed as for the answer checked. Under a wrong question a grade can go up or down; under an unclear one it only goes up, since the earlier answer may have been right under the other reading. Short and written-out answers go to the grader again, the latest three. The check says how many earlier answers it graded again. Answers recorded before this version, and those older than the latest 50, keep their grades.
 
 ## 1.6.0 - 2026-10-22
 

@@ -408,6 +408,8 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
       lessonId: scope.lessonId,
       conceptIds: check?.conceptIds ?? [],
       evidence: { kind: 'check', score: result.score, confidence: result.confidence, hintsUsed: result.hintsUsed, timeMs: result.timeMs, expectedMs: 40_000, errorTag: result.errorTag },
+      // A check on the board itself is kept there, so a later fix of it grades this answer again.
+      ...(current?.id && !current.aside ? { source: { kind: 'check', courseId: scope.courseId, lessonId: scope.lessonId, stepId: current.id }, response: result.given ?? result.response ?? '' } : {}),
     }).catch(() => undefined)
   }
 

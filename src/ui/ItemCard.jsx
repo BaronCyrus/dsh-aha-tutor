@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { gradeObjective } from '../core/grading.js'
+import { gradeObjective, wrongLabel } from '../core/grading.js'
 import { ErrorLine } from './components.jsx'
 import { useApp } from './hooks.js'
 import { fixedLines, ITEM_VERDICT_KEYS } from './item-check.js'
@@ -230,6 +230,7 @@ export function ItemCard({ item: asked, language, onResult, onContinue, continue
         <b>{t(ITEM_VERDICT_KEYS[check.verdict] ?? ITEM_VERDICT_KEYS.right)}</b>
         {check.summary ? <RichText text={check.summary} compact /> : null}
         {check.explanation ? <RichText text={check.explanation} compact /> : null}
+        {check.earlier ? <span className="aha-hint">{t('itemCheckEarlier', { count: check.earlier }).trim()}</span> : null}
       </> : null}
       {check.status === 'failed' ? <div className="aha-row" style={{ gap: 6 }}>
         <ErrorLine error={check.error} />
@@ -260,11 +261,4 @@ function answerLabel(item) {
   if (item.kind === 'number') return `✔ ${item.answer}${item.unit ? ` ${item.unit}` : ''}`
   if (item.kind === 'blank') return `✔ ${item.answer.join(' / ')}`
   return ''
-}
-
-// A short label of what went wrong, for the mastery model's misconception log.
-function wrongLabel(item, response) {
-  if (item.kind === 'choice') return `chose ${String(response).toUpperCase()}: ${(item.options.find(option => option.id === response)?.text ?? '').slice(0, 50)}`
-  if (item.kind === 'number' || item.kind === 'blank') return `answered ${String(response).slice(0, 40)}`
-  return 'wrong'
 }

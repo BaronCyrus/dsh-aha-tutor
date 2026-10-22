@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 
-import { correctEvidence, EVIDENCE_KEPT, logEvidence, stateBefore, takeEvidence } from '../src/core/evidence-log.js'
+import { answersTo, correctEvidence, EVIDENCE_KEPT, itemKey, logEvidence, stateBefore, takeEvidence } from '../src/core/evidence-log.js'
 import { gradeObjective } from '../src/core/grading.js'
 import { newId } from '../src/core/ids.js'
-import { cleanResponse, correctedItem, fixItem, itemForCheck, normalizeItemVerdict, regrade, responseText } from '../src/core/item-fix.js'
+import { cleanResponse, correctedItem, earlierGrade, fixItem, itemForCheck, normalizeItemVerdict, regrade, responseText } from '../src/core/item-fix.js'
 import { createConceptState } from '../src/core/mastery.js'
 import { createCourses } from '../src/host/courses.js'
 import { createJobs } from '../src/host/jobs.js'
@@ -165,6 +165,45 @@ test('the log keeps the latest answers, and history past its limit is replayed t
   assert.equal(correctEvidence(progress, 'evd_bbbbbb02', { score: 1 }), null, 'an answer older than the log cannot be graded again')
 })
 
+test('earlier answers to a fixed question are found by where it is kept and graded against the fix', () => {
+  assert.equal(itemKey({ kind: 'practice', courseId: 'crs_aaaaaaaa', lessonId: 'les_aaaaaaaa', itemId: 'i1' }), 'practice:les_aaaaaaaa:i1')
+  assert.equal(itemKey({ kind: 'quiz', courseId: 'crs_aaaaaaaa', unitId: 'unt_aaaaaaaa', itemId: 'i2' }), 'quiz:unt_aaaaaaaa:i2')
+  assert.equal(itemKey({ kind: 'check', courseId: 'crs_aaaaaaaa', lessonId: 'les_aaaaaaaa', stepId: 's3' }), 'check:les_aaaaaaaa:s3')
+  assert.equal(itemKey({ kind: 'deck', deckId: 'dck_aaaaaaaa', itemId: 'i1' }), null, 'a library quiz is not evidence')
+  const key = 'practice:les_aaaaaaaa:i1'
+  const progress = { evidenceLog: [
+    { id: 'evd_aaaaaa01', evidence: { kind: 'practice', score: 0 }, item: { key, response: 'b' } },
+    { id: 'evd_aaaaaa02', evidence: { kind: 'reexplain' }, item: { key, response: '' } },
+    { id: 'evd_aaaaaa03', evidence: { kind: 'practice', score: 1 }, item: { key: 'practice:les_aaaaaaaa:i2', response: 'a' } },
+    { id: 'evd_aaaaaa04', evidence: { kind: 'practice', score: 1 } },
+    { id: 'evd_aaaaaa05', evidence: { kind: 'check', score: 1 }, item: { key, response: 'a' } },
+  ] }
+  assert.deepEqual(answersTo(progress, key).map(entry => entry.id), ['evd_aaaaaa01', 'evd_aaaaaa05'])
+  assert.deepEqual(answersTo(progress, key, 'evd_aaaaaa05').map(entry => entry.id), ['evd_aaaaaa01'], 'but the one being checked')
+  assert.deepEqual([answersTo(progress, null), answersTo({}, key), answersTo(null, key)], [[], [], []])
+
+  const fixed = { ...PRIME, answer: 'b' }
+  // A wrong question: its answers take the fixed key's grade either way.
+  assert.deepEqual(earlierGrade(fixed, 'b', { verdict: 'wrong', score: 0 }), { score: 1, correct: true, errorTag: '' })
+  assert.deepEqual(earlierGrade(fixed, 'a', { verdict: 'wrong', score: 1 }), { score: 0, correct: false, errorTag: 'chose A: 21' })
+  assert.equal(earlierGrade(fixed, 'b', { verdict: 'wrong', score: 1 }), null, 'a grade that stays')
+  assert.deepEqual(earlierGrade(fixed, 'z', { verdict: 'wrong', score: 1 }), { score: 0, correct: false, errorTag: 'chose : ' }, 'an option the question no longer has')
+  // An unclear one: answers only gain.
+  assert.deepEqual(earlierGrade(fixed, 'b', { verdict: 'unclear', score: 0 }), { score: 1, correct: true, errorTag: '' })
+  assert.equal(earlierGrade(fixed, 'a', { verdict: 'unclear', score: 1 }), null)
+  // Neither of the others changed the question.
+  assert.equal(earlierGrade(fixed, 'b', { verdict: 'misgraded', score: 0 }), null)
+  assert.equal(earlierGrade(fixed, 'b', { verdict: 'right', score: 0 }), null)
+  const multi = { kind: 'multi', options: [{ id: 'a', text: '2' }, { id: 'b', text: '3' }, { id: 'c', text: '4' }], answer: ['a', 'c'] }
+  assert.deepEqual(earlierGrade(multi, ['a'], { verdict: 'wrong', score: 1 }), { score: 0.5, correct: false, errorTag: 'wrong' })
+  assert.equal(earlierGrade({ ...multi, answer: [] }, ['a'], { verdict: 'wrong', score: 1 }), null, 'a key it cannot grade by')
+  // Open answers take the grader's new grade, when there is one.
+  assert.deepEqual(earlierGrade(SHORT, '质量约掉了', { verdict: 'wrong', score: 0.2, grade: { score: 0.9, verdict: 'correct', errorTag: '' } }), { score: 0.9, correct: true, errorTag: '' })
+  assert.deepEqual(earlierGrade(SHORT, '不知道', { verdict: 'wrong', score: 0.9, grade: { score: 0.1, verdict: 'incorrect', errorTag: '没说抵消' } }), { score: 0.1, correct: false, errorTag: '没说抵消' })
+  assert.equal(earlierGrade(SHORT, '不知道', { verdict: 'unclear', score: 0.9, grade: { score: 0.1, verdict: 'incorrect' } }), null)
+  assert.equal(earlierGrade(SHORT, '质量约掉了', { verdict: 'wrong', score: 0.2 }), null, 'not graded again')
+})
+
 // ── on the host ─────────────────────────────────────────────────────────────
 
 const blueprint = {
@@ -181,7 +220,9 @@ const blueprint = {
 function checkingLlm() {
   const calls = []
   let verdict = () => ({ verdict: 'right', summary: '没错。', explanation: '这题是对的。' })
-  const answer = ({ user }) => {
+  let grader = () => ({ score: 0, verdict: 'incorrect', feedback: '', errorTag: '' })
+  const answer = ({ system, user }) => {
+    if (system.includes('You grade open answers')) return JSON.stringify(grader(user))
     if (user.includes('multiple-choice questions whose answers')) return JSON.stringify({ questions: [{ prompt: '基础？', options: ['零基础', '学过'] }] })
     if (user.includes('Design the course blueprint')) return JSON.stringify(blueprint)
     if (user.includes('For EACH lesson write')) {
@@ -214,6 +255,7 @@ function checkingLlm() {
     calls,
     supportsImages: () => false,
     setVerdict(next) { verdict = typeof next === 'function' ? next : () => next },
+    setGrader(next) { grader = next },
     async complete(request) {
       calls.push(request)
       return answer(request)
@@ -257,9 +299,9 @@ async function setup(root) {
 }
 
 // An answer recorded as the practice screen records it, a minute after the last.
-async function answer(context, { lessonId, conceptIds, evidence }) {
+async function answer(context, { lessonId, conceptIds, evidence, item }) {
   context.clock.at += 60_000
-  return context.lessons.record({ courseId: context.courseId, lessonId, conceptIds, evidence })
+  return context.lessons.record({ courseId: context.courseId, lessonId, conceptIds, evidence, item })
 }
 
 // What a concept's mastery would be had these answers been recorded as given.
@@ -356,6 +398,75 @@ test('a wrong practice question is fixed where it is kept, the answer graded aga
   }
 })
 
+test('a fixed question grades the earlier answers to it again, and only those', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'aha-item-'))
+  try {
+    const context = await setup(root)
+    const { store, llm, jobs, lessons, courseId, first } = context
+    const [prime, short] = (await store.readJson(store.paths.practice(courseId, first.id), null)).items
+    const concept = first.concepts[0].id
+    const source = item => ({ kind: 'practice', courseId, lessonId: first.id, itemId: item.id })
+    const given = (item, response) => ({ source: source(item), response })
+
+    // Round one: 23, marked wrong by the wrong key. Round two: 21, marked
+    // right by it; an open question in between. Then 23 again, challenged.
+    const roundOne = { kind: 'practice', score: 0, confidence: 'sure', errorTag: 'chose B: 23' }
+    const { evidenceId: one } = await answer(context, { lessonId: first.id, conceptIds: prime.conceptIds, evidence: roundOne, item: given(prime, 'b') })
+    const roundTwo = { kind: 'practice', score: 1, confidence: 'unsure' }
+    const { evidenceId: two } = await answer(context, { lessonId: first.id, conceptIds: prime.conceptIds, evidence: roundTwo, item: given(prime, 'a') })
+    const between = { kind: 'practice', score: 0.5, confidence: 'unsure' }
+    const { evidenceId: other } = await answer(context, { lessonId: first.id, conceptIds: short.conceptIds, evidence: between, item: given(short, '质量约掉了') })
+    const unknown = { kind: 'practice', score: 0, confidence: 'sure', errorTag: 'chose B: 23' }
+    await answer(context, { lessonId: first.id, conceptIds: prime.conceptIds, evidence: unknown })
+    const challenged = { kind: 'practice', score: 0, confidence: 'sure', errorTag: 'chose B: 23' }
+    const { evidenceId: three } = await answer(context, { lessonId: first.id, conceptIds: prime.conceptIds, evidence: challenged, item: given(prime, 'b') })
+    assert.deepEqual((await store.readJson(store.paths.progress(courseId), null)).evidenceLog.find(entry => entry.id === one).item, { key: `practice:${first.id}:${prime.id}`, response: 'b' })
+
+    llm.setVerdict({ verdict: 'wrong', summary: '23 才是质数。', explanation: '…', item: { kind: 'choice', prompt: PRIME.prompt, options: [{ id: 'a', text: '21' }, { id: 'b', text: '23' }, { id: 'c', text: '25' }], answer: 'b', explanation: '21 = 3 × 7。', hints: PRIME.hints } })
+    const result = await finish(jobs, lessons.challengeItem({ source: source(prime), response: 'b', shown: { score: 0, correct: false }, evidenceId: three }))
+    assert.deepEqual([result.result?.correct, result.earlier], [true, 2])
+
+    // Every answer to it as if graded against the fixed question the first
+    // time; the open answer and the one recorded without its question stay.
+    const progress = await store.readJson(store.paths.progress(courseId), null)
+    const truth = masteryOf([
+      { evidence: { ...roundOne, score: 1, errorTag: '' }, at: T0 + 60_000 },
+      { evidence: { ...roundTwo, score: 0, errorTag: 'chose A: 21' }, at: T0 + 120_000 },
+      { evidence: between, at: T0 + 180_000 },
+      { evidence: unknown, at: T0 + 240_000 },
+      { evidence: { ...challenged, score: 1, errorTag: '' }, at: T0 + 300_000 },
+    ])
+    assert.deepEqual({ ...progress.concepts[concept], name: '' }, { ...truth.state, id: concept, name: '' })
+    assert.deepEqual(progress.reviews[concept], { ...truth.card, id: concept })
+    assert.deepEqual(result.mastery, { [concept]: Math.round(truth.state.pKnown * 100) })
+    const log = Object.fromEntries(progress.evidenceLog.map(entry => [entry.id, entry]))
+    assert.deepEqual([log[one].corrected.score, log[two].corrected.score, log[three].corrected.score, log[other].corrected], [0, 1, 0, undefined])
+    assert.equal(progress.evidenceLog.filter(entry => entry.corrected).length, 3)
+    assert.equal(progress.events.at(-1).earlier, 2)
+    assert.equal(llm.calls.filter(call => call.system.includes('You grade open answers')).length, 0, 'a question with a key needs no grader')
+
+    // An open question fixed: the grader looks again at the latest three
+    // earlier answers, against the fixed question.
+    const openAnswers = [['两边抵消', 0.2], ['质量抵消了', 0.2], ['不知道', 0.6], ['重力抵消', 0.9]]
+    const ids = []
+    for (const [response, score] of openAnswers) ids.push((await answer(context, { lessonId: first.id, conceptIds: short.conceptIds, evidence: { kind: 'practice', score, confidence: 'unsure' }, item: given(short, response) })).evidenceId)
+    const { evidenceId: last } = await answer(context, { lessonId: first.id, conceptIds: short.conceptIds, evidence: { kind: 'practice', score: 0.2, confidence: 'sure' }, item: given(short, '回复力与惯性抵消') })
+    llm.setGrader(user => (/<learner_answer>\n[^<]*抵消/u.test(user) ? { score: 0.9, verdict: 'correct', feedback: '对。', errorTag: '' } : { score: 0.1, verdict: 'incorrect', feedback: '没说到抵消。', errorTag: '没说抵消' }))
+    llm.setVerdict({ verdict: 'wrong', summary: '标准答案写错了。', explanation: '…', item: { ...written(short), answer: '回复力和惯性都与质量成正比，比值与质量无关。' }, grade: { score: 0.9, verdict: 'correct', feedback: '对。' } })
+    const open = await finish(jobs, lessons.challengeItem({ source: source(short), response: '回复力与惯性抵消', shown: { score: 0.2, correct: false }, evidenceId: last }))
+    assert.equal(open.earlier, 2)
+    const grades = llm.calls.filter(call => call.system.includes('You grade open answers'))
+    assert.equal(grades.length, 3, 'the three latest earlier answers only')
+    assert.ok(grades.every(call => call.purpose === 'quick' && call.user.includes('比值与质量无关')), 'graded quickly, against the fixed question')
+    const after = Object.fromEntries((await store.readJson(store.paths.progress(courseId), null)).evidenceLog.map(entry => [entry.id, entry]))
+    assert.deepEqual(ids.map(id => after[id].evidence.score), [0.2, 0.9, 0.1, 0.9], 'the oldest is past the three; one stays')
+    assert.deepEqual([after[ids[2]].evidence.errorTag, after[other].evidence.score, after[other].corrected], ['没说抵消', 0.5, undefined])
+    jobs.dispose()
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('unit quizzes, library quizzes and review questions are fixed where they are kept', async () => {
   const root = await mkdtemp(join(tmpdir(), 'aha-item-'))
   try {
@@ -413,6 +524,24 @@ test('unit quizzes, library quizzes and review questions are fixed where they ar
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+test('a recorded answer names its question only when its course keeps it', async () => {
+  const seen = []
+  const routes = createRoutes({ lessons: { record: request => { seen.push(request); return {} } } })
+  const courseId = newId('crs')
+  const lessonId = newId('les')
+  const evidence = { kind: 'practice', score: 1 }
+  await routes['lesson/record']({ courseId, lessonId, evidence, source: { kind: 'practice', courseId, lessonId, itemId: 'i1', extra: 1 }, response: ['b', '../x', 4] })
+  await routes['lesson/record']({ courseId, lessonId, evidence, source: { kind: 'check', courseId, lessonId, stepId: 's3' }, response: 12 })
+  await routes['lesson/record']({ courseId, evidence, source: { kind: 'deck', deckId: newId('dck'), itemId: 'i1' }, response: 'a' })
+  await routes['lesson/record']({ courseId, evidence, source: { kind: 'practice', courseId: newId('crs'), lessonId, itemId: 'i1' }, response: 'a' })
+  await routes['lesson/record']({ courseId, evidence, source: { kind: 'check', courseId, lessonId, stepId: 'a1_s2' }, response: '3' })
+  await routes['lesson/record']({ courseId, evidence, source: 'practice', response: 'a' })
+  await routes['lesson/record']({ courseId, evidence })
+  assert.deepEqual(seen[0].item, { source: { kind: 'practice', courseId, lessonId, itemId: 'i1' }, response: ['b'] })
+  assert.deepEqual(seen[1].item, { source: { kind: 'check', courseId, lessonId, stepId: 's3' }, response: '12' })
+  assert.deepEqual(seen.slice(2).map(request => request.item), [null, null, null, null, null], 'recorded without it')
 })
 
 test('the item challenge endpoint checks what it is given', async () => {

@@ -7,9 +7,10 @@
 import { applyFixes, boardForCheck, describeFixes, normalizeVerdict, sanitizeStep, stepJson } from '../core/board-fix.js'
 import { boardToPlainText } from '../core/board-script.js'
 import { conceptIndex, findLesson, insertLesson, lessonAfter, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text } from '../core/course-model.js'
-import { correctEvidence, logEvidence, stateBefore, takeEvidence } from '../core/evidence-log.js'
+import { answersTo, correctEvidence, itemKey, logEvidence, stateBefore, takeEvidence } from '../core/evidence-log.js'
+import { OBJECTIVE_KINDS } from '../core/grading.js'
 import { assertId, newId } from '../core/ids.js'
-import { cleanResponse, fixItem, itemForCheck, normalizeItemVerdict, regrade, responseText } from '../core/item-fix.js'
+import { cleanResponse, earlierGrade, fixItem, itemForCheck, normalizeItemVerdict, regrade, responseText } from '../core/item-fix.js'
 import { createConceptState, masteryPercent, recommendNext } from '../core/mastery.js'
 import { createCard, review } from '../core/srs.js'
 import { masteryFor, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
@@ -22,6 +23,8 @@ const ASIDES_KEPT = 30
 const STEP_ID = /^s\d{1,4}$/u
 // Jobs that write a lesson's board: opened by the learner, or prefetched.
 const BOARD_JOBS = ['lesson/board', 'lesson/prefetch']
+// Earlier open answers to a fixed question the grader looks at again.
+const EARLIER_OPEN = 3
 
 export function createLessons({ store, llm, jobs, courses, learner, now = () => new Date() }) {
   const stamp = () => now().toISOString()
@@ -347,8 +350,9 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
 
   // Apply one piece of evidence to the concepts it covers. It is logged
   // with what each concept was before it (evidenceId), so an answer graded
-  // wrongly can be graded again.
-  async function record({ courseId, lessonId, conceptIds = [], evidence = {} }) {
+  // wrongly can be graded again; item ({ source, response }): the question
+  // it answered and how, so a later fix of the question grades it again.
+  async function record({ courseId, lessonId, conceptIds = [], evidence = {}, item = null }) {
     const course = await courses.readCourse(courseId)
     const index = conceptIndex(course)
     const ids = (Array.isArray(conceptIds) && conceptIds.length ? conceptIds : findLesson(course, lessonId)?.lesson.concepts.map(concept => concept.id) ?? [])
@@ -356,6 +360,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       .slice(0, 8)
     const at = now().getTime()
     const evidenceId = newId('evd')
+    const key = item?.source?.courseId === courseId ? itemKey(item.source) : null
     const next = await store.updateJson(store.paths.progress(courseId), null, progress => {
       const value = progress ?? { courseId, lessons: {}, concepts: {}, reviews: {}, practice: {}, projects: {}, events: [] }
       value.concepts ??= {}
@@ -367,7 +372,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
         value.concepts[id] = taken.state
         if (taken.card) value.reviews[id] = taken.card
       }
-      if (ids.length) logEvidence(value, { id: evidenceId, at: new Date(at).toISOString(), lessonId: lessonId ?? null, conceptIds: ids, evidence: JSON.parse(JSON.stringify(evidence)), before })
+      if (ids.length) logEvidence(value, { id: evidenceId, at: new Date(at).toISOString(), lessonId: lessonId ?? null, conceptIds: ids, evidence: JSON.parse(JSON.stringify(evidence)), before, ...(key ? { item: { key, response: item.response ?? '' } } : {}) })
       pushEvent(value, { type: 'evidence', lessonId: lessonId ?? null, conceptIds: ids, kind: evidence.kind ?? 'practice', score: evidence.score ?? null, confidence: evidence.confidence ?? null, at: new Date(at).toISOString() })
       return value
     })
@@ -457,12 +462,34 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     return { item, course, lessonId: row.lesson.id, language: course.language, scope, save: rewrite(path, value => value?.items) }
   }
 
+  // Earlier answers to a question a check fixed (in another round, a review
+  // or the lesson itself) graded again against the fixed question, and
+  // corrected in the learner's progress. Open answers go to the grader, the
+  // latest few only; one it cannot grade keeps its grade. Null when none
+  // changed.
+  async function regradeEarlier({ course, key, item, verdict, except, language, signal }) {
+    const answers = answersTo(await store.readJson(store.paths.progress(course.id), null), key, except)
+    const open = !OBJECTIVE_KINDS.includes(item.kind)
+    const graded = await Promise.all((open ? answers.slice(-EARLIER_OPEN) : answers).map(async entry => {
+      const again = open ? await grade({ item, response: entry.item.response, language, signal }).catch(error => { if (signal?.aborted) throw error; return null }) : null
+      if (open && !again) return null
+      return { id: entry.id, next: earlierGrade(item, entry.item.response, { verdict, score: entry.evidence.score, grade: again }) }
+    }))
+    let found = null
+    for (const { id, next } of graded.filter(entry => entry?.next)) {
+      const corrected = await regradeEvidence(course, id, { score: next.score, errorTag: next.errorTag })
+      if (corrected) found = { count: (found?.count ?? 0) + 1, mastery: { ...found?.mastery, ...corrected.mastery }, recommendation: corrected.recommendation }
+    }
+    return found
+  }
+
   // The learner says a practice or quiz question, or the grading of their
   // answer, is wrong. A model that thinks first checks it. A wrong question
   // is fixed where it is kept and the answer graded again; an answer
   // recorded as evidence (evidenceId) is then corrected in the learner's
   // mastery and review schedule, as if it had been graded right the first
-  // time. shown: the grade the learner saw.
+  // time, and so are earlier answers to the question. shown: the grade the
+  // learner saw.
   function challengeItem({ source, response, shown = {}, evidenceId, note }) {
     const doubt = text(note, 800)
     return jobs.start('item/challenge', async api => {
@@ -486,22 +513,27 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       const corrected = changed && evidenceId && place.course
         ? await regradeEvidence(place.course, evidenceId, { score: result.score, ...(result.correct ? { errorTag: '' } : result.errorTag ? { errorTag: result.errorTag } : {}) })
         : null
-      if (place.course) await logEvent(place.course.id, { type: 'item-challenge', lessonId: place.lessonId, verdict: checked.verdict, changed })
+      const earlier = checked.item && place.course
+        ? await regradeEarlier({ course: place.course, key: itemKey(source), item, verdict: checked.verdict, except: evidenceId, language: place.language, signal: api.signal })
+        : null
+      if (place.course) await logEvent(place.course.id, { type: 'item-challenge', lessonId: place.lessonId, verdict: checked.verdict, changed, earlier: earlier?.count ?? 0 })
+      const mastery = corrected || earlier ? { ...corrected?.mastery, ...earlier?.mastery } : null
       return {
         verdict: checked.verdict,
         summary: checked.summary,
         explanation: checked.explanation,
         item: checked.item ? item : null,
         result: changed ? result : null,
-        mastery: corrected?.mastery ?? null,
-        recommendation: corrected?.recommendation ?? null,
+        earlier: earlier?.count ?? 0,
+        mastery,
+        recommendation: earlier?.recommendation ?? corrected?.recommendation ?? null,
       }
     })
   }
 
   // Open answers. A "work" item (a written-out working) also gets the first
   // wrong line and its fix, for the correction at the board.
-  async function grade({ item, response, language = 'zh-CN' }) {
+  async function grade({ item, response, language = 'zh-CN', signal }) {
     if (!item?.prompt) throw new TutorError('invalid', 'Missing question')
     const work = item.kind === 'work'
     const answer = text(response, 4000)
@@ -510,6 +542,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       purpose: 'quick',
       prompt: gradePrompt({ item: { kind: work ? 'work' : 'short', prompt: text(item.prompt, 2000), answer: text(item.answer, 3000), rubric: Array.isArray(item.rubric) ? item.rubric.map(entry => text(entry, 300)) : [] }, response: answer, language }),
       maxTokens: work ? 1800 : 1200,
+      signal,
       normalize: raw => ({
         score: Math.min(1, Math.max(0, Number(raw?.score) || 0)),
         verdict: ['correct', 'partial', 'incorrect'].includes(raw?.verdict) ? raw.verdict : Number(raw?.score) >= 0.8 ? 'correct' : Number(raw?.score) >= 0.4 ? 'partial' : 'incorrect',

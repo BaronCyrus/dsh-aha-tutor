@@ -25,9 +25,28 @@ export function stateBefore(state, card) {
   return { state: state ? withoutHistory(state) : null, card: card ?? null }
 }
 
-// entry: { id, at (ISO), lessonId, conceptIds, evidence, before: { [conceptId]: stateBefore } }
+// entry: { id, at (ISO), lessonId, conceptIds, evidence, before: { [conceptId]:
+// stateBefore }, item? }. item: { key, response } for an answer to a question
+// kept in the course (see itemKey), so that a fix of the question can grade
+// it again.
 export function logEvidence(progress, entry) {
   progress.evidenceLog = [...(Array.isArray(progress.evidenceLog) ? progress.evidenceLog : []), entry].slice(-EVIDENCE_KEPT)
+}
+
+// A question by where its course keeps it: a lesson's practice, a unit quiz
+// or the check of a lesson step. Null for one kept outside a course.
+export function itemKey(source) {
+  if (source?.kind === 'practice') return `practice:${source.lessonId}:${source.itemId}`
+  if (source?.kind === 'quiz') return `quiz:${source.unitId}:${source.itemId}`
+  if (source?.kind === 'check') return `check:${source.lessonId}:${source.stepId}`
+  return null
+}
+
+// The logged answers to a question, oldest first, but one (the answer being
+// checked).
+export function answersTo(progress, key, except = null) {
+  if (!key) return []
+  return (Array.isArray(progress?.evidenceLog) ? progress.evidenceLog : []).filter(entry => entry.item?.key === key && entry.id !== except && scored(entry.evidence))
 }
 
 // Grade a logged answer again. patch changes its evidence (a new score, and

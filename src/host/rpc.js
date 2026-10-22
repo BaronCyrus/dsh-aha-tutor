@@ -73,6 +73,19 @@ function answerOf(value) {
   return Array.isArray(value) ? value.filter(id => typeof id === 'string' && /^[a-z]$/u.test(id)).slice(0, 12) : ''
 }
 
+// The question a recorded answer was given to, where its course keeps it,
+// and the answer, so that a fix of the question can grade it again. Null
+// for anything else: the answer is recorded without them.
+function answeredItem(payload, courseId) {
+  if (!payload?.source || payload.source.kind === 'deck') return null
+  try {
+    const source = itemSource(payload)
+    return source.courseId === courseId ? { source, response: answerOf(payload.response) } : null
+  } catch {
+    return null
+  }
+}
+
 function shownGrade(value) {
   const grade = value && typeof value === 'object' ? value : {}
   const words = (key, max) => (typeof grade[key] === 'string' ? grade[key].slice(0, max) : '')
@@ -122,6 +135,7 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
     'lesson/record': payload => lessons.record({
       courseId: need(payload, 'courseId', 'crs'),
       lessonId: optional(payload, 'lessonId', 'les'),
+      item: answeredItem(payload, need(payload, 'courseId', 'crs')),
       conceptIds: (Array.isArray(payload.conceptIds) ? payload.conceptIds : []).filter(id => /^cpt_[a-z0-9]{6,40}$/u.test(String(id))).slice(0, 8),
       evidence: {
         kind: payload.evidence?.kind,

@@ -211,7 +211,15 @@ a.aha-btn{text-decoration:none}
 .aha-viewToggle{display:inline-flex;gap:2px;padding:2px;border-radius:9px;background:var(--aha-soft);align-self:flex-start}
 .aha-viewToggle button{padding:3px 12px;border:0;border-radius:7px;background:transparent;color:var(--aha-muted);font:inherit;font-size:13px;cursor:pointer}
 .aha-viewToggle button[aria-pressed=true]{background:var(--aha-surface);color:var(--aha-text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
-.aha-lesson[data-flash=true]{animation:aha-flash 1.6s ease}
+.aha-lesson[data-flash=true],.aha-card[data-flash=true]{animation:aha-flash 1.6s ease}
+.aha-librarySearch .aha-input{flex:1;min-width:0}
+.aha-libraryHits{gap:4px}
+.aha-libraryHit{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:8px 10px;border:0;border-radius:10px;background:transparent;color:var(--aha-text);font:inherit;text-align:left;cursor:pointer}
+.aha-libraryHit:hover{background:var(--aha-hover)}
+.aha-libraryHitWhere{font-size:13px;color:var(--aha-muted)}
+.aha-libraryHitWhere b{color:var(--aha-text);font-weight:600}
+.aha-libraryHitText{font-size:13.5px;line-height:20px;overflow-wrap:anywhere}
+.aha-libraryHitText mark{background:color-mix(in srgb,#f2c94c 55%,transparent);color:inherit;border-radius:3px;padding:0 1px}
 @keyframes aha-flash{0%,40%{background:color-mix(in srgb,var(--aha-brand) 16%,transparent)}100%{background:transparent}}
 .aha-buildLog li{display:flex;gap:10px;align-items:center;font-size:14px;color:var(--aha-muted)}
 .aha-buildLog li[data-state=done],.aha-buildLog li[data-state=current]{color:var(--aha-text)}

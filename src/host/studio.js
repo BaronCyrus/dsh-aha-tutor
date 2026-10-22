@@ -5,7 +5,7 @@
 import { normalizeCards, normalizeCheatsheet, normalizePractice, text } from '../core/course-model.js'
 import { assertId, newId } from '../core/ids.js'
 import { createCard, review } from '../core/srs.js'
-import { documentParts, formatPassages, passageRange, spreadPassages } from '../core/retrieval.js'
+import { buildIndex, documentParts, formatPassages, passageRange, search, snippetOf, spreadPassages } from '../core/retrieval.js'
 import { materialImages, passagesFor, readMaterials, readProfile } from './context.js'
 import { generateJson, generateSteps, generateText, TutorError } from './generate.js'
 import { ingestFile, ingestUrl, MAX_UPLOAD_BYTES } from './materials.js'
@@ -93,6 +93,38 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
     const ids = await store.listIds(store.paths.materials(), 'mat')
     const metas = (await Promise.all(ids.map(id => store.readJson(store.paths.material(id), null)))).filter(Boolean)
     return metas.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+  }
+
+  // The library's text, indexed once and kept until a material is added,
+  // removed or renamed (its key is every material's id, title and size).
+  let libraryIndex = null
+  const SEARCH_CHUNKS = 30_000
+
+  // Search the text of every material in the library at once, best passages
+  // first, each with its material, its page or slide, and an excerpt.
+  async function searchMaterials({ query }) {
+    const wanted = text(query, 200)
+    if (!wanted) return { results: [] }
+    const metas = (await listMaterials()).filter(meta => meta.kind !== 'image')
+    const key = metas.map(meta => `${meta.id}:${meta.title}:${meta.chars ?? meta.pages ?? ''}`).join('|')
+    if (libraryIndex?.key !== key) {
+      const chunks = []
+      for (const meta of metas) {
+        if (chunks.length >= SEARCH_CHUNKS) break
+        const own = (await store.readJson(store.paths.materialChunks(meta.id), [])) ?? []
+        for (const chunk of own.slice(0, SEARCH_CHUNKS - chunks.length)) chunks.push({ ...chunk, materialId: meta.id, materialTitle: meta.title })
+      }
+      libraryIndex = { key, index: buildIndex(chunks) }
+    }
+    return {
+      results: search(libraryIndex.index, wanted, { limit: 12 }).map(({ chunk }) => ({
+        materialId: chunk.materialId,
+        title: chunk.materialTitle,
+        page: chunk.page ?? null,
+        slide: chunk.slide ?? null,
+        snippet: snippetOf(chunk.text, wanted),
+      })),
+    }
   }
 
   async function getMaterial({ id }) {
@@ -398,7 +430,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
   }
 
   return Object.freeze({
-    upload, addUrl, listMaterials, getMaterial, renameMaterial, removeMaterial, digest,
+    upload, addUrl, listMaterials, searchMaterials, getMaterial, renameMaterial, removeMaterial, digest,
     makeSheet, makeTopicSheet, makeNotes, makeCards, makeQuiz, listItems, getItem, removeItem, saveStandaloneLayout, reviewDeckCard,
     assist, assistImages, makeShort,
   })

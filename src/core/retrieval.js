@@ -127,3 +127,34 @@ export function formatPassages(passages, sourceTitle) {
     return `<<${label}>>\n${passage.text}`
   }).join('\n\n')
 }
+
+// A short excerpt of `text` around the place that best matches `query`: the
+// window holding the most query terms, cut at about `width` characters.
+// Markdown emphasis, code ticks, headings and table bars are left out.
+export function snippetOf(text, query, { width = 140 } = {}) {
+  const value = String(text ?? '')
+    .replace(/\*\*|__|`/gu, '')
+    .replace(/^#{1,6}\s+/gmu, '')
+    .replace(/\s*\|\s*(?:\|\s*)*/gu, ' · ')
+    .replace(/\s+/gu, ' ')
+    .replace(/^ · | · $/gu, '')
+    .trim()
+  if (value.length <= width) return value
+  const lower = value.toLowerCase()
+  const terms = [...new Set(tokenize(query))]
+  const hits = []
+  for (const term of terms) for (let at = lower.indexOf(term); at !== -1 && hits.length < 200; at = lower.indexOf(term, at + term.length)) hits.push(at)
+  if (!hits.length) return `${value.slice(0, width)}…`
+  hits.sort((a, b) => a - b)
+  let best = hits[0]
+  let bestCount = 0
+  for (const start of hits) {
+    const count = hits.filter(at => at >= start && at < start + width).length
+    if (count > bestCount) {
+      best = start
+      bestCount = count
+    }
+  }
+  const from = Math.max(0, Math.min(best - Math.round(width / 4), value.length - width))
+  return `${from > 0 ? '…' : ''}${value.slice(from, from + width)}${from + width < value.length ? '…' : ''}`
+}

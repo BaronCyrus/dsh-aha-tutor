@@ -158,6 +158,7 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
     'material/upload': payload => ({ job: studio.upload({ name: payload.name, base64: payload.base64 }) }),
     'material/url': payload => ({ job: studio.addUrl({ url: payload.url }) }),
     'material/list': () => studio.listMaterials(),
+    'material/search': payload => studio.searchMaterials({ query: typeof payload.query === 'string' ? payload.query : '' }),
     'material/get': payload => studio.getMaterial({ id: need(payload, 'id', 'mat') }),
     'material/rename': payload => studio.renameMaterial({ id: need(payload, 'id', 'mat'), title: payload.title }),
     'material/remove': payload => studio.removeMaterial({ id: need(payload, 'id', 'mat') }),

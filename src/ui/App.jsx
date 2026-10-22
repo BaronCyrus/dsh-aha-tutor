@@ -9,6 +9,7 @@ import { AssistScreen } from './screens/Assist.jsx'
 import { CourseScreen } from './screens/Course.jsx'
 import { CoursesScreen } from './screens/Courses.jsx'
 import { CraftScreen } from './screens/Craft.jsx'
+import { HandoutScreen } from './screens/Handout.jsx'
 import { HomeScreen } from './screens/Home.jsx'
 import { LessonScreen } from './screens/Lesson.jsx'
 import { MaterialsScreen } from './screens/Materials.jsx'
@@ -37,6 +38,7 @@ const SCREENS = {
   home: HomeScreen,
   courses: CoursesScreen,
   craft: CraftScreen,
+  handout: HandoutScreen,
   course: CourseScreen,
   lesson: LessonScreen,
   practice: PracticeScreen,
@@ -54,7 +56,7 @@ const SCREENS = {
   about: AboutScreen,
 }
 
-const ROOT_OF = { craft: 'courses', course: 'courses', lesson: 'courses', practice: 'courses', project: 'courses', cards: 'studio', sheet: 'studio', item: 'studio' }
+const ROOT_OF = { craft: 'courses', course: 'courses', lesson: 'courses', handout: 'courses', practice: 'courses', project: 'courses', cards: 'studio', sheet: 'studio', item: 'studio' }
 
 // A screen that crashes is replaced by a notice while the navigation keeps
 // working. A crash anywhere else replaces the whole page, and only a fresh

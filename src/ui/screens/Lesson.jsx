@@ -63,6 +63,7 @@ export function LessonScreen({ courseId, lessonId }) {
       header={({ steps }) => <>
         <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => navigate('course', { courseId })}>← {t('backToCourse')}</button>
         <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => navigate('practice', { courseId, lessonId })}>{t('practice')}</button>
+        <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" disabled={!steps.length} title={t('handoutHint')} onClick={() => navigate('handout', { courseId, lessonId })}>{t('handout')}</button>
         <BoardExport steps={steps} title={lesson.title} />
         {video.exporting
           ? <><Spinner label={t('exporting', { percent: video.exporting.percent })} /><button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={video.cancel}>{t('cancel')}</button></>
@@ -106,6 +107,7 @@ function Completion({ courseId, lessonId, onClose }) {
       <div className="aha-row">
         {result.next ? <button type="button" className="aha-btn" data-kind="primary" onClick={() => navigate('lesson', { courseId, lessonId: result.next.id }, { replace: true })}>{t('nextLesson')}: {result.next.title}</button> : null}
         <button type="button" className="aha-btn" onClick={() => navigate('practice', { courseId, lessonId })}>{t('doPractice')}</button>
+        <button type="button" className="aha-btn" onClick={() => navigate('handout', { courseId, lessonId })}>{t('handoutOfLesson')}</button>
         <button type="button" className="aha-btn" data-kind="ghost" onClick={() => navigate('course', { courseId }, { replace: true })}>{t('backToCourse')}</button>
       </div>
     </div>}

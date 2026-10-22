@@ -6,7 +6,7 @@
 
 import { applyFixes, boardForCheck, describeFixes, normalizeVerdict, sanitizeStep, stepJson } from '../core/board-fix.js'
 import { boardToPlainText } from '../core/board-script.js'
-import { conceptIndex, findLesson, insertLesson, lessonAfter, normalizeCards, normalizeCheatsheet, normalizePractice, outlineForPrompt, text } from '../core/course-model.js'
+import { conceptIndex, findLesson, insertLesson, lessonAfter, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text } from '../core/course-model.js'
 import { correctEvidence, logEvidence, stateBefore, takeEvidence } from '../core/evidence-log.js'
 import { assertId, newId } from '../core/ids.js'
 import { cleanResponse, fixItem, itemForCheck, normalizeItemVerdict, regrade, responseText } from '../core/item-fix.js'
@@ -14,7 +14,7 @@ import { createConceptState, masteryPercent, recommendNext } from '../core/maste
 import { createCard, review } from '../core/srs.js'
 import { masteryFor, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
 import { generateJson, generateSteps, TutorError } from './generate.js'
-import { askPrompt, challengePrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, flashcardsPrompt, gradePrompt, lessonPrompt, quizPrompt, reexplainPrompt, verifyItemPrompt, verifyStepPrompt } from './prompts.js'
+import { askPrompt, challengePrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, flashcardsPrompt, gradePrompt, handoutPrompt, lessonPrompt, quizPrompt, reexplainPrompt, verifyItemPrompt, verifyStepPrompt } from './prompts.js'
 
 const EVENTS_KEPT = 200
 // Questions and re-explanations kept per lesson, replayed where they were asked.
@@ -632,6 +632,31 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }).catch(() => undefined)
   }
 
+  // A lesson's printable handout, made on request from its board (and kept).
+  async function handout({ courseId, lessonId, force = false }) {
+    const { course, row } = await context(courseId, lessonId)
+    if (!force) {
+      const existing = await store.readJson(store.paths.handout(courseId, lessonId), null)
+      if (existing) return { handout: existing }
+    }
+    const board = await store.readJson(store.paths.board(courseId, lessonId), null)
+    if (!board?.steps?.length) throw new TutorError('no-board', 'The board is not written yet. Try again once its first step is up.')
+    const job = jobs.start('lesson/handout', async api => {
+      const made = await generateJson(llm, {
+        purpose: 'teach',
+        effort: 'lowest',
+        prompt: handoutPrompt({ course, lesson: row.lesson, language: course.language, board: boardToPlainText(board, { maxChars: 12000 }) }),
+        maxTokens: 5000,
+        signal: api.signal,
+        normalize: normalizeHandout,
+      })
+      const saved = { ...made, title: made.title || row.lesson.title, lessonId, createdAt: stamp() }
+      await store.writeJson(store.paths.handout(courseId, lessonId), saved)
+      return { handout: saved }
+    }, { key: `handout:${courseId}:${lessonId}`, meta: { courseId, lessonId } })
+    return { job }
+  }
+
   async function unitSheet({ courseId, unitId, force = false }) {
     const course = await courses.readCourse(courseId)
     const unit = course.units?.find(item => item.id === assertId(unitId, 'unt'))
@@ -740,7 +765,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }).catch(() => undefined)
   }
 
-  return Object.freeze({ get, prepare, ask, reexplain, challenge, challengeItem, record, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, flashcards, reviewCard })
+  return Object.freeze({ get, prepare, ask, reexplain, challenge, challengeItem, handout, record, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, flashcards, reviewCard })
 }
 
 function pushEvent(progress, event) {

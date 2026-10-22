@@ -8,10 +8,15 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 
 - **How each lesson is taught**: every lesson of a new blueprint has a depth, one of building intuition, making the idea precise, deriving it, applying it and going further, shown beside the lesson on the course page and in the blueprint editor, where it can be changed. The teacher teaches the lesson that way. The sample courses show theirs.
 - **Your name in class**: the profile asks what the tutor should call you, and a lesson's opening says it once.
+- **A handout for every lesson**: **Handout** above a lesson (and **Handout of this lesson** when it ends) turns what its board taught into one printable page: what the lesson was about, the key points each with a line you could repeat to a friend, a worked example step by step, common mistakes with their fix, a glossary and three questions to check yourself. It is made on request (without the model thinking first) and kept; **Print** opens the answers.
 - **Add materials to a course**: **Add materials** in a course's ⋯ menu, or in the outline editor, takes materials from the library or uploaded there, with an optional note on how to use them. The teacher reads them and proposes changes to the outline, such as new lessons where they fit or lessons taken deeper, shown like any other proposal; applying it keeps the progress of lessons left alone and attaches the materials, so later lessons cite them. A course can use up to 12 materials (8 before).
 - **Search the library**: typing above the library filters it by title and topic; Enter searches the text of every material at once and lists the best passages with their material, page or slide and the matching words marked, and choosing one shows its material. It runs on this computer without the model; the index is kept until the library changes.
 - **A tour of the classroom**: the first classroom opened in a browser starts with a six-step tour (the board, the controls, raising a hand, explaining differently, challenging a step and the side panel), each part lit up in turn with a card saying what it does. The lesson starts when the tour ends; it can be skipped, stepped with the arrow keys, and seen again from **?** above the classroom. The narrow conversation board has none.
 - **The blueprint grows as a mind map**: while the teacher writes a blueprint, the outline is drawn as a map that grows to the right (course, units, lectures, lessons) and follows the newest lesson until you drag or zoom it; **Back to the newest** resumes. The editor shows a new blueprint as the map, with each lesson's depth and minutes, and switches to the list for editing; choosing a lesson on the map opens it in the list.
+
+### Changed
+
+- Printing a cheat sheet or a handout prints only it, across as many pages as it needs, instead of one clipped page beside the hidden app.
 
 ## 1.6.0 - 2026-10-22
 

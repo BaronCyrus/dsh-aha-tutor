@@ -76,6 +76,7 @@ export function createStore({ root }) {
     practice: (id, lessonId) => join(paths.courseDir(id), 'practice', `${assertId(lessonId, 'les')}.json`),
     asides: (id, lessonId) => join(paths.courseDir(id), 'asides', `${assertId(lessonId, 'les')}.json`),
     sheet: (id, unitId) => join(paths.courseDir(id), 'sheets', `${assertId(unitId, 'unt')}.json`),
+    handout: (id, lessonId) => join(paths.courseDir(id), 'handouts', `${assertId(lessonId, 'les')}.json`),
     unitQuiz: (id, unitId) => join(paths.courseDir(id), 'quizzes', `${assertId(unitId, 'unt')}.json`),
     materials: () => join(root, 'materials'),
     materialDir: id => join(root, 'materials', assertId(id, 'mat')),

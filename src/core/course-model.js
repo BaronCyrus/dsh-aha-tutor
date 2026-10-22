@@ -308,6 +308,40 @@ export function normalizePractice(raw, conceptIds = []) {
   return { items: items.map((item, index) => ({ ...item, id: `i${index + 1}` })) }
 }
 
+// A one-page handout of a lesson, from its board: what it covered, the key
+// points each in one line, a worked example, common mistakes, a glossary and
+// a few questions to check oneself. Text may hold $…$ math.
+export function normalizeHandout(raw) {
+  const points = list(raw?.points ?? raw?.keyPoints, 6, point => {
+    const title = text(typeof point === 'string' ? point : point?.title ?? point?.point, 160)
+    return title ? { title, oneLine: text(point?.oneLine ?? point?.summary, 300), detail: text(point?.detail, 600) } : null
+  })
+  if (!points.length) throw new Error('the handout has no key points')
+  const example = raw?.example && typeof raw.example === 'object' ? {
+    problem: text(raw.example.problem ?? raw.example.question, 800),
+    steps: strings(raw.example.steps, 10, 400),
+    answer: text(raw.example.answer, 300),
+  } : null
+  return {
+    title: text(raw?.title, 160),
+    summary: text(raw?.summary ?? raw?.overview, 800),
+    points,
+    example: example?.problem ? example : null,
+    mistakes: list(raw?.mistakes, 5, item => {
+      const mistake = text(typeof item === 'string' ? item : item?.mistake, 300)
+      return mistake ? { mistake, fix: text(item?.fix ?? item?.instead, 300) } : null
+    }),
+    glossary: list(raw?.glossary, 10, item => {
+      const term = text(item?.term, 80)
+      return term ? { term, meaning: text(item?.meaning ?? item?.definition, 300) } : null
+    }),
+    questions: list(raw?.questions ?? raw?.selfCheck, 5, item => {
+      const question = text(typeof item === 'string' ? item : item?.question, 400)
+      return question ? { question, answer: text(item?.answer, 400) } : null
+    }),
+  }
+}
+
 export function normalizeCards(raw) {
   return list(raw?.cards ?? raw, LIMITS.cards, (card, index) => {
     const front = text(card?.front ?? card?.q ?? card?.question, 600)

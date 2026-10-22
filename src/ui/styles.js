@@ -214,6 +214,25 @@ a.aha-btn{text-decoration:none}
 .aha-lesson[data-flash=true],.aha-card[data-flash=true]{animation:aha-flash 1.6s ease}
 .aha-librarySearch .aha-input{flex:1;min-width:0}
 .aha-addMaterials{gap:8px;border-style:dashed}
+/* A lesson's handout (Handout.jsx), on screen and on paper. */
+.aha-handout{display:flex;flex-direction:column;gap:18px;padding:22px 26px;border:1px solid var(--aha-border);border-radius:var(--aha-radius);background:var(--aha-surface);color:var(--aha-text);font-size:14.5px;line-height:23px}
+.aha-handout h2{margin:2px 0 6px;font-size:22px;line-height:30px}
+.aha-handout h3{margin:0 0 6px;padding-bottom:4px;border-bottom:2px solid var(--aha-brand);font-size:15.5px;display:inline-block}
+.aha-handout p{margin:0}
+.aha-handoutSummary{color:var(--aha-muted)}
+.aha-handoutPoints>li>b{font-weight:650}
+.aha-handout section{display:flex;flex-direction:column;gap:4px;break-inside:avoid}
+.aha-handoutPoints,.aha-handoutSteps,.aha-handoutQuestions{margin:0;padding-left:1.4em;display:flex;flex-direction:column;gap:6px}
+.aha-handoutOneLine{padding:2px 8px;border-left:3px solid #f2c94c;background:color-mix(in srgb,#f2c94c 14%,transparent);border-radius:0 6px 6px 0}
+.aha-handoutAnswer{padding:6px 10px;border-radius:8px;background:var(--aha-soft)}
+.aha-handoutMistakes{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:4px}
+.aha-handoutMistakes li{display:flex;flex-wrap:wrap;gap:4px 8px}
+.aha-handoutMistakes [data-wrong=true]{text-decoration:line-through;text-decoration-color:var(--aha-bad);color:var(--aha-muted)}
+.aha-handoutGlossary{margin:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:6px 18px}
+.aha-handoutGlossary dt{font-weight:650}
+.aha-handoutGlossary dd{margin:0;color:var(--aha-muted)}
+.aha-handoutQuestions details summary{cursor:pointer;color:var(--aha-muted);font-size:13px}
+@media print{.aha-handout{border:0;padding:0;font-size:12.5px;line-height:19px;color:#111;background:#fff}.aha-handout h3{border-color:#555}}
 .aha-libraryHits{gap:4px}
 .aha-libraryHit{display:flex;flex-direction:column;align-items:flex-start;gap:2px;width:100%;padding:8px 10px;border:0;border-radius:10px;background:transparent;color:var(--aha-text);font:inherit;text-align:left;cursor:pointer}
 .aha-libraryHit:hover{background:var(--aha-hover)}
@@ -393,7 +412,9 @@ a.aha-btn{text-decoration:none}
 .aha-sheet[data-highlight=true] .aha-sheetItem[data-kind=formula],.aha-sheet[data-highlight=true] .aha-sheetItem[data-kind=definition]{background:color-mix(in srgb,#ffd64f 26%,transparent);border-radius:4px;padding:0 3px}
 .aha-sheet[data-highlight=true] .aha-sheetItem[data-kind=pitfall]{color:var(--aha-bad)}
 .aha-cite{color:var(--aha-muted);font-size:.85em;margin-left:4px}
-@media print{body *{visibility:hidden!important}.aha-printable,.aha-printable *{visibility:visible!important}.aha-printable{position:absolute;left:0;top:0;width:100%;padding:0 6mm}.aha-noprint{display:none!important}.aha-sheetSection{border-color:#999;background:#fff}}
+/* Printing shows only the printable part: everything else is taken out, and
+   the boxes around it stop scrolling and clipping, so it flows across pages. */
+@media print{body *:not(:has(.aha-printable)):not(.aha-printable):not(.aha-printable *){display:none!important}*:has(.aha-printable){display:block!important;position:static!important;overflow:visible!important;height:auto!important;min-height:0!important;max-height:none!important;width:auto!important;max-width:none!important;transform:none!important;margin:0!important;padding:0!important;border:0!important;box-shadow:none!important;background:#fff!important}.aha-printable{position:static!important;width:auto!important;padding:0 6mm}.aha-noprint{display:none!important}.aha-sheetSection{border-color:#999;background:#fff}}
 
 /* ── flashcards ────────────────────────────────────────────────────────── */
 .aha-flash{perspective:1200px;cursor:pointer;min-height:240px}

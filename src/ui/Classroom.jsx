@@ -7,6 +7,7 @@ import { captionSentences } from './board/inline.js'
 import { reidSteps } from './board/layout.js'
 import { createPlayer } from './board/player.js'
 import { furthestStep, goalStates, transcriptEntries } from './board/sidepanel.js'
+import { ClassroomTour } from './ClassroomTour.jsx'
 import { ErrorLine, errorText, Spinner } from './components.jsx'
 import { openMainScreen } from './context.js'
 import { useApp, useDarkMode, useLasting, usePersistentState } from './hooks.js'
@@ -40,7 +41,8 @@ const opening = say => {
 // objectives: the lesson's goals, shown with progress in the side panel.
 // startIndex and onPosition count the board's own steps, not asides.
 // reveal: a new value brings the classroom into view again, as opening it does.
-export function Classroom({ scope, title, crumb, steps: initialSteps = [], stream = null, asides: savedAsides = [], objectives = [], language, startIndex = 0, autoplay = true, onPosition, onEnded, onStreamDone, header, stageClass, recordChecks = true, reveal }) {
+// tour: offer the first-run tour (not in the narrow conversation board).
+export function Classroom({ scope, title, crumb, steps: initialSteps = [], stream = null, asides: savedAsides = [], objectives = [], language, startIndex = 0, autoplay = true, onPosition, onEnded, onStreamDone, header, stageClass, recordChecks = true, reveal, tour = true }) {
   const { api, t, speech, settings, dsh } = useApp()
   const dark = useDarkMode()
   const boardTheme = settings.boardTheme === 'dark' || (settings.boardTheme !== 'light' && dark) ? 'dark' : 'light'
@@ -60,6 +62,11 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   // still being written arrives whole.
   const boardFixes = useRef([])
   const [panelOpen, setPanelOpen] = usePersistentState('classPanel', true)
+  // The first classroom a learner opens starts with a short tour; the lesson
+  // waits for it.
+  const [tourSeen, setTourSeen] = usePersistentState('classTourSeen', false)
+  const [touring, setTouring] = useState(false)
+  const tourDue = tour && !tourSeen
   const root = useRef(null)
   const askField = useRef(null)
   const transcriptBox = useRef(null)
@@ -170,10 +177,15 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
 
   const started = useRef(false)
   useEffect(() => {
-    if (!autoplay || started.current || !steps.length) return
+    if (!autoplay || started.current || !steps.length || tourDue) return
     started.current = true
     player.play()
-  }, [steps.length, autoplay, player])
+  }, [steps.length, autoplay, player, tourDue])
+  useEffect(() => { if (tourDue && steps.length) setTouring(true) }, [tourDue, steps.length > 0])
+  const endTour = () => {
+    setTouring(false)
+    setTourSeen(true)
+  }
 
   const index = snapshot?.index ?? 0
   // The transcript keeps what was reached, even after stepping back.
@@ -447,7 +459,10 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
         {crumb ? <span className="aha-crumb">{crumb}</span> : null}
         <span className="aha-cardTitle">{title}</span>
       </div>
-      <div className="aha-row">{typeof header === 'function' ? header({ steps }) : header}</div>
+      <div className="aha-row">
+        {tour ? <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" title={t('tourReplay')} aria-label={t('tourReplay')} onClick={() => { player.pause(); setTouring(true) }}>?</button> : null}
+        {typeof header === 'function' ? header({ steps }) : header}
+      </div>
     </div>
     <div className="aha-classBody">
       <div className="aha-classMain">
@@ -492,14 +507,14 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
           </select>
           <button type="button" className="aha-chip" data-active={!silent} onClick={() => (voiceDown ? voiceBack({ replay: false }) : setMuted(value => !value))}>{silent ? `🔇 ${t('voiceOff')}` : `🔊 ${t('voiceOn')}`}</button>
           <button type="button" className="aha-chip" data-active={captions} onClick={() => setCaptions(value => !value)}>CC {t('captions')}</button>
-          <button type="button" className="aha-chip" onClick={raiseHand} disabled={!steps.length}>✋ {t('raiseHand')}</button>
+          <button type="button" className="aha-chip" data-tour="raise" onClick={raiseHand} disabled={!steps.length}>✋ {t('raiseHand')}</button>
           <span style={{ position: 'relative' }}>
-            <button type="button" className="aha-chip" onClick={() => setStyleMenu(value => !value)} disabled={!steps.length}>🔄 {t('reexplain')}</button>
+            <button type="button" className="aha-chip" data-tour="reexplain" onClick={() => setStyleMenu(value => !value)} disabled={!steps.length}>🔄 {t('reexplain')}</button>
             {styleMenu ? <div className="aha-card" style={{ position: 'absolute', bottom: '110%', left: 0, zIndex: 10, padding: 6, gap: 2, minWidth: 140 }}>
               {STYLES.map(([value, key]) => <button key={value} type="button" className="aha-btn" data-kind="ghost" style={{ justifyContent: 'flex-start' }} onClick={() => reexplain(value)}>{t(key)}</button>)}
             </div> : null}
           </span>
-          <button type="button" className="aha-chip" aria-expanded={Boolean(challenge)} onClick={() => (challenge ? setChallenge(null) : openChallenge(index))} disabled={!steps.length || writingAside}>🧐 {t('challenge')}</button>
+          <button type="button" className="aha-chip" data-tour="challenge" aria-expanded={Boolean(challenge)} onClick={() => (challenge ? setChallenge(null) : openChallenge(index))} disabled={!steps.length || writingAside}>🧐 {t('challenge')}</button>
           {!panelOpen ? <button type="button" className="aha-chip" aria-expanded={false} onClick={() => setPanelOpen(true)}>📋 {t('showPanel')}</button> : null}
         </div>
       </div>
@@ -542,5 +557,6 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
         </form>
       </aside> : null}
     </div>
+    {touring ? <ClassroomTour root={root} onDone={endTour} /> : null}
   </div>
 }

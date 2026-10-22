@@ -106,7 +106,15 @@ a.aha-btn{text-decoration:none}
 @container aha (max-width:1060px){.aha-split{grid-template-columns:1fr;height:auto}.aha-page[data-wide=true]:has(>.aha-split){height:auto}.aha-split .aha-class{height:auto}.aha-split .aha-classMain{min-height:0}.aha-split .aha-stage{flex:0 0 auto;min-height:0;height:clamp(300px,60vh,640px)}.aha-split .aha-transcript{max-height:260px}}
 
 /* ── classroom ─────────────────────────────────────────────────────────── */
-.aha-class{display:flex;flex-direction:column;gap:10px;height:100%;min-height:0;container-type:inline-size;container-name:classroom}
+.aha-class{position:relative;display:flex;flex-direction:column;gap:10px;height:100%;min-height:0;container-type:inline-size;container-name:classroom}
+/* The first-run tour (ClassroomTour.jsx): one part lit, the rest dimmed. */
+.aha-tour{position:absolute;inset:0;z-index:40}
+.aha-tourHole{position:absolute;border-radius:14px;box-shadow:0 0 0 9999px rgba(12,14,18,.55);transition:left .3s ease,top .3s ease,width .3s ease,height .3s ease;pointer-events:none}
+.aha-tourCard{position:absolute;box-sizing:border-box;width:min(330px,calc(100% - 16px));display:flex;flex-direction:column;gap:6px;padding:14px 16px;border-radius:14px;background:var(--aha-surface);color:var(--aha-text);border:1px solid var(--aha-border);box-shadow:0 12px 32px rgba(0,0,0,.25);transition:left .3s ease,top .3s ease}
+.aha-tourCard p{margin:0;font-size:13.5px;line-height:21px;color:var(--aha-muted)}
+.aha-tourActions{display:flex;align-items:center;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.aha-tourActions .aha-hint{margin-right:auto}
+@media (prefers-reduced-motion:reduce){.aha-tourHole,.aha-tourCard{transition:none}}
 .aha-classBody{flex:1 1 auto;min-height:0;display:flex;gap:12px}
 .aha-classMain{flex:1 1 auto;min-width:0;min-height:0;display:flex;flex-direction:column;gap:10px}
 .aha-panel{flex:0 0 clamp(220px,26cqi,300px);width:clamp(220px,26cqi,300px);min-height:0;display:flex;flex-direction:column;gap:10px;padding:12px;border:1px solid var(--aha-border);border-radius:16px;background:var(--aha-surface)}

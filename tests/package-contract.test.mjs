@@ -75,6 +75,10 @@ test('the patch inserts the host row and a teacher preset that keeps compaction 
   const fs = plugins.find(plugin => plugin.name === '@deepseek-ai/dsh-tool-fs')
   assert.equal(fs.config.write, false)
   assert.equal(fs.config.edit, false)
+  // DSH 0.2.1-rc.3 requires this setting, with no default; without it the
+  // preset fails to load and the plugin card says it failed.
+  const search = plugins.find(plugin => plugin.name === '@deepseek-ai/dsh-tool-fs-search')
+  assert.equal(typeof search.config?.sampleOverCapGlobResults, 'boolean')
   assert.ok(!plugins.some(plugin => /tool-bash|tool-pwsh/u.test(plugin.name)), 'no shell in the tutor preset')
   const persona = plugins.find(plugin => plugin.id === 'persona').config.prefix
   // Unknown {{variables}} make DSH's prompt rendering fail.

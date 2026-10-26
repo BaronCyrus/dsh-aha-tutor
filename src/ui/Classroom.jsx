@@ -270,13 +270,16 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
     onPosition?.(mainIndexOf(index))
   }, [index])
 
-  // Jump to an aside's first step once the player has it.
+  // Jump to an aside's first step once the player has it. A player that was
+  // waiting for it (a correction, after its check) has just started it:
+  // starting it again would cancel the narration it began.
   useEffect(() => {
     if (!pendingAside) return
     const position = playable.findIndex(step => step.id === pendingAside)
     if (position >= 0) {
       setPendingAside(null)
-      player.seek(position)
+      const { index: at, status: now } = player.state
+      if (at !== position || now !== 'playing') player.seek(position)
     }
   }, [playable, pendingAside, player])
 

@@ -37,8 +37,12 @@
               readImage: true
               write: false
               edit: false
+          # DSH 0.2.1-rc.3 requires this setting and gives it no default; its
+          # own presets keep the first paths, as rc.2 did.
           - id: tool-fs-search
             name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
           - id: tool-web
             name: '@deepseek-ai/dsh-tool-web'
             config:

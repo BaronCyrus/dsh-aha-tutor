@@ -124,6 +124,25 @@ test('practice items normalize answers by id, index or text', () => {
   assert.equal(normalizeItem({ kind: 'number', prompt: '面积？', answer: 12, svg: '<img src="x">' }).svg, undefined)
 })
 
+test('a question with several right options takes several answers, whatever the model called it', () => {
+  const options = ['2', '4', '9', '15']
+  // A choice whose key lists two options.
+  const listed = normalizeItem({ kind: 'choice', prompt: '下列哪些是偶数？', options, answer: [0, 1] })
+  assert.deepEqual([listed.kind, listed.answer], ['multi', ['a', 'b']])
+  // A prompt that asks for several, with one right option (不定项).
+  const told = normalizeItem({ kind: 'choice', prompt: '（多选）下列哪些是完全平方数？', options, answer: 'C' })
+  assert.deepEqual([told.kind, told.answer], ['multi', ['c']])
+  // Kinds and answers as models write them.
+  const named = normalizeItem({ type: 'multi_select', question: 'Select all even numbers.', options, answer: 'A, B' })
+  assert.deepEqual([named.kind, named.prompt, named.answer], ['multi', 'Select all even numbers.', ['a', 'b']])
+  assert.deepEqual(normalizeItem({ kind: '多选题', prompt: 'Q', options, answer: ['A.', '(B)', 'b'] }).answer, ['a', 'b'])
+  // A "multiple choice" question is the usual one-answer kind.
+  const single = normalizeItem({ kind: 'multiple_choice', prompt: '哪个是质数？', options: ['4', '7', '9'], answer: 'B.' })
+  assert.deepEqual([single.kind, single.answer], ['choice', 'b'])
+  // An option whose text holds a comma is still one answer.
+  assert.equal(normalizeItem({ kind: 'choice', prompt: '方程的解是？', options: ['3, 4', '5, 6'], answer: '3, 4' }).answer, 'a')
+})
+
 test('lists name a course by its main title', () => {
   assert.equal(shortCourseTitle('贝叶斯思维：一次阳性，你真的病了吗？'), '贝叶斯思维')
   assert.equal(shortCourseTitle('Bayesian thinking: one positive test'), 'Bayesian thinking')

@@ -2,6 +2,18 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## Unreleased
+
+### Added
+
+- **Scanned pages and pictures are read**: a PDF page without text of its own (a scan, a photo, a full-page figure), a Word document made mostly of pictures, a slide that is only a picture, and an uploaded photo have their text read by a model chosen in Aha settings that can see images (marked 🖼; DeepSeek-V4.1-Flash can): the quick route first, else the teaching route, never another model. Pages are read three at a time; the upload shows how many are done and can be cancelled, and up to 200 pages or pictures of a file are read. The text keeps its page or slide, so courses, study tools, the library search and citations use it like any other. Pages that failed (and why), pages left over and pages a model without vision could not read are named under the material. A scan without a model that sees images is refused with a note on which model to pick, instead of "no text". A photo whose text was read works in the study tools too, and stays a picture for models that see images. Black-and-white scans (CCITT, JBIG2) and JPEG 2000 pages decode with pdf.js's own WebAssembly decoders.
+
+### Fixed
+
+- **DSH 0.2.1-rc.3 refused the tutor preset**: the plugin card said 加载失败 (`tool-fs-search … sampleOverCapGlobResults missing required value`), because rc.3 requires that setting and gives it no default. The preset now sets it as DSH's own presets do; DSH 0.2.1-rc.2 still loads it.
+- **A correction no longer stalls the lesson**: after **See the correction** on a written-out working, the classroom started the correction's first step twice in one go; Chromium dropped the second narration and held the system voice, so the lesson sat at "playing" until Pause and Play. The step now starts once, a sentence spoken right after a cancel waits for the next task, and a system voice that does not start (tried twice) or never reports an end is let go instead of holding the lesson; one that stalls twice in a row is turned off with a note.
+- **Multi-select questions take several answers**: a practice or quiz question with several right options could show 多选 and take one answer. The quiz prompt never gave the question format, and a question the model wrote as a single choice with several answers kept only the first. Practice and quiz prompts now give the format; such a question, one whose kind is named like "multi-select", or one whose prompt says to pick several becomes multi-select, answers like "A, C" are understood, and a multi-select question says **Select all that apply**.
+
 ## 1.7.0 - 2026-10-22
 
 ### Added

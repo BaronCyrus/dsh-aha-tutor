@@ -70,7 +70,7 @@ const figureOf = item => (item.svg ? { svg: item.svg } : item.plot ? { plot: ite
 export function correctedItem(old, raw) {
   if (!raw || typeof raw !== 'object' || (raw.kind !== undefined && raw.kind !== old.kind)) return null
   const next = normalizeItem({ ...raw, kind: old.kind }, 0)
-  if (!next || (old.options?.length ?? 0) !== (next.options?.length ?? 0)) return null
+  if (!next || next.kind !== old.kind || (old.options?.length ?? 0) !== (next.options?.length ?? 0)) return null
   const redrawn = ['svg', 'figure', 'plot'].some(key => raw[key] !== undefined)
   const { svg, plot, ...rest } = next
   return { ...rest, ...(redrawn ? figureOf(next) : figureOf(old)), id: old.id, conceptIds: old.conceptIds ?? [], difficulty: old.difficulty ?? next.difficulty }

@@ -32,12 +32,15 @@ test('the library is searched across all its materials, with pages', async () =>
     }
     await add('mat_calculus01', '微积分讲义', ['极限与连续。', '导数的定义与几何意义。', '泰勒展开与拉格朗日余项：误差估计。'])
     await add('mat_physics001', 'Physics notes', ['Simple harmonic motion and Hooke law.', 'Taylor series appear in the small-angle approximation.'])
-    await add('mat_photo00001', '照片', ['泰勒'], 'image')
+    // A photo is searched once its text was read, and not before.
+    await store.writeJson(store.paths.material('mat_photo00001'), { id: 'mat_photo00001', title: '照片', kind: 'image', chars: 0, createdAt: new Date().toISOString() })
+    await add('mat_photo00002', '板书照片', ['板书：泰勒公式，下节课讲。'], 'image')
     const { results } = await studio.searchMaterials({ query: '泰勒展开 余项' })
     assert.equal(results[0].materialId, 'mat_calculus01')
     assert.equal(results[0].page, 3)
     assert.match(results[0].snippet, /拉格朗日余项/u)
-    assert.ok(!results.some(hit => hit.materialId === 'mat_photo00001'), 'images have no text to search')
+    assert.ok(results.some(hit => hit.materialId === 'mat_photo00002'), 'a photo whose text was read')
+    assert.ok(!results.some(hit => hit.materialId === 'mat_photo00001'), 'a photo without text')
     const english = await studio.searchMaterials({ query: 'Taylor series' })
     assert.deepEqual(english.results.map(hit => [hit.title, hit.page]), [['Physics notes', 2]])
     assert.deepEqual((await studio.searchMaterials({ query: '   ' })).results, [])

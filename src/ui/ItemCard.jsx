@@ -153,6 +153,8 @@ export function ItemCard({ item: asked, language, onResult, onContinue, continue
     {item.fixed ? <div><span className="aha-itemFixed" tabIndex={0} title={fixedTitle} aria-label={`${t('fixed')}. ${fixedTitle}`}>✎ {t('fixed')}</span></div> : null}
     <RichText text={item.prompt} compact />
     {item.svg ? <ItemFigure svg={item.svg} /> : item.plot ? <ItemFigure plot={item.plot} /> : null}
+    {/* Options look the same either way, so a multi-select question says so. */}
+    {item.kind === 'multi' ? <span className="aha-hint">{t('pickSeveral')}</span> : null}
     {(item.kind === 'choice' || item.kind === 'multi') ? <div className="aha-col aha-options" style={{ gap: 6 }} data-grid={item.options.every(option => option.text.length <= 22)}>
       {item.options.map(option => {
         const selected = item.kind === 'multi' ? response.includes(option.id) : response === option.id

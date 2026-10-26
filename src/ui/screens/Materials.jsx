@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react'
 
-import { Confirm, describeMaterial, Empty, ErrorLine, Spinner, UploadZone } from '../components.jsx'
+import { Confirm, describeMaterial, Empty, ErrorLine, readingNotes, Spinner, UploadZone } from '../components.jsx'
 import { useApp, useLoad } from '../hooks.js'
 
 const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
@@ -109,9 +109,10 @@ export function MaterialsScreen() {
           </div>
           <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => setRemoving(material)}>{t('delete')}</button>
         </div>
+        {readingNotes(material, t).map(note => <p key={note} className="aha-hint aha-readingNote">{note}</p>)}
         {material.brief?.summary ? <p className="aha-hint">{material.brief.summary}</p> : null}
         {material.brief?.topics?.length ? <div className="aha-row" style={{ gap: 4 }}>{material.brief.topics.slice(0, 10).map(topic => <span key={topic} className="aha-tag">{topic}</span>)}</div> : null}
-        {material.kind !== 'image' ? <div className="aha-row" style={{ gap: 6 }}>
+        {material.kind !== 'image' || material.chars > 0 ? <div className="aha-row" style={{ gap: 6 }}>
           {[['course', 'makeCourse'], ['sheet', 'makeSheet'], ['cards', 'makeCards'], ['notes', 'makeNotes'], ['quiz', 'makeQuiz']].map(([kind, label]) => <button key={kind} type="button" className="aha-btn" data-size="sm" data-kind={kind === 'course' ? 'primary' : undefined} disabled={Boolean(busy)} onClick={() => make(kind, material)}>{busy === `${kind}:${material.id}` ? <span className="aha-spinner" /> : null}{t(label)}</button>)}
           <button type="button" className="aha-btn" data-size="sm" onClick={() => navigate('item', { kind: 'digest', materialId: material.id })}>{t('digest')}</button>
         </div> : <p className="aha-hint">{t('imageNeedsVision')}</p>}

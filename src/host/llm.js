@@ -94,23 +94,30 @@ export function createLlmPort({ getLlm, getDefault, getAttachments, prefs, logge
     }
   }
 
-  async function content(user, images, prepared) {
+  // Images are extras a call can do without, unless `required` (reading the
+  // text in a picture): then a model without vision, or an image DSH will
+  // not take, fails the call instead of leaving the model guessing.
+  async function content(user, images, prepared, required) {
     const blocks = [{ type: 'text', text: String(user ?? '') }]
-    if (!images?.length || prepared.inputModalities?.includes('image') !== true) return blocks
+    if (!images?.length) return blocks
     const attachments = getAttachments()
-    if (typeof attachments?.saveImage !== 'function') return blocks
+    if (prepared.inputModalities?.includes('image') !== true || typeof attachments?.saveImage !== 'function') {
+      if (required) throw new TutorError('llm-no-vision', 'The selected model cannot see images. Pick one that can in Aha settings.')
+      return blocks
+    }
     for (const [index, image] of images.slice(0, 4).entries()) {
       try {
         const ref = await attachments.saveImage({ data: Buffer.from(image.base64, 'base64'), mediaType: image.mime, name: `material-${index + 1}.${image.mime.split('/')[1] ?? 'png'}` })
         blocks.push({ type: 'image', attachment: ref })
       } catch (error) {
+        if (required) throw new TutorError('image-unusable', 'This picture could not be given to the model.')
         logger?.debug?.('aha-tutor could not attach an image: %s', error?.message)
       }
     }
     return blocks
   }
 
-  async function attempt({ purpose, effort, system, user, images, maxTokens, signal, onText, onReasoning }) {
+  async function attempt({ purpose, effort, system, user, images, requireImages = false, maxTokens, signal, onText, onReasoning }) {
     const llm = getLlm()
     if (!llm) throw new TutorError('llm-missing', 'DSH has no model service in this profile.')
     const target = route(purpose)
@@ -128,7 +135,7 @@ export function createLlmPort({ getLlm, getDefault, getAttachments, prefs, logge
     }
     let textValue = ''
     let finish = null
-    const messages = [{ role: 'user', content: await content(user, images, prepared) }]
+    const messages = [{ role: 'user', content: await content(user, images, prepared, requireImages) }]
     try {
       for await (const chunk of prepared.stream({ ...prepared.config, ...(system ? { system } : {}), messages, signal: fused })) {
         if (chunk.type === 'text-delta' && typeof chunk.text === 'string') {

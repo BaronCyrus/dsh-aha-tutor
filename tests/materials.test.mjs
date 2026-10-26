@@ -33,11 +33,13 @@ async function makePptx(slides) {
 
 test('pdf.js asset folders end in a slash on Windows and POSIX', () => {
   // pdf.js rejects a factory URL without a trailing "/", even on Windows.
+  // Node reads them with fs, which takes the mixed separators.
   assert.deepEqual(pdfjsAssetUrls('D:\\a\\node_modules\\pdfjs-dist', win32), {
     cMapUrl: 'D:\\a\\node_modules\\pdfjs-dist\\cmaps/',
     standardFontDataUrl: 'D:\\a\\node_modules\\pdfjs-dist\\standard_fonts/',
+    wasmUrl: 'D:\\a\\node_modules\\pdfjs-dist\\wasm/',
   })
-  assert.deepEqual(pdfjsAssetUrls('/opt/pdfjs-dist', posix), { cMapUrl: '/opt/pdfjs-dist/cmaps/', standardFontDataUrl: '/opt/pdfjs-dist/standard_fonts/' })
+  assert.deepEqual(pdfjsAssetUrls('/opt/pdfjs-dist', posix), { cMapUrl: '/opt/pdfjs-dist/cmaps/', standardFontDataUrl: '/opt/pdfjs-dist/standard_fonts/', wasmUrl: '/opt/pdfjs-dist/wasm/' })
 })
 
 test('PDF text keeps page numbers and CJK characters', async () => {

@@ -10,6 +10,7 @@ import { materialImages, passagesFor, readMaterials, readProfile } from './conte
 import { generateJson, generateSteps, generateText, TutorError } from './generate.js'
 import { ingestFile, ingestUrl, MAX_UPLOAD_BYTES } from './materials.js'
 import { assistPrompt, cheatsheetPrompt, detectLanguage, digestPartPrompt, digestPrompt, flashcardsPrompt, materialBriefPrompt, quizPrompt, shortPrompt, summaryPrompt } from './prompts.js'
+import { createRecognizer } from './recognize.js'
 import { cleanLayout } from './lessons.js'
 
 const ASSIST_MODES = ['explain', 'solve', 'visualize']
@@ -36,6 +37,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
       truncated: result.truncated === true,
       mime: result.mime ?? null,
       url: result.url ?? null,
+      ocr: result.ocr ?? null,
       createdAt: stamp(),
       brief: null,
       ...extra,
@@ -65,6 +67,10 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
     return meta
   }
 
+  // Text in pictures is read by the learner's model, with the pages read so
+  // far as the job's progress.
+  const recognizer = api => createRecognizer({ llm, signal: api.signal, onProgress: (done, total) => api.progress(done, total, 'recognizing') })
+
   // From the HTTP upload route (bytes) or the RPC fallback (base64).
   function upload({ name, base64, bytes: raw }) {
     const fileName = text(name, 200) || 'file'
@@ -73,7 +79,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
     return jobs.start('material/upload', async api => {
       api.progress(0, 2, 'reading')
       const bytes = raw ? Buffer.from(raw) : Buffer.from(base64, 'base64')
-      const result = await ingestFile({ name: fileName, bytes, signal: api.signal })
+      const result = await ingestFile({ name: fileName, bytes, signal: api.signal, recognize: recognizer(api) })
       api.progress(1, 2, 'summarizing')
       const meta = await saveMaterial(result, { bytes, signal: api.signal, extra: { fileName } })
       return { material: meta }
@@ -83,7 +89,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
   function addUrl({ url }) {
     return jobs.start('material/url', async api => {
       api.progress(0, 2, 'fetching')
-      const result = await ingestUrl(url, { signal: api.signal })
+      const result = await ingestUrl(url, { signal: api.signal, recognize: recognizer(api) })
       api.progress(1, 2, 'summarizing')
       return { material: await saveMaterial(result, { signal: api.signal }) }
     })
@@ -105,7 +111,8 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
   async function searchMaterials({ query }) {
     const wanted = text(query, 200)
     if (!wanted) return { results: [] }
-    const metas = (await listMaterials()).filter(meta => meta.kind !== 'image')
+    // A photo counts once the text in it was read.
+    const metas = (await listMaterials()).filter(meta => meta.kind !== 'image' || meta.chars > 0)
     const key = metas.map(meta => `${meta.id}:${meta.title}:${meta.chars ?? meta.pages ?? ''}`).join('|')
     if (libraryIndex?.key !== key) {
       const chunks = []

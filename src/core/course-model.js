@@ -244,9 +244,16 @@ export function blueprintOutline(raw) {
 
 // "short" and "work" (a written-out working) are graded by the model.
 const ITEM_KINDS = ['choice', 'multi', 'blank', 'number', 'short', 'work', 'order']
+// A question with several right options takes several answers, whatever
+// the model called it: a kind like "multi-select" or 多选, a choice whose key
+// lists two or more options, or a prompt that asks for several. Kept as a
+// single choice it would say 多选 and take one answer.
+const MULTI_KIND = /multi.?(?:select|answer|response)|select.?all|checkbox|多选|不定项/iu
+const MULTI_PROMPT = /多选|不定项|选出所有|所有正确|select all|all that apply|more than one (?:answer|option)/iu
 
 export function normalizeItem(raw, index = 0, conceptIds = []) {
-  const kind = ITEM_KINDS.includes(raw?.kind) ? raw.kind : raw?.options ? 'choice' : 'short'
+  const named = String(raw?.kind ?? raw?.type ?? '').trim().toLowerCase()
+  const kind = ITEM_KINDS.includes(named) ? named : raw?.options ? (MULTI_KIND.test(named) ? 'multi' : 'choice') : 'short'
   const prompt = text(raw?.prompt ?? raw?.question, 2000)
   if (!prompt) return null
   const item = {
@@ -277,14 +284,31 @@ export function normalizeItem(raw, index = 0, conceptIds = []) {
       if (typeof value === 'number') return ids[value] ?? null
       const raw = String(value ?? '').trim().toLowerCase()
       if (ids.includes(raw)) return raw
+      // "A." or "(A)" for option a
+      const letter = /^[(（[]?([a-z])[)）\].．、:：]?$/u.exec(raw)?.[1]
+      if (letter && ids.includes(letter)) return letter
       const byText = item.options.find(option => option.text.toLowerCase() === raw)
       return byText ? byText.id : null
     }
+    // The options an answer names, also as one string like "A, C" or "A、C"
+    // (unless that string is an option itself).
+    const keysOf = value => {
+      if (Array.isArray(value)) return [...new Set(value.map(toId).filter(Boolean))]
+      const whole = toId(value)
+      if (whole || typeof value !== 'string') return whole ? [whole] : []
+      return [...new Set(value.split(/[,，、;；/]/u).map(toId).filter(Boolean))]
+    }
     if (kind === 'choice') {
-      item.answer = toId(Array.isArray(raw?.answer) ? raw.answer[0] : raw?.answer)
-      if (!item.answer) return null
+      const keys = keysOf(raw?.answer)
+      if (!keys.length) return null
+      if (keys.length > 1 || MULTI_PROMPT.test(prompt)) {
+        item.kind = 'multi'
+        item.answer = keys
+      } else {
+        item.answer = keys[0]
+      }
     } else {
-      item.answer = (Array.isArray(raw?.answer) ? raw.answer : [raw?.answer]).map(toId).filter(Boolean)
+      item.answer = kind === 'multi' ? keysOf(raw?.answer) : (Array.isArray(raw?.answer) ? raw.answer : [raw?.answer]).map(toId).filter(Boolean)
       if (!item.answer.length) return null
     }
   } else if (kind === 'number') {

@@ -6,7 +6,29 @@
 // on some voices, and pause/resume is unreliable on Windows, so pausing
 // cancels the current sentence and resuming restarts it.
 
+import { estimateSpeechMs } from '../core/board-script.js'
+
 const SENTENCE = /[^。！？!?；;\n]+[。！？!?；;]*\s*|\n+/gu
+
+// Chromium drops an utterance spoken in the same task as a cancel() that
+// removed one not yet started: no event ever comes for it, speechSynthesis
+// keeps saying it is speaking, and every later utterance waits behind it
+// until the next cancel() (seen in DSH's Electron on macOS). So a sentence
+// spoken after a cancel waits for the next task, and the engine does not
+// wait forever for a sentence that never starts or never ends.
+const START_WAIT_MS = 4000
+// A sentence this far past its estimated length is taken as ended. Going on
+// only queues the next sentence; it never cuts a voice off.
+const END_SLACK = 2
+const END_EXTRA_MS = 4000
+
+// speechSynthesis is one queue for the whole page, so the task after the
+// last cancel is tracked here, not per engine.
+let settled = null
+function hush() {
+  window.speechSynthesis.cancel()
+  settled ??= new Promise(resolve => setTimeout(() => { settled = null; resolve() }, 0))
+}
 
 export function splitSentences(textValue) {
   const parts = []
@@ -75,20 +97,29 @@ function browserEngine() {
     if (!browserSpeechAvailable() || !pieces.length) return { done: Promise.resolve({ completed: true }) }
     let resolveDone
     const done = new Promise(resolve => { resolveDone = resolve })
-    const state = { sentences: pieces.map(piece => piece.text), owners: pieces.map(piece => piece.owner), total, index: 0, paused: false, cancelled: false, rate, language, voiceId, resolveDone, onSentence }
+    // retried: the sentence already spoken a second time after not starting.
+    const state = { sentences: pieces.map(piece => piece.text), owners: pieces.map(piece => piece.owner), total, index: 0, paused: false, cancelled: false, rate, language, voiceId, resolveDone, onSentence, utterance: null, timer: null, retried: -1 }
     session = state
     playFrom(state)
     return { done }
   }
 
+  function finish(state, result) {
+    clearTimeout(state.timer)
+    if (session === state) session = null
+    state.resolveDone(result)
+  }
+
   function playFrom(state) {
+    clearTimeout(state.timer)
     if (state.cancelled || state.paused) return
     if (state.index >= state.sentences.length) {
-      state.resolveDone({ completed: true })
-      if (session === state) session = null
+      finish(state, { completed: true })
       return
     }
-    const utterance = new window.SpeechSynthesisUtterance(state.sentences[state.index])
+    const current = state.index
+    const text = state.sentences[current]
+    const utterance = new window.SpeechSynthesisUtterance(text)
     const voice = pickVoice(state.language, state.voiceId)
     if (voice) {
       utterance.voice = voice
@@ -97,34 +128,60 @@ function browserEngine() {
       utterance.lang = state.language
     }
     utterance.rate = Math.min(2, Math.max(0.5, state.rate))
-    const current = state.index
-    utterance.onstart = () => state.onSentence?.(state.owners[current], state.total)
+    // Events of an utterance that was cancelled, paused or replaced are old news.
+    const live = () => state.utterance === utterance && !state.cancelled && !state.paused
     const next = () => {
-      if (state.cancelled || state.paused || state.index !== current) return
+      if (!live() || state.index !== current) return
       state.index += 1
       playFrom(state)
     }
+    utterance.onstart = () => {
+      if (!live()) return
+      clearTimeout(state.timer)
+      // An end event that never comes must not hold the lesson.
+      state.timer = setTimeout(next, estimateSpeechMs(text, state.rate) * END_SLACK + END_EXTRA_MS)
+      state.onSentence?.(state.owners[current], state.total)
+    }
     utterance.onend = next
-    // An engine error must not stall the lesson; skip to the next sentence.
     utterance.onerror = event => {
-      if (event?.error === 'interrupted' || event?.error === 'canceled') return
+      if (!live()) return
       if (event?.error === 'not-allowed' || event?.error === 'synthesis-unavailable') {
         // No permission or no engine: stop and let the board pace itself.
-        if (session === state) session = null
         state.cancelled = true
-        state.resolveDone({ completed: false, error: event.error })
+        finish(state, { completed: false, error: event.error })
         return
       }
+      // Any other error, an interruption from elsewhere on the page included,
+      // must not stall the lesson: skip to the next sentence.
       next()
     }
     state.utterance = utterance
-    window.speechSynthesis.speak(utterance)
+    const say = () => {
+      if (!live()) return
+      window.speechSynthesis.speak(utterance)
+      state.timer = setTimeout(() => {
+        if (!live()) return
+        hush()
+        // Not started: clear whatever holds the voice and try once more,
+        // then give up on the voice for this narration.
+        if (state.retried !== current) {
+          state.retried = current
+          playFrom(state)
+          return
+        }
+        state.cancelled = true
+        finish(state, { completed: false, error: 'The system voice did not start speaking', code: 'speech-stalled' })
+      }, START_WAIT_MS)
+    }
+    if (settled) settled.then(say)
+    else say()
   }
 
   function pause() {
     if (!session || session.paused) return
     session.paused = true
-    window.speechSynthesis.cancel()
+    clearTimeout(session.timer)
+    hush()
   }
 
   function resume() {
@@ -143,7 +200,8 @@ function browserEngine() {
     const state = session
     session = null
     state.cancelled = true
-    if (browserSpeechAvailable()) window.speechSynthesis.cancel()
+    clearTimeout(state.timer)
+    if (browserSpeechAvailable()) hush()
     state.resolveDone({ completed: false })
   }
 

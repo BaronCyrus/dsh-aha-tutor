@@ -72,11 +72,24 @@ export function Empty({ children }) {
 
 const ACCEPT = '.pdf,.docx,.pptx,.md,.markdown,.txt,.csv,.json,.tex,.py,.js,.ts,.html,.png,.jpg,.jpeg,.webp,.gif'
 
-// Upload files / add links; resolves to the new material metas.
+// Upload files / add links; resolves to the new material metas. progress is
+// the host job's ({ done, total, label }), and cancel() stops it while it runs:
+// reading the text in a long scan takes minutes.
 export function useMaterialUpload() {
   const { api } = useApp()
   const [busy, setBusy] = useState(null)
   const [error, setError] = useState(null)
+  const [progress, setProgress] = useState(null)
+  const [jobId, setJobId] = useState(null)
+  async function follow(value) {
+    setJobId(value?.job?.id ?? null)
+    try {
+      return await api.follow(value, { onProgress: setProgress })
+    } finally {
+      setJobId(null)
+      setProgress(null)
+    }
+  }
   // Raw bytes over the plugin's HTTP route; base64 over RPC on hosts without it.
   async function sendFile(file) {
     try {
@@ -89,13 +102,13 @@ export function useMaterialUpload() {
       if (response.status !== 404) {
         const body = await response.json()
         if (!body?.ok) throw new ApiError(body?.error?.code ?? 'failed', body?.error?.message ?? 'Upload failed')
-        return (await api.follow(body.value)).material
+        return (await follow(body.value)).material
       }
     } catch (error) {
       if (error?.message !== 'Failed to fetch') throw error
     }
     const base64 = await fileToBase64(file)
-    return (await api.run('material/upload', { name: file.name, base64 })).material
+    return (await follow(await api.call('material/upload', { name: file.name, base64 }))).material
   }
 
   async function upload(files) {
@@ -106,6 +119,8 @@ export function useMaterialUpload() {
       try {
         results.push(await sendFile(file))
       } catch (failure) {
+        // Cancelling stops the files still waiting as well.
+        if (failure?.code === 'cancelled') break
         setError(failure)
       }
     }
@@ -116,16 +131,24 @@ export function useMaterialUpload() {
     setBusy(url)
     setError(null)
     try {
-      const result = await api.run('material/url', { url })
+      const result = await follow(await api.call('material/url', { url }))
       return [result.material]
     } catch (failure) {
-      setError(failure)
+      if (failure?.code !== 'cancelled') setError(failure)
       return []
     } finally {
       setBusy(null)
     }
   }
-  return { upload, addUrl, busy, error }
+  return { upload, addUrl, busy, error, progress, cancel: jobId ? () => api.cancel(jobId) : null }
+}
+
+// What an upload is doing: reading the file, reading the text in its
+// pictures one by one, or summing the material up.
+function uploadLabel(t, name, progress) {
+  if (progress?.label === 'recognizing' && progress.total) return t('readingPictures', { done: progress.done, total: progress.total, name })
+  if (progress?.label === 'summarizing') return t('summarizingMaterial', { name })
+  return `${t('reading')} ${name}`
 }
 
 export function UploadZone({ onAdded, compact = false }) {
@@ -133,7 +156,7 @@ export function UploadZone({ onAdded, compact = false }) {
   const input = useRef(null)
   const [url, setUrl] = useState('')
   const [over, setOver] = useState(false)
-  const { upload, addUrl, busy, error } = useMaterialUpload()
+  const { upload, addUrl, busy, error, progress, cancel } = useMaterialUpload()
   const handle = async files => {
     const added = await upload([...files])
     if (added.length) onAdded?.(added)
@@ -159,7 +182,10 @@ export function UploadZone({ onAdded, compact = false }) {
       <input className="aha-input" style={{ flex: 1 }} value={url} placeholder={t('urlPlaceholder')} onChange={event => setUrl(event.currentTarget.value)} />
       <button type="submit" className="aha-btn" disabled={!url.trim() || Boolean(busy)}><Icon name="link" />{t('addUrl')}</button>
     </form>
-    {busy ? <Spinner label={`${t('reading')} ${busy}`} /> : null}
+    {busy ? <div className="aha-row" style={{ gap: 8 }}>
+      <Spinner label={uploadLabel(t, busy, progress)} />
+      {cancel ? <button type="button" className="aha-btn" data-size="sm" data-kind="ghost" onClick={cancel}>{t('cancel')}</button> : null}
+    </div> : null}
     <ErrorLine error={error} />
   </div>
 }
@@ -185,8 +211,28 @@ export function describeMaterial(item, t) {
   const parts = [item.kind.toUpperCase()]
   if (item.pages) parts.push(t('pages', { count: item.pages }))
   if (item.slides) parts.push(t('slides', { count: item.slides }))
-  if (item.kind === 'image') parts.push(t('imageNeedsVision'))
+  const read = item.ocr?.read ?? 0
+  if (read && item.kind === 'image') parts.push(item.chars ? t('readPhoto') : t('photoNoText'))
+  else if (read) parts.push(item.pages ? t('readScanPages', { count: read }) : t('readPictures', { count: read }))
+  else if (item.kind === 'image') parts.push(t('imageNeedsVision'))
+  if (readingNotes(item, t).length) parts.push(t('readPartly'))
   return parts.join(' · ')
+}
+
+// What could not be read from a material's pictures, and why.
+export function readingNotes(item, t) {
+  const ocr = item.ocr
+  if (!ocr) return []
+  const notes = []
+  const pages = Boolean(item.pages)
+  if (ocr.unread) notes.push(t(pages ? 'unreadPages' : 'unreadPictures', { count: ocr.unread }))
+  if (ocr.failed?.length) {
+    const list = [...new Set(ocr.failed.map(spot => spot.page ?? spot.slide ?? spot.picture))].join(t('listJoin'))
+    const what = t(item.kind === 'image' ? 'failedPhoto' : pages ? 'failedPages' : item.slides ? 'failedSlides' : 'failedPictures', { list })
+    notes.push(ocr.reason ? t('failedWhy', { what, reason: errorText(t, { code: ocr.reason }) }) : t('failedRetry', { what }))
+  }
+  if (ocr.left) notes.push(t(pages ? 'leftPages' : 'leftPictures', { count: ocr.left }))
+  return notes
 }
 
 // Web sources: untrusted links, so http(s) only and opened outside the app.

@@ -41,7 +41,8 @@ export async function readMaterials(store, materialIds = []) {
     try {
       const meta = await store.readJson(store.paths.material(id), null)
       if (!meta) continue
-      const chunks = meta.kind === 'image' ? [] : (await store.readJson(store.paths.materialChunks(id), [])) ?? []
+      // A photo has text only when it was read (see recognize.js).
+      const chunks = meta.kind === 'image' && !meta.chars ? [] : (await store.readJson(store.paths.materialChunks(id), [])) ?? []
       items.push({ meta, chunks })
     } catch {
       // a removed material is skipped

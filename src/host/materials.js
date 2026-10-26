@@ -1,11 +1,15 @@
 // Turn uploaded study material into text chunks that remember where they
 // came from (page, slide, section), so lessons and cheatsheets can cite them.
-// Supported: PDF, DOCX, PPTX, plain text / Markdown, web pages and images
-// (images are kept for vision-capable models; they produce no text here).
+// Supported: PDF, DOCX, PPTX, plain text / Markdown, web pages and images.
+// Text that is only in pictures (scanned pages, slides or documents made of
+// pictures, photos) is read by the learner's model when it can see images:
+// see `recognize` in ingestFile and recognize.js. Images are also kept for
+// vision-capable models.
 
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 
+import { pageImage } from './page-image.js'
 import { assertPublicHostname, createGuardedFetch } from './web-fetch.js'
 
 export const MAX_UPLOAD_BYTES = 60 * 1024 * 1024
@@ -14,6 +18,17 @@ const MAX_TEXT_CHARS = 2_000_000
 const CHUNK_CHARS = 1600
 const FETCH_TIMEOUT_MS = 20_000
 const MAX_PAGE_BYTES = 6 * 1024 * 1024
+// At most this many pages, slides or pictures of one file are read by the model.
+export const MAX_RECOGNIZED = 200
+// A page or slide with fewer characters of its own than this is read as a
+// picture: a scan, a photo, a full-page figure.
+const MIN_PAGE_TEXT = 30
+// A Word document with less text than this per picture is mostly pictures
+// (pasted scans, screenshots of questions), so its pictures are read too.
+const TEXT_PER_PICTURE = 150
+// Smaller pictures are bullets, icons and lines, not text.
+const MIN_PICTURE_BYTES = 2048
+const PICTURE_TYPES = Object.freeze({ png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' })
 
 // Web pages and linked PDFs are read through a fetch that only connects to
 // public addresses.
@@ -131,16 +146,79 @@ function finish(kind, title, chunks, extra = {}) {
   return { kind, title, chunks: kept, chars: total, truncated: kept.length < chunks.length, ...extra }
 }
 
+const visibleLength = value => String(value ?? '').replace(/\s+/gu, '').length
+
+// Read the text in pictures. sources: [{ where, image() }] in reading order,
+// where image() resolves to { mime, data } or null (nothing to read).
+// recognize(sources) answers [{ text } | { error }] in the same order, or
+// null when no model the learner chose can see images. Returns the texts and
+// a note for the material: { read, failed: [where], reason, left } once
+// pictures were read, { unread } when they could not be.
+async function readPictures(recognize, sources) {
+  if (!sources.length) return { texts: [], note: null, available: true, error: null }
+  const tried = sources.slice(0, MAX_RECOGNIZED)
+  const results = recognize ? await recognize(tried) : null
+  if (!results) return { texts: [], note: { unread: sources.length }, available: false, error: null }
+  const error = results.find(result => result?.error)?.error ?? null
+  const failed = tried.filter((source, index) => results[index]?.error).map(source => source.where)
+  return {
+    texts: tried.map((source, index) => results[index]?.text ?? ''),
+    note: { read: results.filter(result => result && !result.error).length, failed, reason: error?.code ?? null, left: sources.length - tried.length },
+    available: true,
+    error,
+  }
+}
+
+// Zip parts are named with "/" on every system, so these are not file paths.
+function resolvePart(base, target) {
+  const parts = target.startsWith('/') ? [] : base.split('/').filter(Boolean)
+  for (const piece of target.split('/')) {
+    if (piece === '..') parts.pop()
+    else if (piece && piece !== '.') parts.push(piece)
+  }
+  return parts.join('/')
+}
+
+// The pictures an Office part shows, in the order it shows them, each once.
+async function partPictures(zip, part) {
+  const slash = part.lastIndexOf('/')
+  const folder = part.slice(0, slash)
+  const xml = (await zip.file(part)?.async('string')) ?? ''
+  const rels = (await zip.file(`${folder}/_rels/${part.slice(slash + 1)}.rels`)?.async('string')) ?? ''
+  const targets = new Map()
+  for (const [, attributes] of rels.matchAll(/<Relationship\b([^>]*)>/gu)) {
+    const id = /\bId="([^"]+)"/u.exec(attributes)?.[1]
+    const target = /\bTarget="([^"]+)"/u.exec(attributes)?.[1]
+    if (!id || !target || !/\bType="[^"]*\/image"/u.test(attributes) || /\bTargetMode="External"/u.test(attributes)) continue
+    targets.set(id, resolvePart(folder, decodeXml(target)))
+  }
+  const seen = new Set()
+  const pictures = []
+  for (const [, id] of xml.matchAll(/\br:(?:embed|id)="([^"]+)"/gu)) {
+    const path = targets.get(id)
+    if (!path || seen.has(path)) continue
+    seen.add(path)
+    const mime = PICTURE_TYPES[path.split('.').pop().toLowerCase()]
+    const file = zip.file(path)
+    if (!mime || !file) continue
+    const data = await file.async('nodebuffer')
+    if (data.length >= MIN_PICTURE_BYTES && data.length <= MAX_IMAGE_BYTES) pictures.push({ mime, data })
+  }
+  return pictures
+}
+
 let pdfjsModule
 async function loadPdfjs() {
   pdfjsModule ??= import('pdfjs-dist/legacy/build/pdf.mjs')
   return pdfjsModule
 }
 
-// pdf.js insists both factory URLs end in "/" on every system and reads them
-// with fs, which on Windows accepts the mixed separators that gives.
+// pdf.js insists the asset URLs end in "/" on every system and reads them
+// with fs, which on Windows accepts the mixed separators that gives. Its
+// WebAssembly decoders read the CCITT and JBIG2 images black-and-white scans
+// are made of; without them those pages decode to nothing.
 export function pdfjsAssetUrls(root, { join: joinPath = join } = {}) {
-  return { cMapUrl: `${joinPath(root, 'cmaps')}/`, standardFontDataUrl: `${joinPath(root, 'standard_fonts')}/` }
+  return { cMapUrl: `${joinPath(root, 'cmaps')}/`, standardFontDataUrl: `${joinPath(root, 'standard_fonts')}/`, wasmUrl: `${joinPath(root, 'wasm')}/` }
 }
 
 function pdfjsAssets() {
@@ -148,14 +226,20 @@ function pdfjsAssets() {
   return pdfjsAssetUrls(dirname(require.resolve('pdfjs-dist/package.json')))
 }
 
-export async function extractPdf(bytes, { signal } = {}) {
+// Pages without text of their own (scans, photos, full-page figures) are
+// read as pictures with recognize (see readPictures).
+export async function extractPdf(bytes, { signal, recognize } = {}) {
   const pdfjs = await loadPdfjs()
-  const { cMapUrl, standardFontDataUrl } = pdfjsAssets()
+  const { cMapUrl, standardFontDataUrl, wasmUrl } = pdfjsAssets()
   const task = pdfjs.getDocument({
     data: new Uint8Array(bytes),
     cMapUrl,
     cMapPacked: true,
     standardFontDataUrl,
+    wasmUrl,
+    // A page picture over 100 megapixels (a 600 dpi A4 scan is 35) is left
+    // out rather than decoded into gigabytes.
+    maxImageSize: 100_000_000,
     isEvalSupported: false,
     disableFontFace: true,
     useSystemFonts: false,
@@ -169,7 +253,6 @@ export async function extractPdf(bytes, { signal } = {}) {
     throw new MaterialError('unreadable', 'This PDF could not be read')
   }
   try {
-    const chunks = []
     let title = ''
     try {
       const meta = await doc.getMetadata()
@@ -177,6 +260,7 @@ export async function extractPdf(bytes, { signal } = {}) {
     } catch {
       // metadata is optional
     }
+    const texts = []
     for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
       signal?.throwIfAborted()
       const page = await doc.getPage(pageNumber)
@@ -188,16 +272,40 @@ export async function extractPdf(bytes, { signal } = {}) {
         pageText += item.hasEOL ? '\n' : ''
       }
       page.cleanup()
-      chunks.push(...chunkText(pageText, { page: pageNumber }))
+      texts.push(pageText)
     }
-    if (!chunks.length) throw new MaterialError('no-text', 'No text found in this PDF (it may be a scan)')
-    return { title, pages: doc.numPages, chunks }
+    const pictured = texts.flatMap((pageText, index) => (visibleLength(pageText) < MIN_PAGE_TEXT ? [index + 1] : []))
+    const read = await readPictures(recognize, pictured.map(pageNumber => ({
+      where: { page: pageNumber },
+      image: async () => {
+        signal?.throwIfAborted()
+        const page = await doc.getPage(pageNumber)
+        try {
+          return await pageImage(pdfjs, page)
+        } finally {
+          page.cleanup()
+        }
+      },
+    })))
+    // A scan whose pages could not be read at all is reported, not kept
+    // with nothing in it but the odd page number.
+    if (pictured.length === doc.numPages && !read.note?.read) {
+      if (!read.available) throw new MaterialError('scan-needs-vision', 'This PDF is a scan; reading it needs a model that can see images')
+      throw read.error ?? new MaterialError('no-text', 'No text found in this PDF')
+    }
+    const recognized = new Map(pictured.slice(0, read.texts.length).map((pageNumber, index) => [pageNumber, read.texts[index]]))
+    const chunks = texts.flatMap((pageText, index) => chunkText([pageText, recognized.get(index + 1)].filter(Boolean).join('\n\n'), { page: index + 1 }))
+    if (!chunks.length) throw read.error ?? new MaterialError('no-text', 'No text found in this PDF')
+    return { title, pages: doc.numPages, chunks, ocr: read.note }
   } finally {
     await Promise.resolve(task.destroy?.()).catch(() => undefined)
   }
 }
 
-export async function extractDocx(bytes) {
+// A document that is mostly pictures (pasted scans, screenshots of
+// questions) also has its pictures read with recognize, after its own text;
+// the diagrams of a written document are left alone.
+export async function extractDocx(bytes, { recognize } = {}) {
   const mammoth = await import('mammoth')
   const extract = mammoth.extractRawText ?? mammoth.default?.extractRawText
   let result
@@ -206,7 +314,8 @@ export async function extractDocx(bytes) {
   } catch {
     throw new MaterialError('unreadable', 'This Word document could not be read')
   }
-  const sections = String(result?.value ?? '').split(/\n{2,}/u)
+  const own = String(result?.value ?? '')
+  const sections = own.split(/\n{2,}/u)
   const chunks = []
   let buffer = ''
   let section = 1
@@ -218,9 +327,27 @@ export async function extractDocx(bytes) {
     }
     buffer += `${paragraph}\n\n`
   }
-  if (buffer.trim()) chunks.push(...chunkText(buffer, { section: `§${section}` }))
+  if (buffer.trim()) {
+    chunks.push(...chunkText(buffer, { section: `§${section}` }))
+    section += 1
+  }
+  const JSZip = (await import('jszip')).default
+  const pictures = await partPictures(await JSZip.loadAsync(bytes), 'word/document.xml')
+  let note = null
+  if (pictures.length && visibleLength(own) < TEXT_PER_PICTURE * pictures.length) {
+    const read = await readPictures(recognize, pictures.map((picture, index) => ({ where: { picture: index + 1 }, image: async () => picture })))
+    // Hardly any text of its own and no picture read: reported, not kept
+    // with nothing in it.
+    if (!read.note?.read && visibleLength(own) < MIN_PAGE_TEXT) {
+      if (!read.available) throw new MaterialError('pictures-need-vision', 'This document is pictures; reading them needs a model that can see images')
+      throw read.error ?? new MaterialError('no-text', 'No text found in this document')
+    }
+    for (const [index, pictureText] of read.texts.entries()) chunks.push(...chunkText(pictureText, { section: `§${section + index}` }))
+    if (!chunks.length) throw read.error ?? new MaterialError('no-text', 'No text found in this document')
+    note = read.note
+  }
   if (!chunks.length) throw new MaterialError('no-text', 'No text found in this document')
-  return { chunks }
+  return { chunks, ocr: note }
 }
 
 const XML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
@@ -238,7 +365,9 @@ function slideText(xml) {
   }).filter(line => line.trim()).join('\n')
 }
 
-export async function extractPptx(bytes) {
+// A slide with hardly any text of its own has its pictures read with
+// recognize, after its text.
+export async function extractPptx(bytes, { recognize } = {}) {
   const JSZip = (await import('jszip')).default
   let zip
   try {
@@ -248,17 +377,33 @@ export async function extractPptx(bytes) {
   }
   const slideNumber = name => Number(/(\d+)\.xml$/u.exec(name)?.[1] ?? 0)
   const slides = Object.keys(zip.files).filter(name => /^ppt\/slides\/slide\d+\.xml$/u.test(name)).sort((a, b) => slideNumber(a) - slideNumber(b))
-  const chunks = []
+  const texts = []
+  const sources = []
+  let written = 0
   for (const name of slides) {
     const number = slideNumber(name)
     const body = slideText(await zip.file(name).async('string'))
     const notesFile = zip.file(`ppt/notesSlides/notesSlide${number}.xml`)
     const notes = notesFile ? slideText(await notesFile.async('string')) : ''
-    const combined = notes ? `${body}\n[notes] ${notes}` : body
-    chunks.push(...chunkText(combined, { slide: number }))
+    texts.push({ number, text: notes ? `${body}\n[notes] ${notes}` : body })
+    if (visibleLength(body) < MIN_PAGE_TEXT) for (const picture of await partPictures(zip, name)) sources.push({ where: { slide: number }, image: async () => picture })
+    else written += 1
   }
-  if (!chunks.length) throw new MaterialError('no-text', 'No text found in these slides')
-  return { slides: slides.length, chunks }
+  const read = await readPictures(recognize, sources)
+  // Slides that are all pictures, none of them read: reported, not kept
+  // with only their titles.
+  if (sources.length && !written && !read.note?.read) {
+    if (!read.available) throw new MaterialError('pictures-need-vision', 'These slides are pictures; reading them needs a model that can see images')
+    throw read.error ?? new MaterialError('no-text', 'No text found in these slides')
+  }
+  const pictured = new Map()
+  for (const [index, pictureText] of read.texts.entries()) {
+    const { slide } = sources[index].where
+    pictured.set(slide, [pictured.get(slide), pictureText].filter(Boolean).join('\n\n'))
+  }
+  const chunks = texts.flatMap(({ number, text }) => chunkText([text, pictured.get(number)].filter(Boolean).join('\n\n'), { slide: number }))
+  if (!chunks.length) throw read.error ?? new MaterialError('no-text', 'No text found in these slides')
+  return { slides: slides.length, chunks, ocr: read.note }
 }
 
 export function extractPlain(bytes, kind) {
@@ -278,23 +423,33 @@ export function extractPlain(bytes, kind) {
   return { title, chunks }
 }
 
-export async function ingestFile({ name, bytes, signal }) {
+// recognize(sources), when given, reads the text in pictures (see
+// readPictures). A material made from pictures carries `ocr`: what was
+// read, what failed and why, and what was left unread.
+export async function ingestFile({ name, bytes, signal, recognize }) {
   if (!bytes?.length) throw new MaterialError('empty', 'The file is empty')
   if (bytes.length > MAX_UPLOAD_BYTES) throw new MaterialError('too-large', 'The file is larger than 60 MB')
   const kind = detectKind(name, bytes)
   const baseTitle = String(name ?? '').replace(/\.[^.]+$/u, '').slice(0, 120) || 'Untitled'
   if (kind === 'image') {
     if (bytes.length > MAX_IMAGE_BYTES) throw new MaterialError('image-too-large', 'Images must be smaller than 10 MB')
-    return { kind, title: baseTitle, chunks: [], chars: 0, truncated: false, mime: imageMime(name, bytes) }
+    const mime = imageMime(name, bytes)
+    // A photo is kept even when its text could not be read: models that see
+    // images still get the picture.
+    const read = await readPictures(recognize, [{ where: { picture: 1 }, image: async () => ({ mime, data: Buffer.from(bytes) }) }])
+    return finish(kind, baseTitle, chunkText(read.texts[0] ?? '', {}), { mime, ...(read.available ? { ocr: read.note } : {}) })
   }
   if (kind === 'pdf') {
-    const result = await extractPdf(bytes, { signal })
-    return finish(kind, result.title || baseTitle, result.chunks, { pages: result.pages })
+    const result = await extractPdf(bytes, { signal, recognize })
+    return finish(kind, result.title || baseTitle, result.chunks, { pages: result.pages, ocr: result.ocr })
   }
-  if (kind === 'docx') return finish(kind, baseTitle, (await extractDocx(bytes)).chunks)
+  if (kind === 'docx') {
+    const result = await extractDocx(bytes, { recognize })
+    return finish(kind, baseTitle, result.chunks, { ocr: result.ocr })
+  }
   if (kind === 'pptx') {
-    const result = await extractPptx(bytes)
-    return finish(kind, baseTitle, result.chunks, { slides: result.slides })
+    const result = await extractPptx(bytes, { recognize })
+    return finish(kind, baseTitle, result.chunks, { slides: result.slides, ocr: result.ocr })
   }
   const result = extractPlain(bytes, kind)
   return finish(kind, result.title || baseTitle, result.chunks)
@@ -321,7 +476,7 @@ export function checkPublicUrl(value) {
   return url
 }
 
-export async function ingestUrl(address, { fetchImpl = pageFetch, signal } = {}) {
+export async function ingestUrl(address, { fetchImpl = pageFetch, signal, recognize } = {}) {
   let url = checkPublicUrl(address)
   let response
   // Follow up to five redirects by hand so every hop is checked.
@@ -350,7 +505,7 @@ export async function ingestUrl(address, { fetchImpl = pageFetch, signal } = {})
   const bytes = Buffer.from(await response.arrayBuffer())
   if (bytes.length > MAX_PAGE_BYTES && !type.includes('pdf')) throw new MaterialError('page-too-large', 'The page is too large')
   if (type.includes('application/pdf') || bytes.subarray(0, 5).toString('latin1') === '%PDF-') {
-    const result = await ingestFile({ name: `${url.pathname.split('/').pop() || 'page'}.pdf`, bytes, signal })
+    const result = await ingestFile({ name: `${url.pathname.split('/').pop() || 'page'}.pdf`, bytes, signal, recognize })
     return { ...result, kind: 'url', url: url.href }
   }
   if (type.startsWith('text/plain')) {

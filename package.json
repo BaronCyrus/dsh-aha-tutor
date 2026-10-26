@@ -1,6 +1,6 @@
 {
   "name": "dsh-aha-tutor",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "packageManager": "pnpm@10.32.1",
   "description": "开窍 Aha Tutor: a personal AI tutor for DeepSeek Harness that builds a course around you and teaches it on a narrated handwriting whiteboard",
   "type": "module",

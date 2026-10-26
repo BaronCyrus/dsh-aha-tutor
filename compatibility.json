@@ -1,10 +1,12 @@
 {
-  "latestTested": "0.2.1-rc.2",
+  "latestTested": "0.2.1-rc.3",
   "acceptedRuntimeRange": ">=0.2.1-rc.1 <0.3.0-0",
   "supported": [
-    "0.2.1-rc.2"
+    "0.2.1-rc.2",
+    "0.2.1-rc.3"
   ],
   "validation": {
-    "0.2.1-rc.2": "Development baseline. Offline suite against the published 0.2.1-rc.2 packages; desktop verification is recorded in CHANGELOG.md."
+    "0.2.1-rc.2": "Development baseline. Offline suite against the published 0.2.1-rc.2 packages; desktop verification is recorded in CHANGELOG.md.",
+    "0.2.1-rc.3": "Desktop runtime since 2026-10-23. Verified 2026-10-26 in a scratch web profile with the bundled 0.2.1-rc.3 CLI: the tutor preset loads (rc.3 requires tool-fs-search sampleOverCapGlobResults), and classroom corrections, scanned materials and quizzes work with DeepSeek-V4.1-Flash."
   }
 }

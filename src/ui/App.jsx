@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { CrashNotice, ErrorBoundary } from './boundary.js'
 import { forgetRoute, ROUTE_EVENT, useAppValue, useRoute } from './context.js'
-import { AppContext } from './hooks.js'
+import { AppContext, usePersistentState } from './hooks.js'
 import { Icon } from './icons.jsx'
+import { CLASS_SCREENS, foldNav, NAV_NARROW, navState, tipPlace } from './nav.js'
 import { AboutScreen } from './screens/About.jsx'
 import { AssistScreen } from './screens/Assist.jsx'
 import { CourseScreen } from './screens/Course.jsx'
@@ -98,7 +99,8 @@ function Page({ rpc, t, language, dsh }) {
     return () => window.removeEventListener(ROUTE_EVENT, onRoute)
   }, [navigate])
 
-  const { value, toastText } = useAppValue({ rpc, t, language, dsh, navigate, back })
+  const { value, toastText, textSize } = useAppValue({ rpc, t, language, dsh, navigate, back })
+  const nav = useNav(CLASS_SCREENS.includes(route.screen))
   const Screen = SCREENS[route.screen] ?? HomeScreen
   const activeRoot = ROOT_OF[route.screen] ?? route.screen
   // Opening a screen starts a new history. Opening the one on show again
@@ -106,13 +108,18 @@ function Page({ rpc, t, language, dsh }) {
   const open = screen => { history.current = []; setRoute({ screen, params: {} }) }
 
   return <AppContext.Provider value={value}>
-    <div className="aha">
-      <nav className="aha-nav">
+    <div className="aha" ref={nav.root} data-nav={nav.state} data-text={textSize}>
+      <nav className="aha-nav" aria-label={t('appName')} onScroll={nav.hideTip}>
         <div className="aha-brand"><Icon name="logo" size={24} /><span>{t('appName')}<small>{t('appTagline')}</small></span></div>
-        {NAV.map(([screen, label, icon]) => <button key={screen} type="button" className="aha-navItem" data-active={activeRoot === screen} onClick={() => open(screen)} title={t(label)}>
+        {NAV.map(([screen, label, icon]) => <button key={screen} type="button" className="aha-navItem" data-active={activeRoot === screen} onClick={() => { nav.close(); open(screen) }} aria-label={t(label)} {...nav.tipFor(t(label))}>
           <Icon name={icon} size={17} /><span>{t(label)}</span>
         </button>)}
+        <button type="button" className="aha-navItem aha-navFold" aria-expanded={nav.state !== 'folded'} aria-label={nav.state === 'folded' ? t('navUnfold') : t('navFold')} onClick={nav.fold} {...nav.tipFor(t('navUnfold'))}>
+          <Icon name={nav.state === 'folded' ? 'unfold' : 'fold'} size={17} /><span>{t('navFold')}</span>
+        </button>
       </nav>
+      {nav.state === 'peek' ? <div className="aha-navShade" onClick={nav.close} /> : null}
+      {nav.tip ? <div className="aha-navTip" role="tooltip" style={{ top: nav.tip.top, left: nav.tip.left }}>{nav.tip.label}</div> : null}
       <main className="aha-main">
         <ErrorBoundary resetKey={route} onError={crashed} fallback={({ error }) => <CrashNotice t={t} error={error} onRetry={() => setRoute(current => ({ ...current }))} onHome={() => open('home')} />}>
           <Screen key={`${route.screen}:${JSON.stringify(route.params)}`} {...route.params} />
@@ -121,4 +128,61 @@ function Page({ rpc, t, language, dsh }) {
       {toastText ? <div className="aha-toast" role="status">{toastText}</div> : null}
     </div>
   </AppContext.Provider>
+}
+
+// The navigation's state (nav.js), with the bubble that names a folded icon.
+// root goes on the page, whose width decides whether the page is narrow;
+// inClass: a classroom screen is on show.
+function useNav(inClass) {
+  const [choice, setChoice] = usePersistentState('nav', 'open')
+  const [narrow, setNarrow] = useState(false)
+  const [peek, setPeek] = useState(false)
+  const [tip, setTip] = useState(null)
+  const root = useRef(null)
+  // Measured before the first paint, so a narrow page never shows the names
+  // for a moment.
+  useLayoutEffect(() => {
+    const element = root.current
+    if (!element) return undefined
+    const measure = () => setNarrow(element.getBoundingClientRect().width < NAV_NARROW)
+    measure()
+    if (typeof ResizeObserver !== 'function') return undefined
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+  useEffect(() => setPeek(false), [narrow, inClass])
+  const state = navState({ choice, narrow, inClass, peek })
+  // A bubble belongs to the state it was shown in; Esc closes the navigation
+  // opened over the page.
+  useEffect(() => {
+    setTip(null)
+    if (state !== 'peek') return undefined
+    const onKey = event => { if (event.key === 'Escape') setPeek(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [state])
+  const showTip = (element, label) => {
+    if (state === 'folded' && root.current) setTip({ label, ...tipPlace(element.getBoundingClientRect(), root.current.getBoundingClientRect()) })
+  }
+  const hideTip = () => setTip(null)
+  return {
+    root,
+    state,
+    tip,
+    hideTip,
+    fold() {
+      const next = foldNav({ choice, narrow, inClass, peek })
+      setChoice(next.choice)
+      setPeek(next.peek)
+    },
+    close: () => setPeek(false),
+    // A mouse shows the name on hover; the keyboard, on focus.
+    tipFor: label => ({
+      onMouseEnter: event => showTip(event.currentTarget, label),
+      onMouseLeave: hideTip,
+      onFocus: event => { if (event.currentTarget.matches(':focus-visible')) showTip(event.currentTarget, label) },
+      onBlur: hideTip,
+    }),
+  }
 }

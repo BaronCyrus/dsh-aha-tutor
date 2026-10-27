@@ -7,6 +7,7 @@ import { browserSpeechAvailable, listVoices, onVoicesChanged, pickVoice } from '
 import { BOARD_FONT } from '../styles.js'
 
 const PROVIDERS = [['openai', 'providerOpenai'], ['volcengine', 'providerVolcengine'], ['minimax', 'providerMinimax'], ['azure', 'providerAzure']]
+const TEXT_SIZES = [['standard', 'textStandard'], ['large', 'textLarge'], ['larger', 'textLarger']]
 
 export function SettingsScreen() {
   const { api, t, settings, settingsSaved, setVoiceId, speech, language } = useApp()
@@ -72,6 +73,13 @@ export function SettingsScreen() {
   if (!settings.voiceEngine) return <div className="aha-page"><Spinner label={t('loading')} /></div>
   return <div className="aha-page" style={{ maxWidth: 820 }}>
     <h2 className="aha-title">{t('settingsTitle')}</h2>
+
+    <section className="aha-card">
+      <b>{t('textSize')}</b>
+      <div className="aha-row" style={{ gap: 6 }}>{TEXT_SIZES.map(([value, label]) => <button key={value} type="button" className="aha-chip" data-active={(settings.textSize ?? 'standard') === value} onClick={() => save('text', { textSize: value })}>{t(label)}</button>)}</div>
+      <p className="aha-hint">{t('textSizeHint')}</p>
+      <ErrorLine error={errorIn('text')} reveal />
+    </section>
 
     <section className="aha-card">
       <b>{t('modelsTitle')}</b>

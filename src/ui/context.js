@@ -21,6 +21,9 @@ export function useAppValue({ rpc, t, language, dsh, navigate = () => undefined,
   useEffect(() => () => speech.dispose(), [speech])
   const [hostSettings, setHostSettings] = useState({})
   const [voiceId, keepVoiceId] = usePersistentState('voice', '')
+  // The text size (Settings) is remembered in this browser too, so a page
+  // opens at that size before the settings arrive.
+  const [textSize, keepTextSize] = usePersistentState('text-size', 'standard')
   const channel = useRef(null)
   const [toastText, setToastText] = useState(null)
   const toastTimer = useRef(null)
@@ -34,7 +37,8 @@ export function useAppValue({ rpc, t, language, dsh, navigate = () => undefined,
   const reloadSettings = useCallback(() => api.call('settings/get').then(value => {
     speech.configure({ cloudVoice: cloudVoiceOf(value) })
     setHostSettings(value)
-  }).catch(() => undefined), [api, speech])
+    if (typeof value?.textSize === 'string') keepTextSize(value.textSize)
+  }).catch(() => undefined), [api, speech, keepTextSize])
   // A channel never hears its own messages, so each view hears the others.
   useEffect(() => {
     if (typeof BroadcastChannel !== 'function') return undefined
@@ -64,7 +68,7 @@ export function useAppValue({ rpc, t, language, dsh, navigate = () => undefined,
   }, [reloadSettings, language])
   const settings = useMemo(() => ({ ...hostSettings, voiceId }), [hostSettings, voiceId])
   const value = useMemo(() => ({ api, t, language, speech, settings, setVoiceId, settingsSaved, navigate, back, toast, dsh }), [api, t, language, speech, settings, setVoiceId, settingsSaved, navigate, back, toast, dsh])
-  return { value, toastText }
+  return { value, toastText, textSize }
 }
 
 // Cloud audio comes from the host's HTTP route; older hosts without fetch

@@ -192,3 +192,12 @@ test('a card without checks offers none, and a question fixed earlier shows its 
   assert.equal(other.root.findAllByType('form').length, 0)
   assert.equal(buttons(other, zh.itemChallenge).length, 1)
 })
+
+test('a question\'s prompt is set in the prompt type; its options take the text around them', () => {
+  const { renderer } = renderCard({ item: PRIME, language: 'zh-CN' })
+  const markdown = renderer.root.findAll(node => node.type === 'div' && /\baha-markdown\b/u.test(node.props.className ?? ''))
+  assert.deepEqual(markdown.map(node => [node.props.className, textOf(node)]), [
+    ['aha-markdown aha-itemPrompt', PRIME.prompt],
+    ...PRIME.options.map(option => ['aha-markdown', option.text]),
+  ])
+})

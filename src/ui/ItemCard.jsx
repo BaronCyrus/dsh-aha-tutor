@@ -151,7 +151,7 @@ export function ItemCard({ item: asked, language, onResult, onContinue, continue
 
   return <div className="aha-col" style={{ gap: compact ? 8 : 12 }}>
     {item.fixed ? <div><span className="aha-itemFixed" tabIndex={0} title={fixedTitle} aria-label={`${t('fixed')}. ${fixedTitle}`}>✎ {t('fixed')}</span></div> : null}
-    <RichText text={item.prompt} compact />
+    <RichText text={item.prompt} compact className="aha-itemPrompt" />
     {item.svg ? <ItemFigure svg={item.svg} /> : item.plot ? <ItemFigure plot={item.plot} /> : null}
     {/* Options look the same either way, so a multi-select question says so. */}
     {item.kind === 'multi' ? <span className="aha-hint">{t('pickSeveral')}</span> : null}

@@ -12,9 +12,9 @@ import { errorText, Spinner } from './components.jsx'
 export function BoardTab({ useTabInfo, rpc, t, language, dsh }) {
   const { tab } = useTabInfo()
   const params = tab?.navigation?.params ?? null
-  const { value } = useAppValue({ rpc, t, language, dsh })
+  const { value, textSize } = useAppValue({ rpc, t, language, dsh })
   return <AppContext.Provider value={value}>
-    <div className="aha aha-tab" style={{ height: '100%', overflow: 'auto', padding: '10px 12px' }}>
+    <div className="aha aha-boardTab" data-text={textSize} style={{ height: '100%', overflow: 'auto', padding: '10px 12px' }}>
       {params?.threadId ? <ErrorBoundary key={`${params.threadId}:${tab.navigation.revision ?? 0}`} fallback={({ error, retry }) => <CrashNotice t={t} error={error} place="tab" onRetry={retry} />}>
         <ThreadBoard threadId={params.threadId} jobId={params.jobId} />
       </ErrorBoundary> : <p className="aha-hint">{t('openBoard')}</p>}
@@ -64,7 +64,7 @@ function metaOf(block) {
 export function ToolCard(props) {
   const value = useCardValue(props)
   return <AppContext.Provider value={value}>
-    <div className="aha aha-card" style={{ height: 'auto', display: 'flex', flexDirection: 'column', gap: 8, margin: '6px 0', padding: '10px 12px' }}>
+    <div className="aha aha-card" data-text="dsh" style={{ height: 'auto', display: 'flex', flexDirection: 'column', gap: 8, margin: '6px 0', padding: '10px 12px' }}>
       <ErrorBoundary fallback={({ error, retry }) => <CrashNotice t={props.t} error={error} place="card" onRetry={retry} />}>
         <ToolBody {...props} />
       </ErrorBoundary>

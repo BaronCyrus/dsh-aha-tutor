@@ -2,6 +2,24 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## Unreleased
+
+### Added
+
+- **Text size**: **Settings → Text size** offers Standard, Large and Extra large, and all of the plugin's text grows at once, in the board tab beside a conversation too. DSH's own font size (Settings → General → Font size) scales it as well. The board and the mind map keep their own zoom, and exports and printouts their own sizes; cards in a conversation keep DSH's text size.
+- **Fold the navigation yourself**: **Collapse** at the foot of the navigation folds it to icons, and **»** opens it again; the choice is kept in the browser. A folded icon names itself beside it on hover or keyboard focus. The names no longer disappear by themselves in a medium window. In a lesson, instant answers and explainer shorts the navigation keeps to its icons to leave the board room, and other pages show it as you left it; so does a page narrower than 640px. There, **»** opens it over the page until a page is picked, the shade is clicked or Escape is pressed.
+
+### Changed
+
+- **Larger text by default**: body text is 15px (14px before) and hints 13.5px (12.5px). A question's prompt is 16px and its options 15px in the text colour; both were DSH's 13px caption grey. Flashcards are 22px.
+
+### Fixed
+
+- **Flashcards**: their text was meant to be 18px but showed at 14px, and a long answer spilled out of the card; the card now grows with its longer side.
+- **The board beside a conversation** wore the course page's tab style: all its text was grey and the transcript never wrapped.
+- **Cheat sheets**: their entries ignored the sheet's font size and printed in grey.
+- **Narrow pages**: course cards no longer push the page sideways on a phone-width window.
+
 ## 1.8.0 - 2026-10-26
 
 ### Added

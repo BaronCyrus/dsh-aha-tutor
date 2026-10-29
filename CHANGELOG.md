@@ -2,6 +2,18 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## 1.11.0 - 2026-10-29
+
+### Changed
+
+- **Library flashcards and quizzes cover the whole material**: they were written from about 18,000 or 16,000 characters picked from the materials, always 24 cards or 10 questions. A long material is now read in parts of about 20,000 characters, three at a time, each part writing its own cards or questions: two to four cards per key point, at most 300 a deck, each question kept once; a quiz of 5 to 30 questions by length (a short handout 5–10), shared out over the parts. Cards are written without thinking, quizzes with it. **Study tools** and **Library** show how many parts are read and how many cards or questions are written, with Cancel. A part that could not be read is named on the deck or quiz; a model that refuses (sign-in, quota) stops the whole job at once. A large deck is studied in rounds of at most 40 cards, and the page shows the total.
+- **The focus counts for flashcards, quizzes and notes**: the **Focus** box of Study tools only reached cheat sheets. Every part of a deck or quiz now covers only what falls within it, and parts outside it are skipped; notes are written from the passages on it. What is made with a focus is named after it, and a focus nothing matches says so.
+
+### Fixed
+
+- **Unit flashcards and quizzes keep their last lessons**: a unit deck or quiz the model wrote longer than it may be was cut at its end, dropping the cards or questions of the unit's last lessons; it is now thinned out evenly.
+- **Library at phone width**: a long topic under a material pushed the page sideways; topics are clipped, with the whole topic on hover.
+
 ## 1.10.0 - 2026-10-29
 
 ### Added

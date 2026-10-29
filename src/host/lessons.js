@@ -6,7 +6,7 @@
 
 import { applyFixes, boardForCheck, describeFixes, normalizeVerdict, sanitizeStep, stepJson } from '../core/board-fix.js'
 import { boardToPlainText } from '../core/board-script.js'
-import { conceptIndex, findLesson, insertLesson, lessonAfter, LIMITS, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text, unitCardRange, unitConcepts, unitQuizRange } from '../core/course-model.js'
+import { conceptIndex, findLesson, insertLesson, lessonAfter, LIMITS, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text, thinEvenly, unitCardRange, unitConcepts, unitQuizRange } from '../core/course-model.js'
 import { answersTo, correctEvidence, itemKey, logEvidence, stateBefore, takeEvidence } from '../core/evidence-log.js'
 import { OBJECTIVE_KINDS } from '../core/grading.js'
 import { assertId, newId } from '../core/ids.js'
@@ -14,7 +14,7 @@ import { cleanResponse, earlierGrade, fixItem, itemForCheck, normalizeItemVerdic
 import { createConceptState, masteryPercent, recommendNext } from '../core/mastery.js'
 import { createCard, isDue, review } from '../core/srs.js'
 import { masteryFor, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
-import { generateJson, generateSteps, TutorError } from './generate.js'
+import { fieldCounter, generateJson, generateSteps, TutorError } from './generate.js'
 import { askPrompt, challengePrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, flashcardsPrompt, gradePrompt, handoutPrompt, lessonPrompt, quizPrompt, reexplainPrompt, verifyItemPrompt, verifyStepPrompt } from './prompts.js'
 
 const EVENTS_KEPT = 200
@@ -761,7 +761,8 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
         signal: api.signal,
         onText: countWritten(api, '"prompt"', range.max),
         normalize: raw => {
-          const set = normalizePractice(raw, concepts.map(concept => concept.id), LIMITS.quizItems)
+          // Too many questions are thinned out evenly: the last lessons keep theirs.
+          const set = { items: thinEvenly(normalizePractice(raw, concepts.map(concept => concept.id), LIMITS.quizItems * 2).items, range.max).map((item, index) => ({ ...item, id: `i${index + 1}` })) }
           if (set.items.length < Math.max(3, Math.ceil(range.min / 2))) throw new Error(`The quiz is too short: write at least ${range.min} questions.`)
           return set
         },
@@ -792,7 +793,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
         signal: api.signal,
         onText: countWritten(api, '"front"', range.max),
         normalize: raw => {
-          const value = normalizeCards(raw)
+          const value = thinEvenly(normalizeCards(raw, LIMITS.cards * 2), range.max).map((card, index) => ({ ...card, id: `c${index + 1}` }))
           if (value.length < Math.max(4, Math.ceil(range.min / 2))) throw new Error(`Too few cards: write at least ${range.min}.`)
           return value
         },
@@ -848,21 +849,10 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
   return Object.freeze({ get, prepare, ask, reexplain, challenge, challengeItem, handout, record, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, unitCards, cardSession, reviewCard })
 }
 
-// The job's progress while a JSON answer streams in: how many times `field`
-// (each question's "prompt", each card's "front") has been written so far.
+// The job's progress while a JSON answer streams in: how many questions or
+// cards have been written so far.
 function countWritten(api, field, total) {
-  let tail = ''
-  let count = 0
-  return delta => {
-    const window = tail + delta
-    let found = 0
-    for (let at = window.indexOf(field); at >= 0; at = window.indexOf(field, at + field.length)) found += 1
-    // Shorter than the field, so a match is never counted twice.
-    tail = window.slice(-(field.length - 1))
-    if (!found) return
-    count += found
-    api.progress(Math.min(count, total), total, 'writing')
-  }
+  return fieldCounter(field, count => api.progress(Math.min(count, total), total, 'writing'))
 }
 
 function pushEvent(progress, event) {

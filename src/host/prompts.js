@@ -487,10 +487,20 @@ Return {"title":"…","sections":[{"title":"…","related":["<other section titl
 }
 
 // How many: a fixed count, or a range ({ min, max }) inside which the model
-// decides by how much the scope holds.
-export function flashcardsPrompt({ scopeTitle, outline, concepts, passages, language, count = 24, range }) {
+// decides by how much the scope holds. A long material is read in parts
+// (part: { n, of, range }), each written on its own; a focus limits what is
+// covered.
+function partBlock(part) {
+  return part ? block('part', `Part ${part.n} of ${part.of}${part.range ? ` (${part.range})` : ''}. The other parts are covered separately: write only about the passages of this part.`) : ''
+}
+
+function focusRule(focus, empty) {
+  return focus ? ` Cover only what falls within the learner's focus: write fewer when little of the passages does, and return ${empty} when none does.` : ''
+}
+
+export function flashcardsPrompt({ scopeTitle, outline, concepts, passages, language, count = 24, range, part, focus }) {
   const size = range
-    ? `Write as many flashcards as this scope needs, at least ${range.min} and at most ${range.max}: every concept listed gets two to four cards on its definitions, rules, formulas, key facts and typical mistakes; central or tricky ideas get more cards, minor ones fewer. No two cards ask the same thing in other words.`
+    ? `Write as many flashcards as ${part ? 'this part' : 'this scope'} needs, at least ${range.min} and at most ${range.max}: ${concepts ? 'every concept listed' : 'every key point of the passages'} gets two to four cards on its definitions, rules, formulas, key facts and typical mistakes; central or tricky ideas get more cards, minor ones fewer. No two cards ask the same thing in other words.`
     : `Write ${count} flashcards covering the most important ideas, definitions and formulas.`
   return {
     system: join(PERSONA, `You write flashcards that test one fact or idea each, phrased as questions that force recall. ${languageRule(language)}`, JSON_ONLY),
@@ -498,40 +508,47 @@ export function flashcardsPrompt({ scopeTitle, outline, concepts, passages, lang
       block('scope', scopeTitle),
       block('outline', outline),
       block('concepts', concepts),
+      partBlock(part),
       block('source_passages', passages),
-      `${size} Fronts are short questions or prompts; backs are precise answers (LaTeX allowed as $…$), at most three sentences. Avoid yes/no fronts.${passages ? ' Follow the source passages: their terms, notation and examples.' : ''}
+      block('focus', focus),
+      `${size} Fronts are short questions or prompts; backs are precise answers (LaTeX allowed as $…$), at most three sentences. Avoid yes/no fronts.${passages ? ' Follow the source passages: their terms, notation and examples.' : ''}${focusRule(focus, '{"cards":[]}')}
 
 Return {"cards":[{"front":"…","back":"…","tag":"<topic>"}]}`,
     ),
   }
 }
 
-export function quizPrompt({ scopeTitle, outline, concepts, passages, language, count = 10, range }) {
-  const size = range
-    ? `Write a quiz across the whole scope with as many questions as it needs, at least ${range.min} and at most ${range.max}: at least one question for every concept listed, more for central or harder ones, and never two questions that test the same thing the same way.`
-    : `Write a ${count}-question quiz across the whole scope.`
+export function quizPrompt({ scopeTitle, outline, concepts, passages, language, count = 10, range, part, focus }) {
+  const size = !range
+    ? `Write a ${count}-question quiz across the whole scope.`
+    : part
+      ? `Write questions on this part of the scope, at least ${range.min} and at most ${range.max}, on its most important points, and never two questions that test the same thing the same way.`
+      : `Write a quiz across the whole scope with as many questions as it needs, at least ${range.min} and at most ${range.max}: ${concepts ? 'at least one question for every concept listed' : 'at least one question for every key point of the passages'}, more for central or harder ones, and never two questions that test the same thing the same way.`
   return {
     system: join(PERSONA, `You write fair, well-balanced quizzes. ${languageRule(language)}`, JSON_ONLY),
     user: join(
       block('scope', scopeTitle),
       block('outline', outline),
       block('concepts', concepts),
+      partBlock(part),
       block('source_passages', passages),
-      `${size} About 30% recall, 50% application, 20% harder transfer questions. Mix choice, multi, blank, number and short items, each with explanation, difficulty and conceptIds (use the ids given).${passages ? ' Where the source passages show how this material poses problems (its exercises, notation, units), write in that style.' : ''} ${ITEM_SHAPE} ${ITEM_FIGURE}
+      block('focus', focus),
+      `${size} About 30% recall, 50% application, 20% harder transfer questions. Mix choice, multi, blank, number and short items, each with explanation, difficulty and conceptIds (use the ids given).${passages ? ' Where the source passages show how this material poses problems (its exercises, notation, units), write in that style.' : ''}${focusRule(focus, '{"items":[]}')} ${ITEM_SHAPE} ${ITEM_FIGURE}
 
 Return {"items":[…]}`,
     ),
   }
 }
 
-export function summaryPrompt({ scopeTitle, passages, outline, language }) {
+export function summaryPrompt({ scopeTitle, passages, outline, language, focus }) {
   return {
     system: join(PERSONA, `You write study notes that are clear, structured and faithful to the source. ${languageRule(language)}`),
     user: join(
       block('scope', scopeTitle),
       block('outline', outline),
       block('source_passages', passages),
-      'Write structured study notes in Markdown: a 3–5 sentence overview, then sections with headings, key points, formulas ($…$ / $$…$$), and short examples, then a "Check yourself" list of 5 questions. Cite pages as (p. N) where the source says so.',
+      block('focus', focus),
+      `Write structured study notes in Markdown: a 3–5 sentence overview, then sections with headings, key points, formulas ($…$ / $$…$$), and short examples, then a "Check yourself" list of 5 questions. Cite pages as (p. N) where the source says so.${focus ? ' Cover only what falls within the learner\'s focus.' : ''}`,
     ),
   }
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
-import { Empty, ErrorLine, MaterialPicker, Spinner } from '../components.jsx'
-import { useApp, useLoad } from '../hooks.js'
+import { Empty, ErrorLine, MaterialPicker, Spinner, StudyJobLine } from '../components.jsx'
+import { useApp, useJob, useLoad } from '../hooks.js'
 
 const TOOLS = [['sheet', 'makeSheet', 'studio/sheet'], ['cards', 'makeCards', 'studio/cards'], ['notes', 'makeNotes', 'studio/notes'], ['quiz', 'makeQuiz', 'studio/quiz']]
 
@@ -14,6 +14,7 @@ export function StudioScreen() {
   const [focus, setFocus] = useState('')
   const [busy, setBusy] = useState(null)
   const [error, setError] = useState(null)
+  const job = useJob()
 
   async function make(kind, endpoint) {
     if (!materialIds.length) {
@@ -23,10 +24,10 @@ export function StudioScreen() {
     setBusy(kind)
     setError(null)
     try {
-      const result = await api.run(endpoint, { materialIds, focus })
+      const result = await job.run(endpoint, { materialIds, focus })
       openItem(result.item)
     } catch (failure) {
-      setError(failure)
+      if (failure?.code !== 'cancelled') setError(failure)
     } finally {
       setBusy(null)
     }
@@ -64,7 +65,7 @@ export function StudioScreen() {
         <input className="aha-input" style={{ flex: 1, minWidth: 220 }} value={focus} placeholder={t('focusPlaceholder')} onChange={event => setFocus(event.currentTarget.value)} />
       </div>
       <div className="aha-row">{TOOLS.map(([kind, label, endpoint]) => <button key={kind} type="button" className="aha-btn" data-kind="primary" disabled={Boolean(busy)} onClick={() => make(kind, endpoint)}>{busy === kind ? <span className="aha-spinner" /> : null}{t(label)}</button>)}</div>
-      {busy ? <Spinner label={t('generating')} /> : null}
+      {busy ? <StudyJobLine kind={busy} job={job} /> : null}
       <ErrorLine error={error} />
     </section>
     {section(`${t('sheets')} · ${t('notes')}`, sheets, 'sheets')}

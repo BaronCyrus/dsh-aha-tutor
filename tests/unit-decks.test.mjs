@@ -91,6 +91,8 @@ const blueprint = {
 function unitLlm() {
   const calls = []
   let gate = null
+  // Entries written beyond the least asked for.
+  const extra = { count: 0 }
   const answer = ({ user }) => {
     if (user.includes('multiple-choice questions whose answers')) return JSON.stringify({ questions: [{ prompt: '基础？', options: ['零基础', '学过'] }] })
     if (user.includes('Design the course blueprint')) return JSON.stringify(blueprint)
@@ -98,7 +100,7 @@ function unitLlm() {
       const lessons = [...user.matchAll(/\[(les_[a-z0-9]+)\]/gu)].map(match => match[1])
       return JSON.stringify({ lessons: Object.fromEntries(lessons.map(id => [id, { items: [{ kind: 'number', prompt: '$0.5 \\times 4$ = ?', answer: 2 }] }])) })
     }
-    const wanted = Number(/at least (\d+) and at most/u.exec(user)?.[1] ?? 0)
+    const wanted = Number(/at least (\d+) and at most/u.exec(user)?.[1] ?? 0) + extra.count
     const concept = /(cpt_[a-z0-9]+)=/u.exec(user)?.[1]
     if (user.includes('quiz across the whole scope')) return JSON.stringify({ items: Array.from({ length: wanted }, (_, index) => ({ kind: 'number', prompt: `$${index + 1} \\times 0.1$ 等于多少？`, answer: (index + 1) / 10, conceptIds: [concept] })) })
     if (user.includes('flashcards')) return JSON.stringify({ cards: Array.from({ length: wanted }, (_, index) => ({ front: `第 ${index + 1} 张：积有几位小数？`, back: '因数一共有几位小数，积就有几位小数。', tag: '积的小数位数' })) })
@@ -106,6 +108,7 @@ function unitLlm() {
   }
   return {
     calls,
+    extra,
     supportsImages: () => false,
     hold() {
       let release
@@ -217,9 +220,14 @@ test('each unit has its own flashcards; review gathers the due ones and the old 
     assert.match(prompt, /<source_passages>[\s\S]*点上小数点/u)
     assert.deepEqual([deck.unitId, deck.cards.length, deck.cards[23].id], [unit.id, 24, 'c24'])
     assert.deepEqual(jobs.get(started.job.id).progress, { done: 24, total: 48, label: 'writing' })
+    // Writing 20 cards where 8 may be kept: thinned evenly, the last kept.
+    llm.extra.count = 12
     const smallStarted = await lessons.unitCards({ courseId, unitId: small.id })
     assert.deepEqual(smallStarted.unit, { title: '位置', n: 2 })
-    assert.equal((await finish(jobs, smallStarted.job)).deck.cards.length, 8, 'a small unit gets eight')
+    const smallDeck = (await finish(jobs, smallStarted.job)).deck
+    assert.deepEqual([smallDeck.cards.length, smallDeck.cards.map(card => card.id).at(-1)], [8, 'c8'], 'a small unit gets eight')
+    assert.match(smallDeck.cards.at(-1).front, /第 19 张/u, 'thinned evenly, not cut at its end')
+    llm.extra.count = 0
     assert.equal((await lessons.unitCards({ courseId, unitId: unit.id })).deck.cards.length, 24, 'kept, never written twice')
     await assert.rejects(lessons.unitCards({ courseId, unitId: newId('unt') }), error => error.code === 'not-found')
 

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 
-import { Confirm, describeMaterial, Empty, ErrorLine, readingNotes, Spinner, UploadZone } from '../components.jsx'
-import { useApp, useLoad } from '../hooks.js'
+import { Confirm, describeMaterial, Empty, ErrorLine, readingNotes, Spinner, StudyJobLine, UploadZone } from '../components.jsx'
+import { useApp, useJob, useLoad } from '../hooks.js'
 
 const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
 
@@ -18,6 +18,7 @@ export function MaterialsScreen() {
   const materials = useLoad(() => api.call('material/list'), [])
   const [busy, setBusy] = useState(null)
   const [error, setError] = useState(null)
+  const job = useJob()
   const [removing, setRemoving] = useState(null)
   // Typing filters by title and topic; Enter searches the text of everything.
   const [query, setQuery] = useState('')
@@ -65,14 +66,14 @@ export function MaterialsScreen() {
         return
       }
       const endpoint = { sheet: 'studio/sheet', cards: 'studio/cards', notes: 'studio/notes', quiz: 'studio/quiz' }[kind]
-      const result = await api.run(endpoint, { materialIds: [material.id] })
+      const result = await job.run(endpoint, { materialIds: [material.id] })
       toast(t('saved'))
       if (kind === 'sheet') navigate('sheet', { sheetId: result.item.id })
       else if (kind === 'cards') navigate('cards', { deckId: result.item.id })
       else if (kind === 'notes') navigate('item', { kind: 'notes', id: result.item.id })
       else navigate('item', { kind: 'quiz', id: result.item.id })
     } catch (failure) {
-      setError(failure)
+      if (failure?.code !== 'cancelled') setError(failure)
     } finally {
       setBusy(null)
     }
@@ -111,11 +112,12 @@ export function MaterialsScreen() {
         </div>
         {readingNotes(material, t).map(note => <p key={note} className="aha-hint aha-readingNote">{note}</p>)}
         {material.brief?.summary ? <p className="aha-hint">{material.brief.summary}</p> : null}
-        {material.brief?.topics?.length ? <div className="aha-row" style={{ gap: 4 }}>{material.brief.topics.slice(0, 10).map(topic => <span key={topic} className="aha-tag">{topic}</span>)}</div> : null}
+        {material.brief?.topics?.length ? <div className="aha-row" style={{ gap: 4 }}>{material.brief.topics.slice(0, 10).map(topic => <span key={topic} className="aha-tag" data-clip title={topic}>{topic}</span>)}</div> : null}
         {material.kind !== 'image' || material.chars > 0 ? <div className="aha-row" style={{ gap: 6 }}>
           {[['course', 'makeCourse'], ['sheet', 'makeSheet'], ['cards', 'makeCards'], ['notes', 'makeNotes'], ['quiz', 'makeQuiz']].map(([kind, label]) => <button key={kind} type="button" className="aha-btn" data-size="sm" data-kind={kind === 'course' ? 'primary' : undefined} disabled={Boolean(busy)} onClick={() => make(kind, material)}>{busy === `${kind}:${material.id}` ? <span className="aha-spinner" /> : null}{t(label)}</button>)}
           <button type="button" className="aha-btn" data-size="sm" onClick={() => navigate('item', { kind: 'digest', materialId: material.id })}>{t('digest')}</button>
         </div> : <p className="aha-hint">{t('imageNeedsVision')}</p>}
+        {busy?.endsWith(`:${material.id}`) && !busy.startsWith('course:') ? <StudyJobLine kind={busy.split(':')[0]} job={job} /> : null}
       </div>)}
     </div> : <Empty>{(materials.value ?? []).length ? t('libraryNoTitleMatch') : t('noMaterials')}</Empty>}
     {removing ? <Confirm danger text={`${t('delete')}「${removing.title}」?`} onCancel={() => setRemoving(null)} onConfirm={async () => { await api.call('material/remove', { id: removing.id }); setRemoving(null); materials.reload() }} /> : null}

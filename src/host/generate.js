@@ -43,6 +43,22 @@ export async function generateJson(llm, { purpose = 'teach', effort, prompt, max
   }
 }
 
+// Counts the times `field` has been written in a streamed JSON answer (each
+// question's "prompt", each card's "front") and calls onCount with the
+// running total.
+export function fieldCounter(field, onCount) {
+  let tail = ''
+  let count = 0
+  return delta => {
+    const window = tail + delta
+    let found = 0
+    for (let at = window.indexOf(field); at >= 0; at = window.indexOf(field, at + field.length)) found += 1
+    // Shorter than the field, so a match is never counted twice.
+    tail = window.slice(-(field.length - 1))
+    if (found) onCount((count += found))
+  }
+}
+
 // What the step being written is about, from the unfinished JSON of that
 // step: its first heading, or else the first sentence of what the teacher
 // will say. Empty until either has begun.

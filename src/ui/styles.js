@@ -76,6 +76,7 @@ a.aha-btn{text-decoration:none}
 .aha-error{color:var(--aha-bad);font-size:${px(14)}}
 .aha-ok{color:var(--aha-ok)}
 .aha-tag{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:var(--aha-soft);color:var(--aha-muted);font-size:${px(13)};line-height:${px(21.5)};white-space:nowrap}
+.aha-tag[data-clip]{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
 .aha-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:32px;padding:5px 14px;border-radius:9px;border:1px solid var(--aha-border);background:var(--aha-surface);color:var(--aha-text);cursor:pointer;white-space:nowrap}
 .aha-btn:hover:not(:disabled){border-color:var(--aha-brand)}.aha-btn:disabled{opacity:.5;cursor:default}
 .aha-btn[data-kind=primary]{background:var(--aha-primary-bg);border-color:var(--aha-primary-bg);color:var(--aha-primary-fg)}.aha-btn[data-kind=primary]:hover:not(:disabled){filter:brightness(1.07)}

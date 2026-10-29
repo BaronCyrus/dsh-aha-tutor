@@ -108,6 +108,18 @@ export function documentParts(chunks, { partChars = 20000, maxParts = 24, maxPar
   })
 }
 
+// Several documents ({ title, chunks }) in parts, for reading them one part
+// at a time: each document is split on its own, so a part never mixes two,
+// and the parts are shared out by size, about maxParts in all.
+export function materialParts(documents, { partChars = 20000, maxParts = 24 } = {}) {
+  const sized = documents
+    .map(document => ({ title: document.title, chunks: document.chunks ?? [], chars: (document.chunks ?? []).reduce((sum, chunk) => sum + chunk.text.length, 0) }))
+    .filter(document => document.chars > 0)
+  const total = sized.reduce((sum, document) => sum + document.chars, 0)
+  return sized.flatMap(document => documentParts(document.chunks, { partChars, maxParts: Math.max(1, Math.floor((document.chars / total) * maxParts)) })
+    .map(passages => ({ title: document.title, passages, chars: passages.reduce((sum, chunk) => sum + chunk.text.length, 0) })))
+}
+
 function locationOf(passage) {
   return passage?.page ? `p.${passage.page}` : passage?.slide ? `slide ${passage.slide}` : passage?.section ?? ''
 }

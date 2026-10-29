@@ -2,12 +2,12 @@
 // materials made from it (cheat sheets, flashcards, notes, quizzes, digests),
 // instant-help sessions on the board, and two-minute explainer shorts.
 
-import { normalizeCards, normalizeCheatsheet, normalizePractice, text } from '../core/course-model.js'
+import { LIMITS, materialQuizRange, normalizeCards, normalizeCheatsheet, normalizePractice, partCardRange, shareRange, takeEvenly, text, thinEvenly, uniqueCards } from '../core/course-model.js'
 import { assertId, newId } from '../core/ids.js'
 import { createCard, review } from '../core/srs.js'
-import { buildIndex, documentParts, formatPassages, passageRange, search, snippetOf, spreadPassages } from '../core/retrieval.js'
+import { buildIndex, documentParts, formatPassages, materialParts, passageRange, search, snippetOf, spreadPassages } from '../core/retrieval.js'
 import { materialImages, passagesFor, readMaterials, readProfile } from './context.js'
-import { generateJson, generateSteps, generateText, TutorError } from './generate.js'
+import { fieldCounter, generateJson, generateSteps, generateText, TutorError } from './generate.js'
 import { ingestFile, ingestUrl, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from './materials.js'
 import { assistPrompt, cheatsheetPrompt, detectLanguage, digestPartPrompt, digestPrompt, flashcardsPrompt, materialBriefPrompt, quizPrompt, shortPrompt, summaryPrompt } from './prompts.js'
 import { createRecognizer } from './recognize.js'
@@ -19,6 +19,13 @@ const MAX_TURNS = 30
 // part by part (about 20,000 characters each, at most 24 parts) first.
 const DIGEST_SINGLE_CHARS = 24_000
 const DIGEST_NOTES_CHARS = 48_000
+// Parts of a material written at the same time for a deck or a quiz, and
+// the failures that only cost a part.
+const PART_WORKERS = 3
+const PART_FAILURES = new Set(['bad-output', 'llm-empty', 'llm-timeout', 'llm-failed', 'llm-context'])
+
+// A study aid's title: the materials, and the focus when there is one.
+const titleOf = (scope, focus) => (focus ? `${scope.title} · ${focus}` : scope.title)
 
 export function createStudio({ store, llm, jobs, now = () => new Date(), uiLanguage = () => 'zh-CN' }) {
   const stamp = () => now().toISOString()
@@ -261,56 +268,133 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
     })()
   }
 
-  function makeNotes({ materialIds }) {
+  function makeNotes({ materialIds, focus }) {
     return jobs.start('studio/notes', async api => {
       const scope = await scopeOf(materialIds)
+      const wanted = text(focus, 300)
       const markdown = await generateText(llm, {
         purpose: 'teach',
-        prompt: summaryPrompt({ scopeTitle: scope.title, outline: scope.outline, passages: passagesFor(scope.materials, scope.outline, 22000), language: scope.language }),
+        prompt: summaryPrompt({ scopeTitle: scope.title, outline: scope.outline, passages: passagesFor(scope.materials, wanted || scope.outline, 22000), language: scope.language, focus: wanted }),
         maxTokens: 8000,
         signal: api.signal,
       })
-      const item = { id: newId('chs'), kind: 'notes', title: scope.title, language: scope.language, materialIds: scope.ids, markdown: markdown.slice(0, 60000), createdAt: stamp() }
+      const item = { id: newId('chs'), kind: 'notes', title: titleOf(scope, wanted), language: scope.language, materialIds: scope.ids, markdown: markdown.slice(0, 60000), createdAt: stamp() }
       await store.writeJson(store.paths.item('sheets', item.id), item)
       return { item }
     })
   }
 
-  function makeCards({ materialIds, count = 24 }) {
+  // The materials of a deck or quiz in parts, each written on its own: a
+  // short material is one part, a long one about 20,000 characters a part.
+  function partsOf(scope) {
+    const parts = materialParts(scope.materials.map(({ meta, chunks }) => ({ title: meta.title, chunks })))
+    return parts.map((part, index) => ({ ...part, label: parts.length > 1 ? { n: index + 1, of: parts.length, range: passageRange(part.passages) } : null }))
+  }
+
+  // Write something for every part, a few parts at a time: write(part,
+  // onText) resolves to a list. The job shows how many parts are done and,
+  // as the preview, how many entries have been written (counting `field` in
+  // the answers as they stream), never more than a part may keep (maxOf) or
+  // than the whole may (limit), so the count only grows. A part that fails is
+  // tried once more; when fewer than half could be read the job fails,
+  // otherwise the parts left out are named.
+  async function eachPart(api, parts, { field, maxOf, limit }, write) {
+    const lists = parts.map(() => null)
+    const written = parts.map(() => 0)
+    let done = 0
+    const show = () => {
+      api.progress(done, parts.length, 'reading')
+      api.preview({ written: Math.min(limit, written.reduce((sum, count) => sum + count, 0)) })
+    }
+    const attempt = async index => {
+      try {
+        lists[index] = await write(parts[index], fieldCounter(field, count => { written[index] = Math.min(count, maxOf(parts[index])); show() }))
+      } catch (error) {
+        // Only what went wrong with this part is left to the retry; the
+        // model's sign-in, quota or absence stops the whole job.
+        if (api.signal.aborted || !PART_FAILURES.has(error?.code)) throw error
+        written[index] = 0
+      }
+    }
+    const queue = parts.map((part, index) => index)
+    const worker = async () => {
+      while (queue.length) {
+        api.signal.throwIfAborted()
+        const index = queue.shift()
+        await attempt(index)
+        if (!lists[index]) await attempt(index)
+        written[index] = lists[index]?.length ?? 0
+        done += 1
+        show()
+      }
+    }
+    show()
+    await Promise.all(Array.from({ length: Math.min(PART_WORKERS, parts.length) }, worker))
+    if (lists.filter(Boolean).length < Math.ceil(parts.length / 2)) throw new TutorError('bad-output', 'The model could not read enough of these materials. Try again or pick a stronger model in settings.')
+    return { lists: lists.map(list => list ?? []), missing: parts.filter((part, index) => !lists[index]).map(part => part.label?.range || part.title) }
+  }
+
+  // Flashcards on the whole of the materials: two to four per key point the
+  // model finds in each part, written without thinking (they restate the
+  // text), at most LIMITS.libraryCards, no question asked twice. With a
+  // focus, only what falls within it.
+  function makeCards({ materialIds, focus }) {
     return jobs.start('studio/cards', async api => {
       const scope = await scopeOf(materialIds)
-      const cards = await generateJson(llm, {
-        purpose: 'teach',
-        prompt: flashcardsPrompt({ scopeTitle: scope.title, outline: scope.outline, passages: passagesFor(scope.materials, scope.outline, 18000), language: scope.language, count: Math.min(60, Math.max(8, Math.round(Number(count) || 24))) }),
-        maxTokens: 9000,
-        signal: api.signal,
-        normalize: raw => {
-          const value = normalizeCards(raw)
-          if (!value.length) throw new Error('no cards')
-          return value
-        },
+      const wanted = text(focus, 300)
+      const { lists, missing } = await eachPart(api, partsOf(scope), { field: '"front"', maxOf: part => partCardRange(part.chars).max, limit: LIMITS.libraryCards }, (part, onText) => {
+        const range = partCardRange(part.chars)
+        return generateJson(llm, {
+          purpose: 'teach',
+          effort: 'lowest',
+          prompt: flashcardsPrompt({ scopeTitle: scope.title, outline: scope.outline, passages: formatPassages(part.passages, part.title), language: scope.language, range, part: part.label, focus: wanted }),
+          maxTokens: 2000 + range.max * 250,
+          signal: api.signal,
+          onText,
+          normalize: raw => {
+            const cards = thinEvenly(normalizeCards(raw, LIMITS.cards * 2), range.max)
+            if (!cards.length && !wanted) throw new Error(`No cards came back: write at least ${range.min}.`)
+            return cards
+          },
+        })
       })
-      const item = { id: newId('dck'), kind: 'cards', title: scope.title, language: scope.language, materialIds: scope.ids, cards, srs: {}, createdAt: stamp() }
+      const cards = takeEvenly(uniqueCards(lists), LIMITS.libraryCards).map((card, index) => ({ ...card, id: `c${index + 1}` }))
+      if (!cards.length) throw new TutorError('focus-empty', 'Nothing in these materials falls within the focus')
+      const item = { id: newId('dck'), kind: 'cards', title: titleOf(scope, wanted), language: scope.language, materialIds: scope.ids, ...(wanted ? { focus: wanted } : {}), ...(missing.length ? { missing } : {}), cards, srs: {}, createdAt: stamp() }
       await store.writeJson(store.paths.item('decks', item.id), item)
       return { item }
     })
   }
 
-  function makeQuiz({ materialIds, count = 10 }) {
+  // A quiz as long as the materials: 5 to 30 questions, shared out over the
+  // parts. With a focus, how much of each part counts is known only once it
+  // is read, so every part may write as much as a material of its size,
+  // and the quiz is cut to size evenly afterwards.
+  function makeQuiz({ materialIds, focus }) {
     return jobs.start('studio/quiz', async api => {
       const scope = await scopeOf(materialIds)
-      const quiz = await generateJson(llm, {
-        purpose: 'teach',
-        prompt: quizPrompt({ scopeTitle: scope.title, outline: `${scope.outline}\n\n${passagesFor(scope.materials, scope.outline, 16000)}`, concepts: '', language: scope.language, count: Math.min(25, Math.max(5, Math.round(Number(count) || 10))) }),
-        maxTokens: 9000,
-        signal: api.signal,
-        normalize: raw => {
-          const set = normalizePractice(raw, [])
-          if (set.items.length < 3) throw new Error('quiz too short')
-          return set
-        },
+      const wanted = text(focus, 300)
+      const parts = partsOf(scope)
+      const whole = materialQuizRange(parts.reduce((sum, part) => sum + part.chars, 0))
+      const rangeOf = part => (wanted ? materialQuizRange(part.chars) : shareRange(whole, parts.length))
+      const { lists, missing } = await eachPart(api, parts, { field: '"prompt"', maxOf: part => rangeOf(part).max, limit: LIMITS.quizItems }, (part, onText) => {
+        const range = rangeOf(part)
+        return generateJson(llm, {
+          purpose: 'teach',
+          prompt: quizPrompt({ scopeTitle: scope.title, outline: scope.outline, concepts: '', passages: formatPassages(part.passages, part.title), language: scope.language, range, part: part.label, focus: wanted }),
+          maxTokens: 2000 + range.max * 500,
+          signal: api.signal,
+          onText,
+          normalize: raw => {
+            const items = thinEvenly(normalizePractice(raw, [], LIMITS.quizItems).items, range.max)
+            if (!wanted && items.length < Math.min(3, range.min)) throw new Error(`The quiz is too short: write at least ${range.min} questions.`)
+            return items
+          },
+        })
       })
-      const item = { id: newId('dck'), kind: 'quiz', title: scope.title, language: scope.language, materialIds: scope.ids, items: quiz.items, createdAt: stamp() }
+      const items = takeEvenly(lists, LIMITS.quizItems).map((entry, index) => ({ ...entry, id: `i${index + 1}` }))
+      if (!items.length) throw new TutorError('focus-empty', 'Nothing in these materials falls within the focus')
+      const item = { id: newId('dck'), kind: 'quiz', title: titleOf(scope, wanted), language: scope.language, materialIds: scope.ids, ...(wanted ? { focus: wanted } : {}), ...(missing.length ? { missing } : {}), items, createdAt: stamp() }
       await store.writeJson(store.paths.item('decks', item.id), item)
       return { item }
     })

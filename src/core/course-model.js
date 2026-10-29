@@ -24,6 +24,7 @@ export const LIMITS = Object.freeze({
   quizItems: 30,
   options4: 6,
   cards: 60,
+  libraryCards: 300,
   sheetSections: 24,
   sheetItems: 16,
 })
@@ -368,8 +369,9 @@ export function normalizeHandout(raw) {
   }
 }
 
-export function normalizeCards(raw) {
-  return list(raw?.cards ?? raw, LIMITS.cards, (card, index) => {
+// max: a deck's cards by default; more may be read to be thinned out later.
+export function normalizeCards(raw, max = LIMITS.cards) {
+  return list(raw?.cards ?? raw, max, (card, index) => {
     const front = text(card?.front ?? card?.q ?? card?.question, 600)
     const back = text(card?.back ?? card?.a ?? card?.answer, 1500)
     if (!front || !back) return null
@@ -487,6 +489,67 @@ export function unitCardRange(unit) {
   const concepts = unitConcepts(unit).length
   const min = clamp(concepts * 2, 8, LIMITS.cards)
   return { min, max: clamp(concepts * 4, min, LIMITS.cards) }
+}
+
+// How many flashcards a stretch of a material gets (one part of a long one,
+// about 20,000 characters, or a short one whole): the model gives each key
+// point it finds two to four cards; the range keeps that in line with the
+// length, up to a card per 300 characters of dense text.
+export function partCardRange(chars) {
+  const min = clamp(Math.round(chars / 2000), 4, LIMITS.cards)
+  return { min, max: clamp(Math.round(chars / 300), min, LIMITS.cards) }
+}
+
+// How long a quiz on a material is, by its length: 5 to 30 questions, about
+// 5–10 for a short handout.
+export function materialQuizRange(chars) {
+  const min = clamp(Math.round(chars / 4000), 5, 20)
+  return { min, max: clamp(Math.round(chars / 2000), Math.max(min, 10), LIMITS.quizItems) }
+}
+
+// One part's share of a range spread over `parts` parts, at least one.
+export function shareRange(range, parts) {
+  const count = Math.max(1, parts)
+  return { min: Math.max(1, Math.floor(range.min / count)), max: Math.max(1, Math.ceil(range.max / count)) }
+}
+
+// At most `max` entries of a list, spread evenly over it, so that cutting
+// it never drops only its end (the last lessons or pages it covers).
+export function thinEvenly(entries, max) {
+  if (entries.length <= max) return entries
+  return Array.from({ length: Math.max(0, max) }, (_, index) => entries[Math.floor(((index + 0.5) * entries.length) / max)])
+}
+
+// At most `max` entries of several lists, shared out in turns so that every
+// list keeps its share, each thinned evenly; the lists keep their order.
+export function takeEvenly(lists, max) {
+  const taken = lists.map(() => 0)
+  let left = max
+  let more = true
+  while (left > 0 && more) {
+    more = false
+    for (const [index, entries] of lists.entries()) {
+      if (left > 0 && taken[index] < entries.length) {
+        taken[index] += 1
+        left -= 1
+        more = true
+      }
+    }
+  }
+  return lists.flatMap((entries, index) => thinEvenly(entries, taken[index]))
+}
+
+// Cards from the parts of a material with each question asked once: a card
+// whose front an earlier one already asks, spacing and punctuation aside,
+// is left out.
+export function uniqueCards(lists) {
+  const seen = new Set()
+  return lists.map(cards => cards.filter(card => {
+    const key = String(card.front).toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '')
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  }))
 }
 
 export function conceptIndex(course) {

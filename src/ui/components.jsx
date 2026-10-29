@@ -30,6 +30,25 @@ export function JobProgress({ progress, label, detail, onCancel }) {
   </div>
 }
 
+// A study aid being made from materials (job: useJob()), with Cancel. A deck
+// or quiz read in parts says how many parts are done and how many cards or
+// questions are written.
+export function StudyJobLine({ kind, job }) {
+  const { t } = useApp()
+  const progress = job.progress
+  const count = job.preview?.written ?? 0
+  const quiz = kind === 'quiz'
+  let label = t('generating')
+  if (progress?.label === 'reading' && (quiz || kind === 'cards')) {
+    if (progress.total > 1) label = t(quiz ? 'studyPartsQuiz' : 'studyPartsCards', { done: progress.done, total: progress.total, count })
+    else if (count) label = t(quiz ? 'quizWriting' : 'cardsWriting', { count })
+  }
+  return <div className="aha-row" style={{ gap: 8 }}>
+    <Spinner label={label} />
+    {job.running ? <button type="button" className="aha-btn" data-size="sm" data-kind="ghost" onClick={job.cancel}>{t('cancel')}</button> : null}
+  </div>
+}
+
 export function Modal({ title, onClose, children, footer, width }) {
   return <div className="aha-modalBack" onMouseDown={event => { if (event.target === event.currentTarget) onClose?.() }}>
     <div className="aha-modal" role="dialog" aria-label={title} style={width ? { width: `min(${width}px,100%)` } : undefined}>

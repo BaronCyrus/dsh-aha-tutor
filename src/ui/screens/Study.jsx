@@ -54,7 +54,7 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
         }
         if (deckId) {
           const { item } = await api.call('items/get', { kind: 'decks', id: deckId })
-          if (live) setSet({ title: item.title, items: item.items ?? [], language: item.language })
+          if (live) setSet({ title: item.title, items: item.items ?? [], language: item.language, missing: item.missing })
           return
         }
         const endpoint = unitId ? 'unit/quiz' : 'lesson/practice'
@@ -173,6 +173,7 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
         <span className="aha-tag">{Math.min(index + 1, set.items.length)}/{set.items.length}</span>
       </span>
     </div>
+    {index === 0 ? <PartsMissing parts={set.missing} /> : null}
     {notices.map(notice => <div key={notice.key} className="aha-itemNotice" role="status">
       <span className="aha-itemNoticeText">🧐 {notice.text}</span>
       {notice.retry ? <button type="button" className="aha-btn" data-size="sm" onClick={() => { dismiss(notice.key); notice.retry() }}>{t('retry')}</button> : null}
@@ -271,7 +272,8 @@ export function CardsScreen({ courseId, unitId, deckId }) {
         let next
         if (deckId) {
           const { item } = await api.call('items/get', { kind: 'decks', id: deckId })
-          next = { title: t('cardsTitle'), cards: item.cards, order: studyOrder(item).slice(0, 40) }
+          // A deck of a whole book is learned in rounds of 40.
+          next = { title: t('cardsTitle'), cards: item.cards, order: studyOrder(item).slice(0, 40), total: item.cards.length, missing: item.missing }
         } else if (unitId) {
           const first = await api.call('unit/cards', { courseId, unitId })
           const { deck, unit } = first.job ? await job.run(null, null, { existing: first.job }) : first
@@ -324,6 +326,7 @@ export function CardsScreen({ courseId, unitId, deckId }) {
         {view.total ? <span className="aha-tag">{t('cardsTotal', { count: view.total })}</span> : null}
       </span>
     </div>
+    <PartsMissing parts={view.missing} />
     {current ? <>
       <div className="aha-flash" data-flipped={flipped} onClick={() => setFlipped(value => !value)} role="button" tabIndex={0} onKeyDown={event => { if (event.key === ' ' || event.key === 'Enter') setFlipped(value => !value) }}>
         <div className="aha-flashInner">
@@ -340,6 +343,12 @@ export function CardsScreen({ courseId, unitId, deckId }) {
 }
 
 const cardKey = card => `${card.unitId ?? ''}:${card.id}`
+
+// The parts of a material a deck or quiz from the library could not cover.
+function PartsMissing({ parts }) {
+  const { t } = useApp()
+  return parts?.length ? <p className="aha-hint">{t('partsMissing', { count: parts.length, parts: parts.join('、') })}</p> : null
+}
 
 // One deck's study order: cards due again (oldest first), then unseen ones.
 function studyOrder(deck) {

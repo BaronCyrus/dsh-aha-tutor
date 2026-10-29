@@ -181,9 +181,9 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
     'material/remove': payload => studio.removeMaterial({ id: need(payload, 'id', 'mat') }),
     'material/digest': payload => ({ job: studio.digest({ id: need(payload, 'id', 'mat') }) }),
     'studio/sheet': payload => ({ job: studio.makeSheet({ materialIds: idList(payload.materialIds, 'mat'), focus: payload.focus }) }),
-    'studio/notes': payload => ({ job: studio.makeNotes({ materialIds: idList(payload.materialIds, 'mat') }) }),
-    'studio/cards': payload => ({ job: studio.makeCards({ materialIds: idList(payload.materialIds, 'mat'), count: payload.count }) }),
-    'studio/quiz': payload => ({ job: studio.makeQuiz({ materialIds: idList(payload.materialIds, 'mat'), count: payload.count }) }),
+    'studio/notes': payload => ({ job: studio.makeNotes({ materialIds: idList(payload.materialIds, 'mat'), focus: payload.focus }) }),
+    'studio/cards': payload => ({ job: studio.makeCards({ materialIds: idList(payload.materialIds, 'mat'), focus: payload.focus }) }),
+    'studio/quiz': payload => ({ job: studio.makeQuiz({ materialIds: idList(payload.materialIds, 'mat'), focus: payload.focus }) }),
     'items/list': payload => {
       if (!ITEM_KINDS[payload.kind]) throw new TutorError('invalid', 'Unknown collection')
       return studio.listItems({ kind: payload.kind })

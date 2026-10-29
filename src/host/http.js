@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path'
 
 import { BOARD_FONT_FILES } from '../core/board-fonts.js'
 import { publicCode } from './jobs.js'
-import { MAX_UPLOAD_BYTES } from './materials.js'
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from './materials.js'
 import { MAX_SPEECH_BYTES } from './speech.js'
 
 export const UPLOAD_PATH = '/api/aha-tutor/upload'
@@ -46,7 +46,7 @@ export function uploadRoute({ studio }) {
       } catch {
         return failure('aborted', 'Upload interrupted', 400)
       }
-      if (bytes === null) return failure('too-large', 'The file is larger than 60 MB', 413)
+      if (bytes === null) return failure('too-large', `The file is larger than ${MAX_UPLOAD_MB} MB`, 413)
       try {
         return json({ ok: true, value: { job: studio.upload({ name, bytes }) } })
       } catch (error) {

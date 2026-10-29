@@ -486,28 +486,38 @@ Return {"title":"…","sections":[{"title":"…","related":["<other section titl
   }
 }
 
-export function flashcardsPrompt({ scopeTitle, outline, passages, language, count = 24 }) {
+// How many: a fixed count, or a range ({ min, max }) inside which the model
+// decides by how much the scope holds.
+export function flashcardsPrompt({ scopeTitle, outline, concepts, passages, language, count = 24, range }) {
+  const size = range
+    ? `Write as many flashcards as this scope needs, at least ${range.min} and at most ${range.max}: every concept listed gets two to four cards on its definitions, rules, formulas, key facts and typical mistakes; central or tricky ideas get more cards, minor ones fewer. No two cards ask the same thing in other words.`
+    : `Write ${count} flashcards covering the most important ideas, definitions and formulas.`
   return {
     system: join(PERSONA, `You write flashcards that test one fact or idea each, phrased as questions that force recall. ${languageRule(language)}`, JSON_ONLY),
     user: join(
       block('scope', scopeTitle),
       block('outline', outline),
+      block('concepts', concepts),
       block('source_passages', passages),
-      `Write ${count} flashcards covering the most important ideas, definitions and formulas. Fronts are short questions or prompts; backs are precise answers (LaTeX allowed as $…$), at most three sentences. Avoid yes/no fronts.
+      `${size} Fronts are short questions or prompts; backs are precise answers (LaTeX allowed as $…$), at most three sentences. Avoid yes/no fronts.${passages ? ' Follow the source passages: their terms, notation and examples.' : ''}
 
 Return {"cards":[{"front":"…","back":"…","tag":"<topic>"}]}`,
     ),
   }
 }
 
-export function quizPrompt({ scopeTitle, outline, concepts, language, count = 10 }) {
+export function quizPrompt({ scopeTitle, outline, concepts, passages, language, count = 10, range }) {
+  const size = range
+    ? `Write a quiz across the whole scope with as many questions as it needs, at least ${range.min} and at most ${range.max}: at least one question for every concept listed, more for central or harder ones, and never two questions that test the same thing the same way.`
+    : `Write a ${count}-question quiz across the whole scope.`
   return {
     system: join(PERSONA, `You write fair, well-balanced quizzes. ${languageRule(language)}`, JSON_ONLY),
     user: join(
       block('scope', scopeTitle),
       block('outline', outline),
       block('concepts', concepts),
-      `Write a ${count}-question quiz across the whole scope: about 30% recall, 50% application, 20% harder transfer questions. Mix choice, multi, blank, number and short items, each with explanation, difficulty and conceptIds (use the ids given). ${ITEM_SHAPE} ${ITEM_FIGURE}
+      block('source_passages', passages),
+      `${size} About 30% recall, 50% application, 20% harder transfer questions. Mix choice, multi, blank, number and short items, each with explanation, difficulty and conceptIds (use the ids given).${passages ? ' Where the source passages show how this material poses problems (its exercises, notation, units), write in that style.' : ''} ${ITEM_SHAPE} ${ITEM_FIGURE}
 
 Return {"items":[…]}`,
     ),

@@ -15,12 +15,14 @@ export function Progress({ value }) {
 
 // Long generations keep running on the host when the learner leaves, so
 // they get a cancel button and a note saying so.
-export function JobProgress({ progress, label, onCancel }) {
+// detail, when given, says how far the job got in place of the bar (a count
+// written so far, where the total is only an upper bound).
+export function JobProgress({ progress, label, detail, onCancel }) {
   const { t } = useApp()
   const percent = progress?.total ? Math.round((progress.done / progress.total) * 100) : 0
   return <div className="aha-col" style={{ gap: 6 }}>
     <Spinner label={label} />
-    {progress?.total ? <Progress value={percent} /> : null}
+    {detail ? <span className="aha-hint">{detail}</span> : progress?.total ? <Progress value={percent} /> : null}
     {onCancel ? <div className="aha-row">
       <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={onCancel}>{t('cancel')}</button>
       <span className="aha-hint">{t('keepsRunning')}</span>

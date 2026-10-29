@@ -8,17 +8,19 @@ import { courseProgress, flattenLessons, nextLesson } from '../../core/course-mo
 import { masteryPercent, masteryStage } from '../../core/mastery.js'
 import { courseNextStep, lessonStage, STAGE_LABELS } from '../practice.js'
 
-const TABS = [['outline', 'tabOutline'], ['practice', 'tabPractice'], ['sheets', 'tabSheets'], ['cards', 'tabCards'], ['projects', 'tabProjects'], ['progress', 'tabProgress']]
+// Flashcards live in the practice tab, per unit; links to the old tab land there.
+const TABS = [['outline', 'tabOutline'], ['practice', 'tabPractice'], ['sheets', 'tabSheets'], ['projects', 'tabProjects'], ['progress', 'tabProgress']]
 
 export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
   const { api, t, navigate, toast } = useApp()
   const detail = useLoad(() => api.call('course/get', { courseId }), [courseId])
-  const [tab, setTab] = useState(initialTab)
+  const [tab, setTab] = useState(initialTab === 'cards' ? 'practice' : initialTab)
   const [menu, setMenu] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const course = detail.value?.course
   const progress = detail.value?.progress
+  const cards = detail.value?.ready?.cards
 
   const stats = useMemo(() => (course?.units ? courseProgress(course, progress) : null), [course, progress])
   const next = useMemo(() => (course?.units ? nextLesson(course, progress) : null), [course, progress])
@@ -46,7 +48,7 @@ export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
 
   return <div className="aha-page">
     <div className="aha-spread">
-      <div className="aha-col" style={{ gap: 4, flex: 1, minWidth: 260 }}>
+      <div className="aha-col" style={{ gap: 4, flex: 1, minWidth: 'min(260px, 100%)' }}>
         <div className="aha-row" style={{ flexWrap: 'nowrap' }}><span style={{ fontSize: 30 }}>{course.emoji}</span><h2 className="aha-title">{course.title}</h2></div>
         {course.subtitle ? <p className="aha-subtitle">{course.subtitle}</p> : null}
         {stats ? <div className="aha-col" style={{ gap: 4, maxWidth: 480 }}><Progress value={stats.percent} /><span className="aha-hint">{t('lessonsCount', stats)} · {t('minutesLeft', { minutes: stats.minutesLeft })}</span></div> : null}
@@ -73,6 +75,7 @@ export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
         <div className="aha-spread"><b>{t('unitN', { n: unitIndex + 1 })} · {unit.title}</b><span className="aha-row" style={{ gap: 4 }}>
           <button type="button" className="aha-btn" data-size="sm" data-kind="ghost" onClick={() => navigate('sheet', { courseId, unitId: unit.id })}>{t('unitSheet')}</button>
           <button type="button" className="aha-btn" data-size="sm" data-kind="ghost" onClick={() => navigate('practice', { courseId, unitId: unit.id })}>{t('unitQuiz')}</button>
+          <UnitCardsButton courseId={courseId} unitId={unit.id} status={cards?.units?.[unit.id]} ghost />
         </span></div>
         {unit.summary ? <p className="aha-hint">{unit.summary}</p> : null}
         {unit.lectures.map((lecture, lectureIndex) => <div key={lecture.id} className="aha-lecture">
@@ -97,9 +100,15 @@ export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
     </section> : null}
 
     {tab === 'practice' ? <div className="aha-col">
-      <div className="aha-row"><button type="button" className="aha-btn" data-kind="primary" onClick={() => navigate('practice', { courseId, review: true })}>{t('startReview')}</button></div>
+      <div className="aha-row">
+        <button type="button" className="aha-btn" data-kind="primary" onClick={() => navigate('practice', { courseId, review: true })}>{t('startReview')}</button>
+        {cards?.decks ? <button type="button" className="aha-btn" disabled={!cards.review} onClick={() => navigate('cards', { courseId })}>{cards.review ? t('cardReviewDue', { count: cards.review }) : t('cardReviewNone')}</button> : null}
+      </div>
       {course.units.map((unit, unitIndex) => <div key={unit.id} className="aha-card">
-        <div className="aha-spread"><b>{t('unitN', { n: unitIndex + 1 })} · {unit.title}</b><button type="button" className="aha-btn" data-size="sm" onClick={() => navigate('practice', { courseId, unitId: unit.id })}>{t('unitQuiz')}</button></div>
+        <div className="aha-spread"><b>{t('unitN', { n: unitIndex + 1 })} · {unit.title}</b><span className="aha-row" style={{ gap: 4 }}>
+          <button type="button" className="aha-btn" data-size="sm" onClick={() => navigate('practice', { courseId, unitId: unit.id })}>{t('unitQuiz')}</button>
+          <UnitCardsButton courseId={courseId} unitId={unit.id} status={cards?.units?.[unit.id]} />
+        </span></div>
         <div className="aha-row" style={{ gap: 6 }}>{unit.lectures.flatMap(lecture => lecture.lessons).map(lesson => <button key={lesson.id} type="button" className="aha-chip" onClick={() => navigate('practice', { courseId, lessonId: lesson.id })}>{lesson.title}</button>)}</div>
       </div>)}
     </div> : null}
@@ -109,11 +118,6 @@ export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
         <span className="aha-hint">{t('unitN', { n: unitIndex + 1 })}</span><b>{unit.title}</b>
         <span className="aha-tag">{detail.value.ready.sheets.includes(unit.id) ? t('open') : t('generate')}</span>
       </div>)}
-    </div> : null}
-
-    {tab === 'cards' ? <div className="aha-card">
-      <p>{t('cardsTitle')}</p>
-      <div className="aha-row"><button type="button" className="aha-btn" data-kind="primary" onClick={() => navigate('cards', { courseId })}>{t('open')}</button></div>
     </div> : null}
 
     {tab === 'projects' ? (course.projects?.length ? <div className="aha-grid">
@@ -172,6 +176,14 @@ function NextStep({ step, courseId }) {
     </div>
     {go ? <button type="button" className="aha-btn" data-kind="primary" onClick={go}>{label}</button> : null}
   </div>
+}
+
+// A unit's flashcards, with the cards due again when it has some.
+function UnitCardsButton({ courseId, unitId, status, ghost = false }) {
+  const { t, navigate } = useApp()
+  const due = status?.due ?? 0
+  return <button type="button" className="aha-btn" data-size="sm" data-kind={ghost ? 'ghost' : undefined} title={due ? t('unitCardsDueTitle', { count: due }) : undefined}
+    onClick={() => navigate('cards', { courseId, unitId })}>{due ? t('unitCardsDue', { count: due }) : t('unitCards')}</button>
 }
 
 function LessonMeter({ lesson, progress }) {

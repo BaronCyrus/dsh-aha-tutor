@@ -68,7 +68,10 @@ export function createStore({ root }) {
     progress: id => join(paths.courseDir(id), 'progress.json'),
     intake: id => join(paths.courseDir(id), 'intake.json'),
     proposal: id => join(paths.courseDir(id), 'proposal.json'),
+    // The whole-course deck of versions before 1.10; decks are per unit now.
     cards: id => join(paths.courseDir(id), 'cards.json'),
+    unitCardsDir: id => join(paths.courseDir(id), 'cards'),
+    unitCards: (id, unitId) => join(paths.courseDir(id), 'cards', `${assertId(unitId, 'unt')}.json`),
     boardsDir: id => join(paths.courseDir(id), 'boards'),
     practiceDir: id => join(paths.courseDir(id), 'practice'),
     sheetsDir: id => join(paths.courseDir(id), 'sheets'),

@@ -56,6 +56,15 @@ export function dueCards(cards, now = Date.now()) {
     .sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt))
 }
 
+// A flashcard deck ({ cards, srs }) at a glance: its size, the cards seen
+// before that are due again, and the cards not seen yet.
+export function deckStatus(deck, now = Date.now()) {
+  const cards = Array.isArray(deck?.cards) ? deck.cards : []
+  const states = deck?.srs ?? {}
+  const due = cards.filter(card => states[card.id] && isDue(states[card.id], now)).length
+  return { total: cards.length, due, fresh: cards.filter(card => !states[card.id]).length }
+}
+
 // Map a mastery check result onto a review grade, so concepts the learner
 // struggled with come back sooner.
 export function gradeFromScore(score, confidence) {

@@ -21,6 +21,7 @@ export const LIMITS = Object.freeze({
   starterFiles: 12,
   starterFileBytes: 64 * 1024,
   practiceItems: 12,
+  quizItems: 30,
   options4: 6,
   cards: 60,
   sheetSections: 24,
@@ -327,8 +328,9 @@ export function normalizeItem(raw, index = 0, conceptIds = []) {
   return item
 }
 
-export function normalizePractice(raw, conceptIds = []) {
-  const items = list(raw?.items ?? raw, LIMITS.practiceItems, (item, index) => normalizeItem(item, index, conceptIds))
+// max: a lesson's practice by default; a unit quiz may hold LIMITS.quizItems.
+export function normalizePractice(raw, conceptIds = [], max = LIMITS.practiceItems) {
+  const items = list(raw?.items ?? raw, max, (item, index) => normalizeItem(item, index, conceptIds))
   return { items: items.map((item, index) => ({ ...item, id: `i${index + 1}` })) }
 }
 
@@ -457,6 +459,34 @@ export function diffIsEmpty(diff) {
 
 export function findLesson(course, lessonId) {
   return flattenLessons(course).find(row => row.lesson.id === lessonId) ?? null
+}
+
+// The concepts a unit teaches, each once, in teaching order.
+export function unitConcepts(unit) {
+  const seen = new Map()
+  for (const lecture of unit?.lectures ?? []) {
+    for (const lesson of lecture.lessons ?? []) {
+      for (const concept of lesson.concepts ?? []) if (!seen.has(concept.id)) seen.set(concept.id, concept)
+    }
+  }
+  return [...seen.values()]
+}
+
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
+
+// How long a unit quiz is: at least one question per concept, more for the
+// key ones, usually 10 to 30. The model picks the number inside the range.
+export function unitQuizRange(unit) {
+  const concepts = unitConcepts(unit).length
+  const min = clamp(concepts, 10, LIMITS.quizItems)
+  return { min, max: clamp(Math.max(min + 5, Math.round(concepts * 1.5)), min, LIMITS.quizItems) }
+}
+
+// How many flashcards a unit's deck has: two to four per concept.
+export function unitCardRange(unit) {
+  const concepts = unitConcepts(unit).length
+  const min = clamp(concepts * 2, 8, LIMITS.cards)
+  return { min, max: clamp(concepts * 4, min, LIMITS.cards) }
 }
 
 export function conceptIndex(course) {

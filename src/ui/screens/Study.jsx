@@ -34,6 +34,8 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
   const [notices, setNotices] = useState([])
   const evidence = useRef(new Map())
   const round = useRef(0)
+  // The next load of a unit quiz asks for a new set ("New set of questions").
+  const freshSet = useRef(false)
   const noticeCount = useRef(0)
   const latest = useRef({ index: 0, results: [] })
   latest.current = { index, results }
@@ -41,6 +43,8 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
   useEffect(() => {
     let live = true
     const load = async () => {
+      const fresh = Boolean(unitId) && freshSet.current
+      freshSet.current = false
       try {
         if (courseId && !deckId) api.call('course/get', { courseId }).then(detail => { if (live) setContext(detail) }).catch(() => undefined)
         if (review) {
@@ -54,7 +58,7 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
           return
         }
         const endpoint = unitId ? 'unit/quiz' : 'lesson/practice'
-        const payload = unitId ? { courseId, unitId } : { courseId, lessonId }
+        const payload = unitId ? { courseId, unitId, ...(fresh ? { force: true } : {}) } : { courseId, lessonId }
         const first = await api.call(endpoint, payload)
         const value = first.job ? await job.run(null, null, { existing: first.job }) : first
         // A lecture's practice job returns every lesson's set.
@@ -63,6 +67,8 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
         const lesson = lessonId ? await api.call('lesson/get', { courseId, lessonId }) : null
         if (live) setSet({ title: lesson?.lesson.title ?? t('unitQuiz'), items, language: lesson?.language })
       } catch (failure) {
+        // Retry asks for the new set again.
+        if (fresh) freshSet.current = true
         if (live) setError(failure)
       }
     }
@@ -142,8 +148,20 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
     setRecommendation(null)
   }
 
+  // A unit quiz written anew, as long as the unit needs.
+  function newSet() {
+    startOver()
+    setSet(null)
+    setAfter({})
+    freshSet.current = true
+    setAttempt(value => value + 1)
+  }
+
   if (error) return <div className="aha-page"><ErrorLine error={error} /><div><button type="button" className="aha-btn" onClick={() => { setError(null); setAttempt(value => value + 1) }}>{t('retry')}</button></div></div>
-  if (!set) return <div className="aha-page"><JobProgress progress={job.progress} label={t('makingPractice')} onCancel={job.running ? job.cancel : undefined} /></div>
+  if (!set) {
+    const written = unitId && job.progress?.label === 'writing' ? t('quizWriting', { count: job.progress.done }) : null
+    return <div className="aha-page"><JobProgress progress={job.progress} label={t(unitId ? 'makingQuiz' : 'makingPractice')} detail={written} onCancel={job.running ? job.cancel : undefined} /></div>
+  }
   if (!set.items.length) return <div className="aha-page"><Empty>{review ? t('nothingToReview') : t('empty')}</Empty></div>
 
   const done = index >= set.items.length
@@ -166,13 +184,13 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
         onChallenge={itemSource({ courseId, lessonId, unitId, deckId }, item) ? note => challenge(index, note) : undefined} check={checks[index] ?? null} /></div>
       <p className="aha-hint">{t('keysHint')}</p>
     </> : <PracticeSummary set={set} stats={stats} context={context} after={after} recommendation={recommendation} courseId={courseId} lessonId={lessonId} unitId={unitId}
-      onRetry={startOver} />}
+      onRetry={startOver} onNewSet={unitId && !review && !deckId ? newSet : undefined} />}
   </div>
 }
 
 // The end of a round: stars, accuracy, best streak, how each concept moved,
 // and one next step.
-function PracticeSummary({ set, stats, context, after, recommendation, courseId, lessonId, unitId, onRetry }) {
+function PracticeSummary({ set, stats, context, after, recommendation, courseId, lessonId, unitId, onRetry, onNewSet }) {
   const { t, navigate } = useApp()
   const course = context?.course
   const progress = context?.progress
@@ -227,6 +245,7 @@ function PracticeSummary({ set, stats, context, after, recommendation, courseId,
     <div className="aha-row">
       {step && courseId ? <button type="button" className="aha-btn" data-kind="primary" onClick={go[step.kind]}>{stepButton}</button> : null}
       <button type="button" className="aha-btn" onClick={onRetry}>{t('retry')}</button>
+      {onNewSet ? <button type="button" className="aha-btn" onClick={onNewSet}>{t('newQuizSet')}</button> : null}
       {courseId && step?.kind !== 'course' ? <button type="button" className="aha-btn" onClick={go.course}>{t('backToCourse')}</button> : null}
     </div>
   </div>
@@ -234,10 +253,13 @@ function PracticeSummary({ set, stats, context, after, recommendation, courseId,
 
 // ── flashcards ─────────────────────────────────────────────────────────────
 
-export function CardsScreen({ courseId, deckId }) {
+// A unit's deck (unitId), the course's flashcard review (courseId alone: the
+// due cards of every unit, and the whole-course deck of earlier versions),
+// or a deck from the library (deckId). Cards are known by their deck and id.
+export function CardsScreen({ courseId, unitId, deckId }) {
   const { api, t } = useApp()
   const job = useJob()
-  const [deck, setDeck] = useState(null)
+  const [view, setView] = useState(null)
   const [error, setError] = useState(null)
   const [flipped, setFlipped] = useState(false)
   const [queue, setQueue] = useState(null)
@@ -246,46 +268,62 @@ export function CardsScreen({ courseId, deckId }) {
     let live = true
     const load = async () => {
       try {
-        let value
-        if (deckId) value = (await api.call('items/get', { kind: 'decks', id: deckId })).item
-        else {
-          const first = await api.call('course/cards', { courseId })
-          value = first.job ? (await job.run(null, null, { existing: first.job })).deck : first.deck
+        let next
+        if (deckId) {
+          const { item } = await api.call('items/get', { kind: 'decks', id: deckId })
+          next = { title: t('cardsTitle'), cards: item.cards, order: studyOrder(item).slice(0, 40) }
+        } else if (unitId) {
+          const first = await api.call('unit/cards', { courseId, unitId })
+          const { deck, unit } = first.job ? await job.run(null, null, { existing: first.job }) : first
+          next = { title: `${t('unitN', { n: unit.n })} · ${unit.title}`, kicker: t('unitCards'), cards: deck.cards.map(card => ({ ...card, unitId })), order: studyOrder({ ...deck, unitId }), total: deck.cards.length }
+        } else {
+          const { cards } = await api.call('course/card-session', { courseId })
+          next = { title: t('cardReview'), cards, order: cards.map(cardKey) }
         }
         if (!live) return
-        setDeck(value)
-        const now = Date.now()
-        const due = dueCards(Object.values(value.srs ?? {}), now).map(card => card.id)
-        const fresh = value.cards.filter(card => !value.srs?.[card.id]).map(card => card.id)
-        setQueue([...due, ...fresh].slice(0, 40))
+        setView({ ...next, cards: next.cards.map(card => ({ ...card, key: cardKey(card) })) })
+        setQueue(next.order)
       } catch (failure) {
         if (live) setError(failure)
       }
     }
     load()
     return () => { live = false }
-  }, [courseId, deckId])
+  }, [courseId, unitId, deckId])
 
-  const current = useMemo(() => deck?.cards.find(card => card.id === queue?.[0]), [deck, queue])
+  const current = useMemo(() => view?.cards.find(card => card.key === queue?.[0]), [view, queue])
   async function grade(value) {
     if (!current) return
     setFlipped(false)
     setQueue(list => {
       const rest = list.slice(1)
-      return value === 'again' ? [...rest, current.id] : rest
+      return value === 'again' ? [...rest, current.key] : rest
     })
     try {
       if (deckId) await api.call('items/card-review', { id: deckId, cardId: current.id, grade: value })
-      else await api.call('course/card-review', { courseId, cardId: current.id, grade: value })
+      else await api.call('course/card-review', { courseId, ...(current.unitId ? { unitId: current.unitId } : {}), cardId: current.id, grade: value })
     } catch {
       // the next review fixes it
     }
   }
 
   if (error) return <div className="aha-page"><ErrorLine error={error} /></div>
-  if (!deck || !queue) return <div className="aha-page"><JobProgress progress={job.progress} label={t('makingCards')} onCancel={job.running ? job.cancel : undefined} /></div>
+  if (!view || !queue) {
+    const written = job.progress?.label === 'writing' ? t('cardsWriting', { count: job.progress.done }) : null
+    return <div className="aha-page"><JobProgress progress={job.progress} label={t(unitId ? 'makingUnitCards' : 'makingCards')} detail={written} onCancel={job.running ? job.cancel : undefined} /></div>
+  }
+  const where = current?.unit ? `${t('unitN', { n: current.unit.n })} · ${current.unit.title}` : ''
   return <div className="aha-page" style={{ maxWidth: 720 }}>
-    <div className="aha-spread"><h2 className="aha-title">{t('cardsTitle')}</h2><span className="aha-tag">{t('cardsDue', { count: queue.length })}</span></div>
+    <div className="aha-spread">
+      <div className="aha-col" style={{ gap: 2, minWidth: 0 }}>
+        {view.kicker ? <span className="aha-hint">{view.kicker}</span> : null}
+        <h2 className="aha-title">{view.title}</h2>
+      </div>
+      <span className="aha-row" style={{ gap: 6 }}>
+        <span className="aha-tag">{t('cardsDue', { count: queue.length })}</span>
+        {view.total ? <span className="aha-tag">{t('cardsTotal', { count: view.total })}</span> : null}
+      </span>
+    </div>
     {current ? <>
       <div className="aha-flash" data-flipped={flipped} onClick={() => setFlipped(value => !value)} role="button" tabIndex={0} onKeyDown={event => { if (event.key === ' ' || event.key === 'Enter') setFlipped(value => !value) }}>
         <div className="aha-flashInner">
@@ -293,12 +331,23 @@ export function CardsScreen({ courseId, deckId }) {
           <div className="aha-flashFace aha-flashBack"><RichText text={current.back} /></div>
         </div>
       </div>
-      <p className="aha-hint" style={{ textAlign: 'center' }}>{current.tag ? `${current.tag} · ` : ''}{t('flip')}</p>
+      <p className="aha-hint" style={{ textAlign: 'center' }}>{[where, current.tag, t('flip')].filter(Boolean).join(' · ')}</p>
       {flipped ? <div className="aha-row" style={{ justifyContent: 'center' }}>
         {[['again', 'again'], ['hard', 'hard'], ['good', 'good'], ['easy', 'easy']].map(([value, label]) => <button key={value} type="button" className="aha-btn" data-kind={value === 'good' ? 'primary' : undefined} onClick={() => grade(value)}>{t(label)}</button>)}
       </div> : null}
-    </> : <Empty>{t('cardsDone')}</Empty>}
+    </> : <Empty>{view.cards.length ? t('cardsDone') : t('cardReviewEmpty')}</Empty>}
   </div>
+}
+
+const cardKey = card => `${card.unitId ?? ''}:${card.id}`
+
+// One deck's study order: cards due again (oldest first), then unseen ones.
+function studyOrder(deck) {
+  const unitId = deck.unitId ?? null
+  const key = id => cardKey({ unitId, id })
+  const due = dueCards(Object.values(deck.srs ?? {}), Date.now()).map(state => state.id).filter(id => deck.cards.some(card => card.id === id))
+  const fresh = deck.cards.filter(card => !deck.srs?.[card.id]).map(card => card.id)
+  return [...due, ...fresh].map(key)
 }
 
 // ── cheat sheets ───────────────────────────────────────────────────────────

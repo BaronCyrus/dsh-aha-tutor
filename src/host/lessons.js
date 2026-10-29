@@ -6,13 +6,13 @@
 
 import { applyFixes, boardForCheck, describeFixes, normalizeVerdict, sanitizeStep, stepJson } from '../core/board-fix.js'
 import { boardToPlainText } from '../core/board-script.js'
-import { conceptIndex, findLesson, insertLesson, lessonAfter, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text } from '../core/course-model.js'
+import { conceptIndex, findLesson, insertLesson, lessonAfter, LIMITS, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text, unitCardRange, unitConcepts, unitQuizRange } from '../core/course-model.js'
 import { answersTo, correctEvidence, itemKey, logEvidence, stateBefore, takeEvidence } from '../core/evidence-log.js'
 import { OBJECTIVE_KINDS } from '../core/grading.js'
 import { assertId, newId } from '../core/ids.js'
 import { cleanResponse, earlierGrade, fixItem, itemForCheck, normalizeItemVerdict, regrade, responseText } from '../core/item-fix.js'
 import { createConceptState, masteryPercent, recommendNext } from '../core/mastery.js'
-import { createCard, review } from '../core/srs.js'
+import { createCard, isDue, review } from '../core/srs.js'
 import { masteryFor, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
 import { generateJson, generateSteps, TutorError } from './generate.js'
 import { askPrompt, challengePrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, flashcardsPrompt, gradePrompt, handoutPrompt, lessonPrompt, quizPrompt, reexplainPrompt, verifyItemPrompt, verifyStepPrompt } from './prompts.js'
@@ -725,63 +725,110 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     return { sheet: saved }
   }
 
-  async function unitQuiz({ courseId, unitId, force = false }) {
+  async function unitOf(courseId, unitId) {
     const course = await courses.readCourse(courseId)
-    const unit = course.units?.find(item => item.id === assertId(unitId, 'unt'))
-    if (!unit) throw new TutorError('not-found', 'Unit not found')
+    const index = course.units?.findIndex(item => item.id === assertId(unitId, 'unt')) ?? -1
+    if (index < 0) throw new TutorError('not-found', 'Unit not found')
+    const unit = course.units[index]
+    const concepts = unitConcepts(unit)
+    const outline = outlineForPrompt({ units: [unit] })
+    // What the unit covers in the course's materials, found by its lessons
+    // and concepts.
+    const passages = async () => passagesFor(await readMaterials(store, course.materialIds ?? []), `${outline}\n${concepts.map(concept => concept.name).join(' ')}`, 9000)
+    return { course, unit, concepts, outline, passages, about: { title: unit.title, n: index + 1 } }
+  }
+
+  // A unit quiz as long as the unit needs (unitQuizRange). force writes a
+  // new set, whose questions get new ids: answers to the old set are logged
+  // by question id and must never pass for answers to the new one.
+  async function unitQuiz({ courseId, unitId, force = false }) {
+    const { course, unit, concepts, outline, passages } = await unitOf(courseId, unitId)
+    const path = store.paths.unitQuiz(courseId, unitId)
+    const key = `quiz:${courseId}:${unitId}`
+    // A new set still being written is the quiz to wait for, not the old one.
+    const running = jobs.running(key)
+    if (running) return { job: running }
     if (!force) {
-      const existing = await store.readJson(store.paths.unitQuiz(courseId, unitId), null)
+      const existing = await store.readJson(path, null)
       if (existing) return { quiz: existing }
     }
     const job = jobs.start('unit/quiz', async api => {
-      const concepts = unit.lectures.flatMap(lecture => lecture.lessons.flatMap(lesson => lesson.concepts))
+      const range = unitQuizRange(unit)
       const quiz = await generateJson(llm, {
         purpose: 'teach',
-        prompt: quizPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline: outlineForPrompt({ units: [unit] }), concepts: concepts.map(concept => `${concept.id}=${concept.name}`).join(', '), language: course.language, count: 10 }),
-        maxTokens: 9000,
+        prompt: quizPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, concepts: concepts.map(concept => `${concept.id}=${concept.name}`).join(', '), passages: await passages(), language: course.language, range }),
+        maxTokens: 2000 + range.max * 500,
         signal: api.signal,
+        onText: countWritten(api, '"prompt"', range.max),
         normalize: raw => {
-          const set = normalizePractice(raw, concepts.map(concept => concept.id))
-          if (set.items.length < 3) throw new Error('quiz too short')
+          const set = normalizePractice(raw, concepts.map(concept => concept.id), LIMITS.quizItems)
+          if (set.items.length < Math.max(3, Math.ceil(range.min / 2))) throw new Error(`The quiz is too short: write at least ${range.min} questions.`)
           return set
         },
       })
-      const saved = { unitId, ...quiz, createdAt: stamp() }
-      await store.writeJson(store.paths.unitQuiz(courseId, unitId), saved)
+      const previous = await store.readJson(path, null)
+      const round = previous ? (previous.round ?? 1) + 1 : 1
+      const items = round === 1 ? quiz.items : quiz.items.map(item => ({ ...item, id: `r${round}${item.id}` }))
+      const saved = { unitId, round, items, createdAt: stamp() }
+      await store.writeJson(path, saved)
       return { quiz: saved }
-    }, { key: `quiz:${courseId}:${unitId}`, meta: { courseId, unitId } })
+    }, { key, meta: { courseId, unitId } })
     return { job }
   }
 
-  async function flashcards({ courseId, force = false }) {
-    const course = await courses.readCourse(courseId)
-    if (!force) {
-      const existing = await store.readJson(store.paths.cards(courseId), null)
-      if (existing?.cards?.length) return { deck: existing }
-    }
-    const job = jobs.start('course/cards', async api => {
-      const materials = await readMaterials(store, course.materialIds ?? [])
-      const outline = outlineForPrompt(course)
+  // A unit's flashcards: written the first time they are opened, as many as
+  // the unit needs (unitCardRange), and kept with their review state.
+  async function unitCards({ courseId, unitId }) {
+    const { course, unit, concepts, outline, passages, about } = await unitOf(courseId, unitId)
+    const path = store.paths.unitCards(courseId, unitId)
+    const existing = await store.readJson(path, null)
+    if (existing?.cards?.length) return { deck: existing, unit: about }
+    const job = jobs.start('unit/cards', async api => {
+      const range = unitCardRange(unit)
       const cards = await generateJson(llm, {
         purpose: 'teach',
-        prompt: flashcardsPrompt({ scopeTitle: course.title, outline, passages: passagesFor(materials, outline, 6000), language: course.language, count: 30 }),
-        maxTokens: 8000,
+        prompt: flashcardsPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, concepts: concepts.map(concept => concept.name).join(', '), passages: await passages(), language: course.language, range }),
+        maxTokens: 2000 + range.max * 250,
         signal: api.signal,
+        onText: countWritten(api, '"front"', range.max),
         normalize: raw => {
           const value = normalizeCards(raw)
-          if (!value.length) throw new Error('no cards')
+          if (value.length < Math.max(4, Math.ceil(range.min / 2))) throw new Error(`Too few cards: write at least ${range.min}.`)
           return value
         },
       })
-      const deck = { cards, srs: {}, createdAt: stamp() }
-      await store.writeJson(store.paths.cards(courseId), deck)
-      return { deck }
-    }, { key: `cards:${courseId}`, meta: { courseId } })
-    return { job }
+      const deck = { unitId, cards, srs: {}, createdAt: stamp() }
+      await store.writeJson(path, deck)
+      return { deck, unit: about }
+    }, { key: `cards:${courseId}:${unitId}`, meta: { courseId, unitId } })
+    return { job, unit: about }
   }
 
-  async function reviewCard({ courseId, cardId, grade: answer }) {
-    const deck = await store.updateJson(store.paths.cards(assertId(courseId, 'crs')), null, value => {
+  // Flashcard review across the course: the cards of every unit's deck that
+  // are due again, oldest first, then the whole-course deck of versions
+  // before 1.10, whose unseen cards come too since nothing else opens it now.
+  async function cardSession({ courseId }) {
+    const course = await courses.readCourse(courseId)
+    const at = now().getTime()
+    const due = []
+    const fresh = []
+    const take = (deck, unit) => {
+      for (const card of deck?.cards ?? []) {
+        const state = deck.srs?.[card.id]
+        const entry = { ...card, unitId: unit?.id ?? null, unit: unit ? { title: unit.title, n: course.units.indexOf(unit) + 1 } : null }
+        if (state && isDue(state, at)) due.push({ entry, dueAt: Date.parse(state.dueAt) })
+        else if (!state && !unit) fresh.push(entry)
+      }
+    }
+    for (const unit of course.units ?? []) take(await store.readJson(store.paths.unitCards(courseId, unit.id), null), unit)
+    take(await store.readJson(store.paths.cards(courseId), null), null)
+    return { cards: [...due.sort((a, b) => a.dueAt - b.dueAt).map(({ entry }) => entry), ...fresh] }
+  }
+
+  // unitId names a unit's deck; without it, the whole-course deck.
+  async function reviewCard({ courseId, unitId, cardId, grade: answer }) {
+    const path = unitId ? store.paths.unitCards(assertId(courseId, 'crs'), unitId) : store.paths.cards(assertId(courseId, 'crs'))
+    const deck = await store.updateJson(path, null, value => {
       if (!value?.cards?.some(card => card.id === cardId)) throw new TutorError('not-found', 'Card not found')
       value.srs ??= {}
       value.srs[cardId] = review(value.srs[cardId] ?? createCard(cardId, now().getTime()), answer, now().getTime())
@@ -798,7 +845,24 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }).catch(() => undefined)
   }
 
-  return Object.freeze({ get, prepare, ask, reexplain, challenge, challengeItem, handout, record, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, flashcards, reviewCard })
+  return Object.freeze({ get, prepare, ask, reexplain, challenge, challengeItem, handout, record, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, unitCards, cardSession, reviewCard })
+}
+
+// The job's progress while a JSON answer streams in: how many times `field`
+// (each question's "prompt", each card's "front") has been written so far.
+function countWritten(api, field, total) {
+  let tail = ''
+  let count = 0
+  return delta => {
+    const window = tail + delta
+    let found = 0
+    for (let at = window.indexOf(field); at >= 0; at = window.indexOf(field, at + field.length)) found += 1
+    // Shorter than the field, so a match is never counted twice.
+    tail = window.slice(-(field.length - 1))
+    if (!found) return
+    count += found
+    api.progress(Math.min(count, total), total, 'writing')
+  }
 }
 
 function pushEvent(progress, event) {

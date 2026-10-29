@@ -8,7 +8,7 @@ import { createCard, review } from '../core/srs.js'
 import { buildIndex, documentParts, formatPassages, passageRange, search, snippetOf, spreadPassages } from '../core/retrieval.js'
 import { materialImages, passagesFor, readMaterials, readProfile } from './context.js'
 import { generateJson, generateSteps, generateText, TutorError } from './generate.js'
-import { ingestFile, ingestUrl, MAX_UPLOAD_BYTES } from './materials.js'
+import { ingestFile, ingestUrl, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from './materials.js'
 import { assistPrompt, cheatsheetPrompt, detectLanguage, digestPartPrompt, digestPrompt, flashcardsPrompt, materialBriefPrompt, quizPrompt, shortPrompt, summaryPrompt } from './prompts.js'
 import { createRecognizer } from './recognize.js'
 import { cleanLayout } from './lessons.js'
@@ -75,10 +75,10 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
   function upload({ name, base64, bytes: raw }) {
     const fileName = text(name, 200) || 'file'
     if (!raw && (typeof base64 !== 'string' || !base64)) throw new TutorError('invalid', 'No file data')
-    if (raw ? raw.length > MAX_UPLOAD_BYTES : base64.length > Math.ceil((MAX_UPLOAD_BYTES * 4) / 3) + 8) throw new TutorError('too-large', 'The file is larger than 60 MB')
+    if (raw ? raw.length > MAX_UPLOAD_BYTES : base64.length > Math.ceil((MAX_UPLOAD_BYTES * 4) / 3) + 8) throw new TutorError('too-large', `The file is larger than ${MAX_UPLOAD_MB} MB`)
     return jobs.start('material/upload', async api => {
       api.progress(0, 2, 'reading')
-      const bytes = raw ? Buffer.from(raw) : Buffer.from(base64, 'base64')
+      const bytes = raw ? (Buffer.isBuffer(raw) ? raw : Buffer.from(raw)) : Buffer.from(base64, 'base64')
       const result = await ingestFile({ name: fileName, bytes, signal: api.signal, recognize: recognizer(api) })
       api.progress(1, 2, 'summarizing')
       const meta = await saveMaterial(result, { bytes, signal: api.signal, extra: { fileName } })

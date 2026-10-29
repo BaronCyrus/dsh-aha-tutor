@@ -11,7 +11,9 @@ export const COURSEPACK_FORMAT = 'aha-tutor.coursepack'
 export const COURSEPACK_VERSION = 1
 export const COURSEPACK_MAX_BYTES = 8 * 1024 * 1024
 
-export function exportCoursePack({ course, progress, boards = {}, practice = {}, sheets = {}, cards = [] }, { includeProgress = false, app = {} } = {}) {
+// cards: the whole-course deck of versions before 1.10; unitCards: each
+// unit's deck by unit id. Decks travel without their review state.
+export function exportCoursePack({ course, progress, boards = {}, practice = {}, sheets = {}, cards = [], unitCards = {} }, { includeProgress = false, app = {} } = {}) {
   return {
     format: COURSEPACK_FORMAT,
     version: COURSEPACK_VERSION,
@@ -32,6 +34,7 @@ export function exportCoursePack({ course, progress, boards = {}, practice = {},
     practice,
     sheets,
     cards,
+    unitCards,
     progress: includeProgress ? progress ?? null : null,
   }
 }
@@ -56,7 +59,7 @@ function packError(code, message) {
   return Object.assign(new Error(message), { code })
 }
 
-// Returns { course, boards, practice, sheets, cards, progress } with fresh ids.
+// Returns { course, boards, practice, sheets, cards, unitCards, progress } with fresh ids.
 // Lesson-keyed maps are re-keyed to the new lesson ids.
 export function importCoursePack(input, { now = new Date() } = {}) {
   const pack = parseCoursePack(input)
@@ -112,8 +115,14 @@ export function importCoursePack(input, { now = new Date() } = {}) {
   }
 
   const cards = normalizeCards(pack.cards ?? [])
+  const unitCards = {}
+  for (const [oldId, deck] of Object.entries(pack.unitCards ?? {})) {
+    const newUnitId = unitIdMap.get(oldId)
+    const unitDeck = newUnitId ? normalizeCards(deck) : []
+    if (unitDeck.length) unitCards[newUnitId] = unitDeck
+  }
   const progress = pack.progress ? remapProgress(pack.progress, lessonIdMap, conceptIdMap) : null
-  return { course, boards, practice, sheets, cards, progress }
+  return { course, boards, practice, sheets, cards, unitCards, progress }
 }
 
 function stripIds(course) {

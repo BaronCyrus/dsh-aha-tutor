@@ -19,6 +19,7 @@ import {
 } from '../core/course-model.js'
 import { assertId, newId } from '../core/ids.js'
 import { extractJson } from '../core/json-extract.js'
+import { deckStatus } from '../core/srs.js'
 import { formatPassages, spreadPassages } from '../core/retrieval.js'
 import { COURSE_MATERIALS, emptyProgress, materialImages, materialsSummary, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
 import { generateJson, streamCounter, TutorError } from './generate.js'
@@ -107,8 +108,27 @@ export function createCourses({ store, llm, jobs, research, now = () => new Date
         boards: [...boards],
         practice: [...practice],
         sheets: [...sheets],
+        cards: await cardsReady(course),
       },
     }
+  }
+
+  // Each unit's flashcard deck at a glance, and how many cards the course's
+  // flashcard review holds: due cards of every deck, and the unseen cards of
+  // the whole-course deck of versions before 1.10 (see lessons.cardSession).
+  async function cardsReady(course) {
+    const at = now().getTime()
+    const units = {}
+    let review = 0
+    for (const unitId of await store.listIds(store.paths.unitCardsDir(course.id), 'unt')) {
+      if (!course.units?.some(unit => unit.id === unitId)) continue
+      const status = deckStatus(await store.readJson(store.paths.unitCards(course.id, unitId), null), at)
+      if (!status.total) continue
+      units[unitId] = status
+      review += status.due
+    }
+    const old = deckStatus(await store.readJson(store.paths.cards(course.id), null), at)
+    return { units, review: review + old.due + old.fresh, decks: Object.keys(units).length + (old.total ? 1 : 0) }
   }
 
   // Step 1: create the draft and ask the intake questions (unless quick).
@@ -442,7 +462,12 @@ export function createCourses({ store, llm, jobs, research, now = () => new Date
       if (sheet) sheets[unit.id] = sheet
     }
     const cards = (await store.readJson(store.paths.cards(courseId), null))?.cards ?? []
-    const pack = exportCoursePack({ course, progress, boards, practice, sheets, cards }, { includeProgress: includeProgress === true, app: { version: appVersion } })
+    const unitCards = {}
+    for (const unit of course.units ?? []) {
+      const deck = await store.readJson(store.paths.unitCards(courseId, unit.id), null)
+      if (deck?.cards?.length) unitCards[unit.id] = deck.cards
+    }
+    const pack = exportCoursePack({ course, progress, boards, practice, sheets, cards, unitCards }, { includeProgress: includeProgress === true, app: { version: appVersion } })
     return { fileName: `${safeFileName(course.title)}.aha-course.json`, json: JSON.stringify(pack) }
   }
 
@@ -461,6 +486,7 @@ export function createCourses({ store, llm, jobs, research, now = () => new Date
     for (const [lessonId, set] of Object.entries(imported.practice)) await store.writeJson(store.paths.practice(course.id, lessonId), { lessonId, ...set })
     for (const [unitId, sheet] of Object.entries(imported.sheets)) await store.writeJson(store.paths.sheet(course.id, unitId), sheet)
     if (imported.cards.length) await store.writeJson(store.paths.cards(course.id), { cards: imported.cards, srs: {} })
+    for (const [unitId, cards] of Object.entries(imported.unitCards)) await store.writeJson(store.paths.unitCards(course.id, unitId), { unitId, cards, srs: {}, createdAt: stamp() })
     await store.writeJson(store.paths.progress(course.id), { ...emptyProgress(course.id), ...(imported.progress ?? {}), courseId: course.id })
     return summary(course.id)
   }

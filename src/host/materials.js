@@ -12,7 +12,10 @@ import { dirname, join } from 'node:path'
 import { pageImage } from './page-image.js'
 import { assertPublicHostname, createGuardedFetch } from './web-fetch.js'
 
-export const MAX_UPLOAD_BYTES = 60 * 1024 * 1024
+// DSH's own budget for attachments; its buffered RPC bodies leave room for
+// this much after base64, so the RPC fallback of uploads carries it too.
+export const MAX_UPLOAD_MB = 200
+export const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024
 const MAX_TEXT_CHARS = 2_000_000
 const CHUNK_CHARS = 1600
@@ -428,7 +431,7 @@ export function extractPlain(bytes, kind) {
 // read, what failed and why, and what was left unread.
 export async function ingestFile({ name, bytes, signal, recognize }) {
   if (!bytes?.length) throw new MaterialError('empty', 'The file is empty')
-  if (bytes.length > MAX_UPLOAD_BYTES) throw new MaterialError('too-large', 'The file is larger than 60 MB')
+  if (bytes.length > MAX_UPLOAD_BYTES) throw new MaterialError('too-large', `The file is larger than ${MAX_UPLOAD_MB} MB`)
   const kind = detectKind(name, bytes)
   const baseTitle = String(name ?? '').replace(/\.[^.]+$/u, '').slice(0, 120) || 'Untitled'
   if (kind === 'image') {

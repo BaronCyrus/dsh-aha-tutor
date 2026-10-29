@@ -121,10 +121,10 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
       if (typeof payload.json !== 'string') throw new TutorError('invalid', 'Choose a course pack file')
       return courses.importPack({ json: payload.json })
     },
-    'course/cards': payload => lessons.flashcards({ courseId: need(payload, 'courseId', 'crs'), force: payload.force === true }),
+    'course/card-session': payload => lessons.cardSession({ courseId: need(payload, 'courseId', 'crs') }),
     'course/card-review': payload => {
       if (!GRADES.includes(payload.grade)) throw new TutorError('invalid', 'Invalid grade')
-      return lessons.reviewCard({ courseId: need(payload, 'courseId', 'crs'), cardId: String(payload.cardId ?? '').slice(0, 12), grade: payload.grade })
+      return lessons.reviewCard({ courseId: need(payload, 'courseId', 'crs'), unitId: optional(payload, 'unitId', 'unt'), cardId: String(payload.cardId ?? '').slice(0, 12), grade: payload.grade })
     },
 
     'lesson/get': payload => lessons.get({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les') }),
@@ -158,6 +158,7 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
     'unit/sheet': payload => lessons.unitSheet({ courseId: need(payload, 'courseId', 'crs'), unitId: need(payload, 'unitId', 'unt'), force: payload.force === true }),
     'unit/sheet-layout': payload => lessons.saveSheetLayout({ courseId: need(payload, 'courseId', 'crs'), unitId: need(payload, 'unitId', 'unt'), layout: payload.layout }),
     'unit/quiz': payload => lessons.unitQuiz({ courseId: need(payload, 'courseId', 'crs'), unitId: need(payload, 'unitId', 'unt'), force: payload.force === true }),
+    'unit/cards': payload => lessons.unitCards({ courseId: need(payload, 'courseId', 'crs'), unitId: need(payload, 'unitId', 'unt') }),
 
     'profile/get': () => learner.getProfile(),
     'profile/save': payload => learner.saveProfile({ name: payload.name, background: payload.background, goals: payload.goals, strengths: payload.strengths, weaknesses: payload.weaknesses, preferences: payload.preferences, notes: payload.notes }),

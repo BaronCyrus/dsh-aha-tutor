@@ -58,6 +58,8 @@ const SCREENS = {
 }
 
 const ROOT_OF = { craft: 'courses', course: 'courses', lesson: 'courses', handout: 'courses', practice: 'courses', project: 'courses', cards: 'studio', sheet: 'studio', item: 'studio' }
+// Flashcards and cheat sheets of a course belong to the courses, not the library.
+const rootOf = route => (route.params?.courseId && ['cards', 'sheet'].includes(route.screen) ? 'courses' : ROOT_OF[route.screen] ?? route.screen)
 
 // A screen that crashes is replaced by a notice while the navigation keeps
 // working. A crash anywhere else replaces the whole page, and only a fresh
@@ -102,7 +104,7 @@ function Page({ rpc, t, language, dsh }) {
   const { value, toastText, textSize } = useAppValue({ rpc, t, language, dsh, navigate, back })
   const nav = useNav(CLASS_SCREENS.includes(route.screen))
   const Screen = SCREENS[route.screen] ?? HomeScreen
-  const activeRoot = ROOT_OF[route.screen] ?? route.screen
+  const activeRoot = rootOf(route)
   // Opening a screen starts a new history. Opening the one on show again
   // retries it after a crash, since every route object is new.
   const open = screen => { history.current = []; setRoute({ screen, params: {} }) }

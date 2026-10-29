@@ -240,12 +240,15 @@ function checkingLlm() {
         { say: '算一算。', ops: [{ t: 'p', text: '试试看' }], check: { kind: 'number', prompt: '$2 + 3 \\times 4$ 等于多少？', answer: 20, conceptIds: [concept] } },
       ].map(line => JSON.stringify(line)).join('\n')
     }
-    if (user.includes('-question quiz')) {
+    if (user.includes('quiz across the whole scope')) {
       const concept = /(cpt_[a-z0-9]+)=/u.exec(user)?.[1]
+      // As many questions as the prompt asks for at least.
+      const wanted = Number(/at least (\d+) and at most/u.exec(user)?.[1] ?? 3)
       return JSON.stringify({ items: [
         { kind: 'number', prompt: '$2 + 2 \\times 3$ 等于多少？', answer: 12, explanation: '先乘后加。', conceptIds: [concept] },
         { kind: 'choice', prompt: '哪个是质数？', options: ['9', '11'], answer: 1, conceptIds: [concept] },
         { kind: 'blank', prompt: '最小的质数是 __', answer: ['2'], conceptIds: [concept] },
+        ...Array.from({ length: Math.max(0, wanted - 3) }, (_, index) => ({ kind: 'number', prompt: `$${index + 2} \\times 3$ 等于多少？`, answer: (index + 2) * 3, conceptIds: [concept] })),
       ] })
     }
     if (user.includes('Decide which is true')) return JSON.stringify(verdict(user))

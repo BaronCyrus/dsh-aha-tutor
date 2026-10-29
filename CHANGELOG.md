@@ -2,6 +2,25 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## 1.10.0 - 2026-10-29
+
+### Added
+
+- **Flashcards for each unit**: every unit has **Unit flashcards** beside **Unit quiz**, in the outline and in the practice tab. A unit's deck is written the first time it is opened, from its lessons and concepts and from the course materials' pages on them: two to four cards per concept, at most 60. The deck keeps its review schedule, and the button shows how many of its cards are due. Course packs carry the unit decks.
+- **Flashcard review**: at the top of the practice tab, beside **Start review**, it brings the due cards of every unit together, oldest first.
+- **New set of questions**: the end of a unit quiz offers **New set of questions**, which writes the quiz again; **Retry** still repeats the same questions. A new set's questions get new ids, so answers to the old set are never graded again against them. Leaving while the new set is written and coming back waits for it instead of showing the old one.
+
+### Changed
+
+- **Unit quizzes as long as the unit**: a unit quiz always had 10 questions. It now has at least one per concept of the unit and more for the central ones, usually 10 to 30, the model choosing inside that range, and it follows the course materials' pages on the unit: their exercises, notation and units. While it is written, the page counts the questions done.
+- **One tab for practice, quizzes and flashcards**: the practice tab is now 「练习、测验与闪卡」 (Practice, quizzes & flashcards), and the Flashcards tab, which only held a button, is gone; links to it open the practice tab. The whole-course deck of earlier versions (30 cards from the outline and 6,000 characters of the materials) is no longer written. A deck already made joins **Flashcard review** with its schedule kept, its unseen cards included.
+- **Uploads up to 200 MB**: the limit was 60 MB, too small for a textbook full of pictures. 200 MB is DSH's own budget for attachments and fits both upload routes; the host no longer keeps a second copy of the file while reading it.
+
+### Fixed
+
+- **Navigation**: a course's flashcards and cheat sheets highlighted **Study tools** instead of **My courses**.
+- **Narrow pages**: the course title no longer pushes the course page sideways at phone width.
+
 ## 1.9.0 - 2026-10-27
 
 ### Added

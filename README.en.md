@@ -42,7 +42,7 @@ Two sample courses ship with the plugin (harmonic motion and Bayesian thinking, 
 
 You need the **DeepSeek Harness** desktop app (0.2.x, from 0.2.1) with at least one working model. See the [DSH instructions](https://github.com/deepseek-ai/deepseek-harness#run) if you do not have it yet.
 
-1. Open **Plugins** in the desktop app, click **Add plugin** and enter `dsh-aha-tutor` as the package, with the official registry as the source. Within 24 hours of a new release DSH's pnpm holds new versions back; enter an exact version such as `dsh-aha-tutor@1.9.0` then.
+1. Open **Plugins** in the desktop app, click **Add plugin** and enter `dsh-aha-tutor` as the package, with the official registry as the source. Within 24 hours of a new release DSH's pnpm holds new versions back; enter an exact version such as `dsh-aha-tutor@1.10.0` then.
 2. **Quit and reopen** the desktop app. Refreshing the page does not load the plugin's host side.
 3. Open **Aha · AI tutor** in the left sidebar (shown as 「开窍 · AI 私人老师」 in Chinese).
 

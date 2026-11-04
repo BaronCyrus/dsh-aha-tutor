@@ -6,6 +6,7 @@ import { boardToMarkdown, boardToPlainText, normalizeBoard } from '../src/core/b
 import { normalizeItem } from '../src/core/course-model.js'
 import { constantValue, exprToText, formula, parseExpr } from '../src/core/expr.js'
 import { compilePlot, normalizePlot, plotBounds, plotToText, sampleCurves } from '../src/core/plot.js'
+import { BOARD_SPEC } from '../src/host/prompts.js'
 import { estimateHeight } from '../src/ui/board/layout.js'
 import { plotSvg } from '../src/ui/plot.js'
 
@@ -87,6 +88,63 @@ test('a plot keeps curves of every kind, sliders and marks, and drops what it ca
   assert.equal(normalizePlot({ y: 'x^3', x: [-2, 2] }).fns[0].y, 'x^3')
 })
 
+test('a plot keeps the sliders its formulas need, whatever they are called and however their ranges are written', () => {
+  const sliders = raw => normalizePlot(raw)?.params.map(param => [param.name, param.value, param.min, param.max]) ?? null
+  // Saving early or late at a rate r: r used to be refused, and the curves with it.
+  assert.deepEqual(sliders({ fns: [{ y: 'P*(1+r)^x' }, { y: 'P*(1+r)^(x-10)', domain: [10, 40] }], x: [0, 40], params: [{ name: 'P', value: 1, min: 1, max: 5 }, { name: 'r', value: 0.05, min: 0.01, max: 0.1 }] }), [['P', 1, 1, 5], ['r', 0.05, 0.01, 0.1]])
+  // A launch angle θ, a speed v, an eccentricity e (no longer read as Euler's number).
+  assert.deepEqual(sliders({ fns: ['tan(θ)*x - 9.8*x^2/(2*v^2*cos(θ)^2)'], x: [0, 12], params: [{ name: 'θ', value: 0.8, min: 0.2, max: 1.4 }, { name: 'v', value: 10, min: 5, max: 12 }] }), [['θ', 0.8, 0.2, 1.4], ['v', 10, 5, 12]])
+  assert.deepEqual(sliders({ fns: [{ x: '2*cos(t)', y: '2*sqrt(1-e^2)*sin(t)' }], params: [{ name: 'e', value: 0.5, min: 0, max: 0.95 }] }), [['e', 0.5, 0, 0.95]])
+  close(compilePlot(normalizePlot({ fns: ['e*x'], params: [{ name: 'e', value: 0.5, min: 0, max: 1 }] }))[0].y(2, [0.5]), 1)
+  // The variable a curve runs over stays the curve's own.
+  assert.deepEqual(sliders({ fns: [{ r: '1 + cos(θ)' }], params: [{ name: 'θ', min: 0, max: 1 }] }), [])
+  assert.deepEqual(sliders({ fns: [{ x: 'cos(t)', y: 'sin(t)' }, 'k*x'], params: [{ name: 't', min: 0, max: 1 }, { name: 'k', min: 0, max: 2 }] }), [['k', 1, 0, 2]])
+  assert.deepEqual(sliders({ fns: ['x^2 + y'], params: [{ name: 'y', min: 0, max: 1 }] }), null, 'y is never a slider')
+  assert.deepEqual(sliders({ fns: ['pi*x'], params: [{ name: 'pi', min: 3, max: 4 }] }), [], 'π stays π')
+  // Other ways to write a slider: its name under another key, a range, an
+  // object of sliders, a bare name, ends missing, in the wrong order or equal.
+  assert.deepEqual(sliders({ fns: ['k*x + b'], params: [{ param: 'k', value: 1, range: [0, 3] }, { var: 'b', value: 0, min: -2, max: 2 }] }), [['k', 1, 0, 3], ['b', 0, -2, 2]])
+  assert.deepEqual(sliders({ fns: ['a*x^2 + b*x + c'], sliders: { a: { min: -2, max: 2, value: 1 }, b: [-3, 3], c: 0.5 } }), [['a', 1, -2, 2], ['b', 0, -3, 3], ['c', 0.5, 0, 1]])
+  assert.deepEqual(sliders({ fns: ['k*x'], params: ['k'] }), [['k', 1, 0, 2]])
+  assert.deepEqual(sliders({ fns: ['k*x'], params: [{ name: 'k', value: 4 }] }), [['k', 4, 0, 8]])
+  assert.deepEqual(sliders({ fns: ['k*x'], params: [{ name: 'k', min: 2 }] }), [['k', 3, 2, 4]])
+  assert.deepEqual(sliders({ fns: ['k*x'], params: [{ name: 'k', max: -1, value: -3 }] }), [['k', -3, -5, -1]])
+  assert.deepEqual(sliders({ fns: ['k*x'], params: [{ name: 'k', min: 3, max: 1, value: 2 }] }), [['k', 2, 1, 3]])
+  assert.deepEqual(sliders({ fns: ['k*x'], params: [{ name: 'k', min: 1, max: 1 }] }), [['k', 1, 0, 2]])
+  assert.deepEqual(sliders({ fns: ['k*x'], params: [{ name: 'k', value: 0 }] }), [['k', 0, -1, 1]])
+  assert.deepEqual(sliders({ fns: ['rate*x'], params: [{ name: 'rate', min: 0, max: 1 }] }), [['rate', 0.5, 0, 1]], 'names may be whole words')
+  // A few sliders more than asked for are kept; one no curve reads is dropped.
+  assert.deepEqual(sliders({ fns: ['a*x^4 + b*x^3 + c*x^2 + d*x + f'], params: ['a', 'b', 'c', 'd', 'f', 'g'].map(name => ({ name, value: 1, min: 0, max: 2 })) }).map(([name]) => name), ['a', 'b', 'c', 'd', 'f'])
+  // A Greek letter answers to its name and its variant glyph.
+  assert.deepEqual(sliders({ fns: ['A*sin(omega*x + ϕ)'], params: [{ name: 'A', min: 0, max: 2 }, { name: 'ω', min: 1, max: 3 }, { name: 'phi', min: 0, max: 3 }] }), [['A', 1, 0, 2], ['ω', 2, 1, 3], ['phi', 1.5, 0, 3]])
+  const many = normalizePlot({ x: [-2, 2], fns: ['a*x^5 + b*x^4 + c*x^3 + d*x^2 + f*x + g'], params: ['a', 'b', 'c', 'd', 'f', 'g'].map(name => ({ name, value: 0, min: -1, max: 1 })) })
+  assert.equal(many.params.length, 6)
+  const bounds = plotBounds(many)
+  assert.ok(bounds.y.max >= 6 && bounds.y.min <= -6, 'the axes still leave room for the sliders at their ends')
+  // Normalizing again changes nothing.
+  for (const raw of [{ fns: ['P*(1+r)^x'], params: [{ name: 'r', value: 0.05 }, { name: 'P', min: 1, max: 1 }] }, many]) assert.deepEqual(normalizePlot(normalizePlot(raw)), normalizePlot(raw))
+})
+
+test('formulas forgive LaTeX, brackets and a lost backslash', () => {
+  close(value(String.raw`\frac{1}{x+1}`, ['x'], [1]), 0.5)
+  close(value(String.raw`\sqrt{x} + \sqrt[3]{8}`, ['x'], [9]), 5)
+  close(value(String.raw`e^{-x^2} \cdot 2`, ['x'], [0]), 2)
+  close(value(String.raw`A\sin\left(\omega x\right)`, ['x', 'A', 'ω'], [1, 2, Math.PI / 2]), 2)
+  close(value(String.raw`2\pi r`, ['r'], [1]), 2 * Math.PI)
+  close(value(String.raw`v_{0} t - \tfrac{1}{2} g t^{2}`, ['t', 'v_0', 'g'], [1, 10, 10]), 5)
+  close(value('[x+1]^2 - {x}', ['x'], [1]), 3)
+  close(value('mod(x, 3) + sgn(-x)', ['x'], [-1]), 3)
+  // "\frac" and "\theta" written in JSON with one backslash arrive as a form
+  // feed and a tab.
+  close(value(JSON.parse(String.raw`"\\frac{1}{2}*x"`), ['x'], [4]), 2)
+  close(value(JSON.parse(String.raw`"\frac{1}{2}*x"`), ['x'], [4]), 2)
+  close(value(JSON.parse(String.raw`"sin(\theta)"`), ['θ'], [Math.PI / 2]), 1)
+  // A Greek letter under another spelling, only where no other name fits.
+  close(value('omega*x', ['x', 'ω'], [2, 3]), 6)
+  close(value('ω*x', ['x', 'omega'], [2, 3]), 6)
+  assert.throws(() => parseExpr('omega*x', ['x']), /Unknown name/u)
+})
+
 test('curves are sampled from their formulas, and axes leave room for every slider position', () => {
   const plot = normalizePlot({ x: [0, 8], fns: [{ y: 'A*cos(ω*t)' }], params: [{ name: 'A', value: 5, min: 1, max: 8 }, { name: 'ω', value: 'pi/2', min: 0.5, max: 4 }] })
   const compiled = compilePlot(plot)
@@ -150,6 +208,17 @@ test('the board takes plots under any name, and charts stay charts', () => {
   assert.match(boardToPlainText(board), /\(plot: \{"fns":\[\{"kind":"fx","y":"x\^2"\}\]/u, 'prompts see the formulas')
   assert.match(boardToMarkdown(board), /> 📈 抛物线\n> 📈 y = x², x −2 … 2/u)
   assert.match(plotToText(board.steps[0].ops[0]), /y = x²/u)
+})
+
+test('a step that asks the learner to drag a slider keeps its plot and the slider', () => {
+  const board = normalizeBoard([{ say: '拖动利率 r 的滑块，比较早存和晚存。', ops: [
+    { t: 'title', text: '复利' },
+    { t: 'plot', fns: [{ y: 'P*(1+r)^x', name: '早存' }, { y: 'P*(1+r)^(x-10)', name: '晚存', domain: [10, 40] }], x: [0, 40], params: [{ name: 'P', value: 1, min: 1, max: 5 }, { name: 'r', value: 0.05, min: 0.01, max: 0.1, label: '年利率 r' }] },
+  ] }])
+  const plot = board.steps[0].ops.find(op => op.t === 'plot')
+  assert.deepEqual(plot.params.map(param => param.label || param.name), ['P', '年利率 r'])
+  assert.notEqual(plotSvg(plot, [1, 0.01]), plotSvg(plot, [1, 0.1]), 'the slider moves the curves')
+  assert.match(BOARD_SPEC, /Only a plot with "params" has sliders/u, 'the teacher is told when there is a slider to drag')
 })
 
 test('practice items may carry a plot as their figure', () => {

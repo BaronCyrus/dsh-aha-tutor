@@ -4,9 +4,11 @@
 // learner can slide, and marks: points, dashed guides, shaded areas and
 // tangents. This module checks a plot (normalizePlot) and samples it.
 
-import { compileExpr, constantValue, exprToText, isConstantName, isFunctionName, parseExpr } from './expr.js'
+import { compileExpr, constantValue, exprToText, isFunctionName, namesIn, parseExpr } from './expr.js'
 
-export const PLOT_LIMITS = Object.freeze({ fns: 4, params: 4, points: 8, lines: 6, shades: 3, tangents: 3, samples: 480 })
+// The prompt asks for at most 4 sliders; a plot with a few more keeps them
+// rather than losing the curves that use them.
+export const PLOT_LIMITS = Object.freeze({ fns: 4, params: 6, points: 8, lines: 6, shades: 3, tangents: 3, samples: 480 })
 
 const clip = (value, max) => (value === null || value === undefined ? '' : String(value).replace(/\u0000/gu, '').trim().slice(0, max))
 const list = (value, max) => (Array.isArray(value) ? value : value && typeof value === 'object' ? [value] : []).slice(0, max)
@@ -15,7 +17,10 @@ const mentionsPi = value => /pi|π/iu.test(String(value ?? ''))
 
 // The names a curve is written in; every one stands for the same value.
 const VARIABLES = Object.freeze({ fx: ['x', 't'], param: ['t', 'θ', 'theta'], polar: ['θ', 'theta', 't'] })
-const RESERVED = new Set(['x', 'y', 'r', 'θ', 'theta'])
+// The variable each kind of curve runs over, which no slider may take.
+const RUNS_OVER = Object.freeze({ fx: ['x'], param: ['t'], polar: ['θ', 'theta'] })
+// Constants that are never a slider. Euler's e may be one (an eccentricity).
+const NOT_SLIDERS = new Set(['pi', 'π'])
 
 export function curveVariables(kind, paramNames) {
   return VARIABLES[kind].filter(name => !paramNames.includes(name))
@@ -36,22 +41,70 @@ function readRange(value) {
   return a !== null && b !== null && b > a ? [a, b] : null
 }
 
-function normalizeParams(raw) {
+const NAME_KEYS = ['name', 'symbol', 'id', 'param', 'var', 'variable', 'letter', 'key']
+const nameOf = param => NAME_KEYS.map(key => param?.[key]).find(value => typeof value === 'string' && value.trim())
+
+// Sliders as a list, as one slider, or as an object of sliders by name:
+// {"A": {"min": 0, "max": 2}, "k": [0, 3], "r": 0.05}. A bare name is a
+// slider too.
+function sliderList(raw) {
+  const entries = Array.isArray(raw) ? raw
+    : !raw || typeof raw !== 'object' ? []
+      : nameOf(raw) ? [raw]
+        : Object.entries(raw).map(([key, spec]) => (Array.isArray(spec) ? { name: key, range: spec } : spec && typeof spec === 'object' ? { ...spec, name: nameOf(spec) ?? key } : { name: key, value: spec }))
+  return entries.slice(0, PLOT_LIMITS.params * 3).map(entry => (typeof entry === 'string' ? { name: entry } : entry))
+}
+
+// A slider's range from whatever the model gave: both ends (in either
+// order), one end, or only where it starts. A slider the formulas need is
+// better with a guessed range than lost with the curves that use it.
+function sliderRange(param) {
+  const range = Array.isArray(param.range) ? param.range : param.range && typeof param.range === 'object' ? [param.range.min, param.range.max] : []
+  let min = constantValue(param.min ?? param.from ?? range[0])
+  let max = constantValue(param.max ?? param.to ?? range[1])
+  const start = constantValue(param.value ?? param.default ?? param.initial ?? param.start)
+  if (min !== null && max !== null && min > max) [min, max] = [max, min]
+  if (min === null || max === null || min === max) {
+    const around = value => (value > 0 ? [0, 2 * value] : value < 0 ? [2 * value, 0] : [-1, 1])
+    if (min !== null && max !== null) [min, max] = around(start ?? min)
+    else if (min !== null) max = start !== null && start > min ? 2 * start - min : min + (Math.abs(min) || 1)
+    else if (max !== null) min = start !== null && start < max ? 2 * start - max : max - (Math.abs(max) || 1)
+    else [min, max] = around(start ?? 1)
+  }
+  return { min, max, value: clamp(start ?? (min + max) / 2, min, max) }
+}
+
+// `taken`: the variables the plot's curves run over.
+function normalizeParams(raw, taken) {
   const seen = new Set()
   const params = []
-  for (const param of list(raw, PLOT_LIMITS.params)) {
-    const name = clip(param?.name ?? param?.symbol ?? param?.id, 12)
-    if (!/^\p{L}[\p{L}\p{N}_]{0,11}$/u.test(name) || isFunctionName(name) || isConstantName(name) || RESERVED.has(name) || seen.has(name)) continue
-    const min = constantValue(param.min)
-    const max = constantValue(param.max)
-    if (min === null || max === null || !(max > min)) continue
-    const start = constantValue(param.value ?? param.default ?? param.initial)
+  for (const param of sliderList(raw)) {
+    if (params.length >= PLOT_LIMITS.params) break
+    const name = clip(nameOf(param), 24)
+    if (!/^\p{L}[\p{L}\p{N}_]{0,23}$/u.test(name) || isFunctionName(name) || NOT_SLIDERS.has(name) || taken.has(name) || seen.has(name)) continue
+    const { min, max, value } = sliderRange(param)
     let step = constantValue(param.step)
     if (!(step > 0) || step > max - min) step = niceStep((max - min) / 100)
     seen.add(name)
-    params.push({ name, value: clamp(start ?? (min + max) / 2, min, max), min, max, step, label: clip(param.label ?? param.title, 30) })
+    params.push({ name, value, min, max, step, label: clip(param.label ?? param.title, 30) })
   }
   return params
+}
+
+// What a curve is, read the way normalizeCurve reads it.
+function curveKind(raw) {
+  const curve = typeof raw === 'string' ? { y: raw } : raw
+  if (curve?.r !== undefined) return 'polar'
+  return typeof curve?.x === 'string' && typeof curve?.y === 'string' ? 'param' : 'fx'
+}
+
+// The sliders a curve's formulas read.
+function namesOfCurve(fn, paramNames) {
+  const names = [...curveVariables(fn.kind, paramNames), ...paramNames]
+  const sources = fn.kind === 'polar' ? [fn.r] : fn.kind === 'param' ? [fn.x, fn.y] : [fn.y]
+  const found = new Set()
+  for (const source of sources) namesIn(parseExpr(source, names), found)
+  return paramNames.filter(name => found.has(name))
 }
 
 // "y = …", "f(x) = …" and "r(θ) = …" lose their left-hand side.
@@ -100,11 +153,16 @@ function fxIndex(value, fns, fallback = true) {
 
 export function normalizePlot(raw) {
   if (!raw || typeof raw !== 'object') return null
-  const params = normalizeParams(raw.params ?? raw.parameters ?? raw.sliders)
-  const paramNames = params.map(param => param.name)
   const single = typeof raw.y === 'string' || raw.fn !== undefined || raw.expr !== undefined || raw.f !== undefined || raw.formula !== undefined ? [{ ...raw, x: undefined, name: raw.name ?? raw.label }] : []
-  const fns = list(raw.fns ?? raw.functions ?? raw.curves ?? single, PLOT_LIMITS.fns * 2).map(curve => normalizeCurve(curve, paramNames)).filter(Boolean).slice(0, PLOT_LIMITS.fns)
+  const curves = list(raw.fns ?? raw.functions ?? raw.curves ?? single, PLOT_LIMITS.fns * 2)
+  // A slider may be called r, θ or e, unless a curve runs over that name.
+  const taken = new Set(['x', 'y', ...curves.flatMap(curve => RUNS_OVER[curveKind(curve)])])
+  const declared = normalizeParams(raw.params ?? raw.parameters ?? raw.sliders, taken)
+  const fns = curves.map(curve => normalizeCurve(curve, declared.map(param => param.name))).filter(Boolean).slice(0, PLOT_LIMITS.fns)
   if (!fns.length) return null
+  // A slider no curve reads would move nothing.
+  const used = new Set(fns.flatMap(fn => namesOfCurve(fn, declared.map(param => param.name))))
+  const params = declared.filter(param => used.has(param.name))
 
   const xSource = raw.x !== undefined && typeof raw.x !== 'string' ? raw.x : raw.xRange ?? raw.domain ?? (raw.xMin !== undefined ? [raw.xMin, raw.xMax] : undefined)
   const ySource = raw.y !== undefined && typeof raw.y !== 'string' ? raw.y : raw.yRange ?? (raw.yMin !== undefined ? [raw.yMin, raw.yMax] : undefined)
@@ -229,10 +287,20 @@ function percentile(sorted, share) {
 // curve that shoots off (tan x, 1/x) is cut back to where most of it lies.
 export function plotBounds(plot, compiled = compilePlot(plot)) {
   const combos = [[]]
-  for (const param of plot.params) {
-    const next = []
-    for (const combo of combos) for (const value of new Set([param.min, param.value, param.max])) next.push([...combo, value])
-    combos.splice(0, combos.length, ...next)
+  if (plot.params.length <= 4) {
+    for (const param of plot.params) {
+      const next = []
+      for (const combo of combos) for (const value of new Set([param.min, param.value, param.max])) next.push([...combo, value])
+      combos.splice(0, combos.length, ...next)
+    }
+  } else {
+    // Every corner of many sliders is too many curves to sample: each slider
+    // at its ends with the others where they start, and all at either end.
+    const start = defaultValues(plot)
+    combos.splice(0, 1, start, plot.params.map(param => param.min), plot.params.map(param => param.max))
+    plot.params.forEach((param, index) => {
+      for (const end of [param.min, param.max]) combos.push(start.map((value, position) => (position === index ? end : value)))
+    })
   }
   const xs = []
   const ys = []

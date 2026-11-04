@@ -10,7 +10,7 @@ import { courseNextStep, lessonStage, nextStepFor, sessionStats } from '../src/u
 import { PREP_DELAY_MS, prepStages } from '../src/ui/prep.js'
 import { keepInside, keepInsideWhileShown, revealTop } from '../src/ui/scroll.js'
 import { STYLE } from '../src/ui/styles.js'
-import { animationDocument, sanitizeSvg } from '../src/ui/sanitize.js'
+import { ANIMATION_MAX_HEIGHT, animationDocument, reportedAnimationHeight, sanitizeSvg } from '../src/ui/sanitize.js'
 import { afterNarration, cloudVoiceOf, createSpeech, splitSentences } from '../src/ui/speech.js'
 import { syncedStarts, themedSvg, wrap } from '../src/ui/video.js'
 import { captionSentences, inlinePlain, parseInline, sliceInline, spokenText, texToText } from '../src/ui/board/inline.js'
@@ -203,6 +203,15 @@ test('animation documents get a no-network CSP in their head', () => {
   assert.match(animationDocument('<canvas></canvas><script>1</script>'), /<head><meta http-equiv="Content-Security-Policy" content="default-src 'none'/u)
   const withHead = animationDocument('<!doctype html><html><head><title>x</title></head><body></body></html>')
   assert.ok(withHead.indexOf('Content-Security-Policy') < withHead.indexOf('<title>'))
+})
+
+test('an animation reports how tall its content is, so a slider under its canvas is not cut off', () => {
+  const page = animationDocument('<canvas width="480" height="260"></canvas><input type="range">')
+  assert.match(page, /parent\.postMessage\(\{ahaAnimHeight:/u, 'the page measures itself and tells the board')
+  assert.ok(page.indexOf('ahaAnimHeight') < page.indexOf('<canvas'), 'before the model\'s own content')
+  assert.equal(reportedAnimationHeight({ ahaAnimHeight: 231.2 }), 232)
+  assert.equal(reportedAnimationHeight({ ahaAnimHeight: 99_999 }), ANIMATION_MAX_HEIGHT, 'never taller than the cap')
+  for (const data of [null, 'x', {}, { ahaAnimHeight: -3 }, { ahaAnimHeight: 'tall' }, { ahaAnimHeight: Infinity }]) assert.equal(reportedAnimationHeight(data), 0)
 })
 
 test('charts are drawn from data with nice ticks and escaped labels', () => {

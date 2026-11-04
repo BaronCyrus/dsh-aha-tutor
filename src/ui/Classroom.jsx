@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { applyFixes, prefixFixes } from '../core/board-fix.js'
 import { boardScope } from './api.js'
@@ -439,6 +439,23 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
 
   const current = snapshot?.step
   const check = snapshot?.status === 'check' ? current?.check : null
+  // How much of the board the check card hides, from its top to the board's
+  // bottom: the board keeps what was just written (a plot and its sliders,
+  // which the check may ask about) above it.
+  const checkCard = useRef(null)
+  const [checkCover, setCheckCover] = useState(0)
+  useLayoutEffect(() => {
+    const card = checkCard.current
+    if (!card) {
+      setCheckCover(0)
+      return undefined
+    }
+    const measure = () => setCheckCover(Math.max(0, (card.offsetParent?.clientHeight ?? 0) - card.offsetTop))
+    measure()
+    const observer = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null
+    observer?.observe(card)
+    return () => observer?.disconnect()
+  }, [check?.id])
   // Captions follow the narration sentence by sentence, formulas rendered.
   const captionLines = useMemo(() => captionSentences(current?.say), [current?.say])
   const caption = captionLines[Math.min(snapshot?.sentence ?? 0, captionLines.length - 1)] ?? ''
@@ -513,9 +530,9 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
       <div className="aha-classMain">
         <div className={`aha-stage ${stageClass ?? ''}`}>
           <Board steps={steps} position={snapshot ? { index: snapshot.index, op: snapshot.op, progress: snapshot.progress, now: snapshot.now } : { index: 0, op: 0, progress: 0 }} theme={boardTheme} font={settings.boardFont === 'standard' ? 'standard' : 'hand'} view={settings.boardView === 'pages' ? 'pages' : 'canvas'}
-            buffering={(buffering || Boolean(asking)) && !preparing} bufferingLabel={bufferingLabel} onInteract={() => player.pause()} />
+            buffering={(buffering || Boolean(asking)) && !preparing} bufferingLabel={bufferingLabel} onInteract={() => player.pause()} cover={check ? checkCover : 0} />
           {preparing ? <PrepProgress prep={prep} label={bufferingLabel} first={!steps.length} hand={settings.boardFont !== 'standard'} /> : null}
-          {check ? <div className="aha-checkCard">
+          {check ? <div ref={checkCard} className="aha-checkCard">
             <div className="aha-spread"><b>{t('checkTitle')}</b></div>
             <ItemCard item={check} language={language} onResult={onCheckResult} onContinue={continueCheck} continueLabel={needsCorrection ? t('seeCorrection') : undefined} keyboard />
           </div> : null}

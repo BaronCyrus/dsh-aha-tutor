@@ -43,6 +43,8 @@ const FUNCTIONS = Object.freeze({
   cbrt: [1, Math.cbrt],
   abs: [1, Math.abs],
   sign: [1, Math.sign],
+  sgn: [1, Math.sign],
+  mod: [2, (a, b) => a - b * Math.floor(a / b)],
   floor: [1, Math.floor],
   ceil: [1, Math.ceil],
   round: [1, Math.round],
@@ -56,6 +58,22 @@ const CONSTANTS = Object.freeze({ pi: Math.PI, π: Math.PI, e: Math.E })
 export const isFunctionName = name => Object.hasOwn(FUNCTIONS, name)
 export const isConstantName = name => Object.hasOwn(CONSTANTS, name)
 
+// A Greek letter may be written as itself, as its name or as a variant
+// glyph: a slider called "ω" also answers to "omega" in a formula.
+const GREEK = Object.freeze({
+  alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', zeta: 'ζ', eta: 'η', theta: 'θ', iota: 'ι', kappa: 'κ', lambda: 'λ', mu: 'μ',
+  nu: 'ν', xi: 'ξ', rho: 'ρ', sigma: 'σ', tau: 'τ', upsilon: 'υ', phi: 'φ', chi: 'χ', psi: 'ψ', omega: 'ω',
+  Gamma: 'Γ', Delta: 'Δ', Theta: 'Θ', Lambda: 'Λ', Xi: 'Ξ', Sigma: 'Σ', Phi: 'Φ', Psi: 'Ψ', Omega: 'Ω',
+})
+const GREEK_VARIANTS = Object.freeze({ ϕ: 'φ', ϑ: 'θ', ϵ: 'ε', ϱ: 'ρ', ς: 'σ' })
+
+function greekAliases(name) {
+  const letter = GREEK[name] ?? GREEK_VARIANTS[name] ?? name
+  const word = Object.keys(GREEK).find(key => GREEK[key] === letter)
+  const variants = Object.keys(GREEK_VARIANTS).filter(key => GREEK_VARIANTS[key] === letter)
+  return [letter, word, ...variants].filter(alias => alias && alias !== name)
+}
+
 // Unicode a model or a textbook might write, in plain calculator syntax.
 const REPLACEMENTS = [
   [/[−–—]/gu, '-'],
@@ -64,13 +82,92 @@ const REPLACEMENTS = [
   [/\*\*/gu, '^'],
   [/²/gu, '^2'],
   [/³/gu, '^3'],
-  [/[（]/gu, '('],
-  [/[）]/gu, ')'],
+  [/[（[{]/gu, '('],
+  [/[）\]}]/gu, ')'],
   [/[，]/gu, ','],
 ]
 
+// The {…} group that opens at `at`: [its content, the index after it].
+function group(text, at) {
+  if (text[at] !== '{') return null
+  let depth = 0
+  for (let index = at; index < text.length; index += 1) {
+    if (text[index] === '{') depth += 1
+    else if (text[index] === '}') {
+      depth -= 1
+      if (depth === 0) return [text.slice(at + 1, index), index + 1]
+    }
+  }
+  return null
+}
+
+const skipSpaces = (text, at) => {
+  let index = at
+  while (text[index] === ' ') index += 1
+  return index
+}
+
+// LaTeX that slips into a formula: \frac{a}{b}, \sqrt[n]{x}, \cdot, \left(,
+// \sin, \pi, e^{-x}, v_{0}. Commands it does not know keep their name.
+function fromLatex(source) {
+  // "\frac", "\theta" or "\beta" written in JSON with one backslash arrive
+  // as a form feed, a tab or a backspace before the rest of the name.
+  const text = source
+    .replace(/\f/gu, '\\f')
+    .replace(/\u0008/gu, '\\b')
+    .replace(/[\t\r\n](?=[a-zA-Z])/gu, char => ({ '\t': '\\t', '\r': '\\r', '\n': '\\n' })[char])
+  if (!text.includes('\\') && !text.includes('_{')) return text
+  let out = ''
+  let at = 0
+  while (at < text.length) {
+    const command = /^\\([a-zA-Z]+)/u.exec(text.slice(at))
+    if (!command) {
+      const subscript = /^_\{([\p{L}\p{N}]+)\}/u.exec(text.slice(at))
+      const space = /^\\[,;:! ]/u.test(text.slice(at))
+      out += subscript ? `_${subscript[1]}` : space ? ' ' : text[at]
+      at += subscript ? subscript[0].length : space ? 2 : 1
+      continue
+    }
+    const name = command[1]
+    const next = skipSpaces(text, at + command[0].length)
+    if (['frac', 'dfrac', 'tfrac'].includes(name)) {
+      const top = group(text, next)
+      const bottom = top && group(text, skipSpaces(text, top[1]))
+      if (bottom) {
+        out += `((${fromLatex(top[0])})/(${fromLatex(bottom[0])}))`
+        at = bottom[1]
+        continue
+      }
+    }
+    if (name === 'sqrt') {
+      const index = text[next] === '[' ? text.indexOf(']', next) : -1
+      const radicand = group(text, skipSpaces(text, index >= 0 ? index + 1 : next))
+      if (radicand) {
+        out += index >= 0 ? `((${fromLatex(radicand[0])})^(1/(${fromLatex(text.slice(next + 1, index))})))` : `sqrt(${fromLatex(radicand[0])})`
+        at = radicand[1]
+        continue
+      }
+    }
+    if (['mathrm', 'operatorname', 'text', 'mathit', 'mathbf'].includes(name)) {
+      const inner = group(text, next)
+      if (inner) {
+        out += fromLatex(inner[0])
+        at = inner[1]
+        continue
+      }
+    }
+    if (name === 'left' || name === 'right') {
+      at = next
+      continue
+    }
+    out += ['cdot', 'times', 'ast'].includes(name) ? '*' : name === 'div' ? '/' : name
+    at += command[0].length
+  }
+  return out
+}
+
 function tokenize(source) {
-  let input = String(source ?? '')
+  let input = fromLatex(String(source ?? ''))
   for (const [pattern, value] of REPLACEMENTS) input = input.replace(pattern, value)
   const tokens = []
   let at = 0
@@ -194,10 +291,13 @@ export function parseExpr(source, names = []) {
     return node({ k: 'call', f: name, args })
   }
 
-  // A name: a variable, a parameter, a constant, a function call, or a run
-  // of known names multiplied together.
+  // A name: a variable, a parameter (also under another spelling of its
+  // Greek letter), a constant, a function call, or a run of known names
+  // multiplied together.
   function named(value) {
     if (known.has(value)) return node({ k: 'var', n: value })
+    const alias = greekAliases(value).find(name => known.has(name))
+    if (alias) return node({ k: 'var', n: alias })
     if (isConstantName(value)) return node({ k: 'num', v: CONSTANTS[value] })
     if (isFunctionName(value)) {
       if (peek()?.type !== '(') throw new ExprError(`Write ${value}(…) with parentheses`)

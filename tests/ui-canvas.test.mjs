@@ -43,6 +43,11 @@ test('following moves the world just enough to keep the writing in view', () => 
   assert.equal(followShift(view, { top: 560, height: 40 }), 600 - 56 - 600, 'below: the world moves up')
   assert.equal(followShift(view, { top: -50, height: 40 }), 74, 'above: the world moves down')
   assert.equal(followShift(view, { top: 300, height: 900 }), -276, 'taller than the board: shown from its top')
+  // A check card hides the bottom 300 px: what was written last moves above
+  // it, and a plot too tall for the room left shows its end, the sliders.
+  assert.equal(followShift(view, { top: 200, height: 120 }, { bottom: 316, end: true }), 600 - 316 - 320)
+  assert.equal(followShift(view, { top: 100, height: 120 }, { bottom: 316, end: true }), 0, 'already above the card')
+  assert.equal(followShift(view, { top: 200, height: 330 }, { bottom: 316, end: true }), 600 - 316 - 530)
 })
 
 test('dragging never loses the pages, and wheels pan by pixels', () => {

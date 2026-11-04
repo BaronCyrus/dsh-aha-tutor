@@ -28,10 +28,11 @@ export function fitRect(view, rect, { margin = 24, maxZoom = MAX_ZOOM } = {}) {
 
 // How far to move the world down (positive) or up (negative) so a box seen in
 // the board ({ top, height }) sits between `top` and `bottom` of room; 0 when
-// it already does. A box taller than the room is shown from its top.
-export function followShift(view, box, { top = 24, bottom = 56 } = {}) {
+// it already does. A box taller than the room is shown from its top, or with
+// `end` from its end (a plot's sliders).
+export function followShift(view, box, { top = 24, bottom = 56, end = false } = {}) {
   const roomBottom = view.height - bottom
-  if (box.height > roomBottom - top) return top - box.top
+  if (box.height > roomBottom - top) return end ? roomBottom - (box.top + box.height) : top - box.top
   if (box.top + box.height > roomBottom) return roomBottom - (box.top + box.height)
   if (box.top < top) return top - box.top
   return 0

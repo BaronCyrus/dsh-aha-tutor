@@ -2,6 +2,14 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## Unreleased
+
+### Fixed
+
+- **"Drag the slider" now has a graph and a slider to drag**: a learner reported that the teacher sometimes asked to look at a graph and drag its slider when the board had a graph without a slider, or neither. A slider the model named r (a rate), θ or theta (an angle) was refused, and with it every curve that used it, so the whole graph went; one named e (an eccentricity) was read as Euler's number and lost its slider. A slider written with another key (`param`, `var`), a `range`, as an object of sliders by name, with an end missing, its ends swapped or equal, or as a fifth or sixth slider, went the same way. All of these are now kept: only the variable a curve runs over (x, t of a parametric curve, θ of a polar one), y and π are refused, and a missing range is taken around the slider's value. A slider no curve uses is left out instead of moving nothing. Formulas also read a Greek letter under its name (a slider ω answers to `omega`), LaTeX that slips in (`\frac{1}{x}`, `\sqrt{x}`, `e^{-x}`, `\cdot`, `\left(`, `v_{0}`, also a backslash lost in JSON), square brackets and `mod`. The board prompt now gives a slider's shape and names, says to draw a comparison a formula gives as curves of one plot, and to ask for dragging only while a plot with sliders is on the board.
+- **A check no longer hides the sliders it asks about**: the question card covers the bottom of the board, where the plot just written and its sliders were. The board now moves what was written last above the card, in both board views, and a plot too tall for the room left shows its sliders and the curve above them; they can be dragged while the question is open.
+- **An animation's own slider is not cut off**: in a column narrower than the animation was written for, its canvas shrank but a slider or buttons under it did not, and the frame cut them off. The animation now reports how tall its content is and the frame grows to fit, up to 640 px.
+
 ## 1.11.0 - 2026-10-29
 
 ### Changed

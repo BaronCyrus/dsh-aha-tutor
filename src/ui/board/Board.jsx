@@ -5,7 +5,7 @@ import { chartSvg } from '../charts.js'
 import { useApp } from '../hooks.js'
 import { TeX } from '../math.jsx'
 import { plotSvg, preparePlot } from '../plot.js'
-import { animationDocument, sanitizeSvg } from '../sanitize.js'
+import { animationDocument, reportedAnimationHeight, sanitizeSvg } from '../sanitize.js'
 import { followShift, fitRect, keepInView, wheelPixels, wheelZoomFactor, zoomAt, ZOOM_STEP } from './camera.js'
 import { fitFormula, formulaLines, writtenPart } from './fit.js'
 import { inlineLength, parseInline, sliceInline } from './inline.js'
@@ -111,10 +111,13 @@ function PlotFigure({ op, reveal, still, onInteract }) {
 
 // op.height is the height the animation wants at a 560 px wide board column;
 // narrower columns scale it down so the frame keeps the content's proportions.
+// Controls under a canvas do not shrink with it: the frame grows to the
+// height the page reports (sanitize.js), so a slider is never cut off.
 function Animation({ op, reveal, theme }) {
   const srcDoc = useMemo(() => animationDocument(op.html, theme), [op.html, theme])
   const frame = useRef(null)
   const [height, setHeight] = useState(op.height)
+  const [content, setContent] = useState(0)
   useLayoutEffect(() => {
     const element = frame.current
     if (!element || typeof ResizeObserver !== 'function') return undefined
@@ -124,9 +127,18 @@ function Animation({ op, reveal, theme }) {
     observer.observe(element)
     return () => observer.disconnect()
   }, [op.height, reveal > 0])
+  useEffect(() => {
+    const onMessage = event => {
+      if (!frame.current || event.source !== frame.current.contentWindow) return
+      const reported = reportedAnimationHeight(event.data)
+      if (reported) setContent(reported)
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
   if (reveal <= 0) return null
   return <div className="aha-op-figure" style={{ opacity: Math.min(1, reveal * 3) }}>
-    <iframe ref={frame} className="aha-op-anim" title={op.caption || 'animation'} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={srcDoc} style={{ height, colorScheme: theme === 'dark' ? 'dark' : 'light' }} />
+    <iframe ref={frame} className="aha-op-anim" title={op.caption || 'animation'} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={srcDoc} style={{ height: Math.max(height, content), colorScheme: theme === 'dark' ? 'dark' : 'light' }} />
     {op.caption ? <div className="aha-figCaption">{op.caption}</div> : null}
   </div>
 }
@@ -334,7 +346,7 @@ const PageFrame = memo(function PageFrame({ index, page, title, board, activeRef
 
 // One page at a time, with a pager; the page scrolls when it is taller than
 // the board.
-function PagedView({ board, layout, position, activePage, pencil }) {
+function PagedView({ board, layout, position, activePage, pencil, cover }) {
   const { activeOp } = board
   const [viewPage, setViewPage] = useState(null)
   useEffect(() => { setViewPage(null) }, [activePage])
@@ -355,13 +367,24 @@ function PagedView({ board, layout, position, activePage, pencil }) {
     if (box.bottom > view.bottom - 24) container.scrollTo({ top: container.scrollTop + box.bottom - view.bottom + 56, behavior: 'smooth' })
     else if (box.top < view.top + 8) container.scrollTo({ top: Math.max(0, container.scrollTop - (view.top - box.top) - 24), behavior: 'smooth' })
   }, [followKey, pageIndex])
+  // A card over the board's bottom (a check): the last thing written, a
+  // plot's sliders included, scrolls up above it.
+  useEffect(() => {
+    const container = stage.current
+    const written = container?.querySelectorAll('[data-op]')
+    const element = written?.[written.length - 1]
+    if (!cover || !element) return
+    const box = element.getBoundingClientRect()
+    const room = container.getBoundingClientRect().bottom - cover - 16
+    if (box.bottom > room) container.scrollTo({ top: container.scrollTop + box.bottom - room, behavior: 'smooth' })
+  }, [cover, pageIndex])
   const pagesWithContent = layout.pages.map((item, index) => index).filter(index => index <= Math.max(activePage, viewPage ?? 0) || !position)
 
   return <>
     {pagesWithContent.length > 1 ? <div className="aha-pager">
       {pagesWithContent.map(index => <button key={index} type="button" data-active={index === pageIndex} onClick={() => setViewPage(index)}>{index + 1}</button>)}
     </div> : null}
-    <div className="aha-boardScroll" ref={stage}>
+    <div className="aha-boardScroll" ref={stage} style={cover ? { paddingBottom: cover + 40 } : undefined}>
       {page ? <PageContent page={page} title={board.titles.get(pageIndex)} board={board} activeRef={activeRef} /> : null}
       <Pencil target={activeRef} stage={stage} scrolls active={pencil} />
     </div>
@@ -373,7 +396,7 @@ const MARGIN = 16
 // Every page written so far as a frame, top to bottom, on a canvas that pans
 // and zooms. The camera follows the writing until the learner moves it, and
 // "back to the teacher" hands it back.
-function CanvasView({ board, layout, position, activePage, pencil }) {
+function CanvasView({ board, layout, position, activePage, pencil, cover }) {
   const { t } = useApp()
   const { activeOp } = board
   const viewport = useRef(null)
@@ -476,7 +499,9 @@ function CanvasView({ board, layout, position, activePage, pencil }) {
   // in view. A mark follows the op it marks; a page or a column that has just
   // begun shows from the top of its page. Between ops (the teacher is still
   // talking, or waits for a check) the last thing written on the page is the
-  // place to come back to.
+  // place to come back to, above the card that covers the board's bottom
+  // (`cover` pixels), and shown from its end when it is taller than the room
+  // left: a plot's sliders stay in reach.
   const followKey = activeOp ? `${activeOp.id}:${Math.round((position?.progress ?? 0) * 4)}` : `page:${activePage}`
   useLayoutEffect(() => {
     if (!following || !position || !size.height) return
@@ -490,15 +515,16 @@ function CanvasView({ board, layout, position, activePage, pencil }) {
     const height = element?.offsetHeight ?? 0
     const newPage = shownPage.current !== activePage
     shownPage.current = activePage
+    const room = cover > 0 && !activeOp ? { bottom: cover + 16, end: true } : undefined
     setCamera(current => {
       const base = current.k === 1 && current.x === MARGIN ? current : { x: MARGIN, y: current.y, k: 1 }
       let y = base.y
       if (newPage || !element) y += MARGIN - (y + frame.offsetTop)
-      if (element) y += followShift(state.current.size, { top: y + top, height })
+      if (element) y += followShift(state.current.size, { top: y + top, height }, room)
       if (y === current.y && base === current) return current
       return { ...base, y, animate: true }
     })
-  }, [followKey, activePage, following, size.width, size.height])
+  }, [followKey, activePage, following, size.width, size.height, cover])
 
   const shown = layout.pages.map((page, index) => index).filter(index => !position || index <= activePage)
   return <>
@@ -526,7 +552,9 @@ function CanvasView({ board, layout, position, activePage, pencil }) {
 // view: 'canvas' (all pages on a canvas that pans and zooms) or 'pages' (one
 // page at a time with a pager).
 // onInteract: the learner touched something on the board (a plot's slider).
-export function Board({ steps, position, theme = 'light', font = 'hand', buffering = false, bufferingLabel = '', view = 'canvas', onInteract }) {
+// cover: how many pixels of the board's bottom a card hides (a check); what
+// was written last is kept above it.
+export function Board({ steps, position, theme = 'light', font = 'hand', buffering = false, bufferingLabel = '', view = 'canvas', onInteract, cover = 0 }) {
   const { t } = useApp()
   const layout = useMemo(() => layoutBoard(steps), [steps])
   const text = useMemo(() => (font === 'hand' ? boardText(steps) : ''), [steps, font])
@@ -573,7 +601,7 @@ export function Board({ steps, position, theme = 'light', font = 'hand', bufferi
   const View = view === 'pages' ? PagedView : CanvasView
 
   return <div className="aha-board" data-theme={theme} data-font={font} data-view={view === 'pages' ? 'pages' : 'canvas'}>
-    <View board={board} layout={layout} position={position} activePage={activePage} pencil={pencil} />
+    <View board={board} layout={layout} position={position} activePage={activePage} pencil={pencil} cover={cover} />
     {buffering ? <div className="aha-buffering"><span className="aha-spinner" />{bufferingLabel}</div> : null}
   </div>
 }

@@ -97,12 +97,26 @@ export function sanitizeSvg(markup, { DOMParserImpl = globalThis.DOMParser, XMLS
 // sandbox="allow-scripts" (no same-origin), and this CSP blocks any network.
 const ANIMATION_CSP = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:"
 
+// A narrow column shrinks the page's canvas but not the controls under it
+// (a slider, buttons), so the page tells the board how tall its content is.
+// It measures once laid out, once more when late layout settles, and when
+// its width changes; never because its own frame grew.
+const ANIMATION_HEIGHT_KEY = 'ahaAnimHeight'
+export const ANIMATION_MAX_HEIGHT = 640
+const HEIGHT_REPORTER = `<script>(()=>{let width=-1;const send=()=>{try{const items=[...document.body.children].filter(item=>!/^(SCRIPT|STYLE|TEMPLATE)$/.test(item.tagName));const bottom=Math.max(document.body.scrollHeight,...items.map(item=>item.getBoundingClientRect().bottom+scrollY));if(bottom>0)parent.postMessage({${ANIMATION_HEIGHT_KEY}:Math.ceil(bottom)},'*')}catch{}};addEventListener('load',()=>{width=innerWidth;send();setTimeout(send,600)});addEventListener('resize',()=>{if(innerWidth!==width){width=innerWidth;send()}})})()</script>`
+
+// The height a page reported (a message from its frame), or 0.
+export function reportedAnimationHeight(data) {
+  const value = Number(data?.[ANIMATION_HEIGHT_KEY])
+  return Number.isFinite(value) && value > 0 ? Math.min(ANIMATION_MAX_HEIGHT, Math.ceil(value)) : 0
+}
+
 // `theme` matches the board so Chromium does not paint an opaque backdrop
 // behind an iframe whose color scheme differs from the page.
 export function animationDocument(html, theme = 'light') {
   const body = String(html ?? '')
   const scheme = theme === 'dark' ? 'dark' : 'light'
-  const meta = `<meta http-equiv="Content-Security-Policy" content="${ANIMATION_CSP}"><meta charset="utf-8"><meta name="color-scheme" content="${scheme}"><style>:root{color-scheme:${scheme}}html,body{margin:0;background:transparent;overflow:hidden}canvas,svg{max-width:100%;height:auto}</style>`
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${ANIMATION_CSP}"><meta charset="utf-8"><meta name="color-scheme" content="${scheme}"><style>:root{color-scheme:${scheme}}html,body{margin:0;background:transparent;overflow:hidden}canvas,svg{max-width:100%;height:auto}</style>${HEIGHT_REPORTER}`
   if (/<head[^>]*>/iu.test(body)) return body.replace(/<head[^>]*>/iu, match => `${match}${meta}`)
   if (/<html[^>]*>/iu.test(body)) return body.replace(/<html[^>]*>/iu, match => `${match}<head>${meta}</head>`)
   return `<!doctype html><html><head>${meta}</head><body>${body}</body></html>`

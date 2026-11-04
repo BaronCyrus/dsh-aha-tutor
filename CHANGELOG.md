@@ -2,7 +2,7 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
-## Unreleased
+## 1.11.1 - 2026-11-04
 
 ### Fixed
 

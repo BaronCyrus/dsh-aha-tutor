@@ -463,6 +463,17 @@ export function findLesson(course, lessonId) {
   return flattenLessons(course).find(row => row.lesson.id === lessonId) ?? null
 }
 
+// Where some lessons sit in the course, as fractions of it ([0.25, 0.3] is a
+// stretch a quarter of the way in). A course made from a book mostly follows
+// the book, so the same stretch of the book is where its pages likely are.
+export function courseSpan(course, lessonIds) {
+  const rows = flattenLessons(course)
+  const wanted = new Set(lessonIds)
+  const positions = rows.flatMap((row, index) => (wanted.has(row.lesson.id) ? [index] : []))
+  if (!positions.length) return undefined
+  return [Math.min(...positions) / rows.length, (Math.max(...positions) + 1) / rows.length]
+}
+
 // The concepts a unit teaches, each once, in teaching order.
 export function unitConcepts(unit) {
   const seen = new Map()

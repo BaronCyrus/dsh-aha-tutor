@@ -6,6 +6,7 @@ import {
   blueprintOutline,
   COURSE_SCHEMA_VERSION,
   courseProgress,
+  courseSpan,
   flattenLessons,
   intakeSummary,
   nextLesson,
@@ -345,7 +346,7 @@ export function createCourses({ store, llm, jobs, research, now = () => new Date
     const sources = materials ?? await readMaterials(store, course.materialIds ?? [])
     const sets = await generateJson(llm, {
       purpose: 'teach',
-      prompt: practicePrompt({ course, lecture, lessons, language: course.language, passages: passagesFor(sources, query, 5000) }),
+      prompt: practicePrompt({ course, lecture, lessons, language: course.language, passages: passagesFor(sources, query, 5000, { around: courseSpan(course, lessons.map(lesson => lesson.id)) }) }),
       // 4–6 items per lesson with hints and explanations: room for all of them,
       // so the last lessons of a long lecture are not cut off.
       maxTokens: Math.min(16000, 3000 + lessons.length * 2600),

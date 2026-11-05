@@ -2,6 +2,16 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## Unreleased
+
+### Changed
+
+- **A raised hand reads the book**: a question asked in a lesson was answered from the board alone, so "how do I do the example on page 12?" got an answer that had never seen the book. The course's materials now come with the question, about 3,500 characters of them: the pages it names first, then the passages matching the question and the lesson. They are reference material: the teacher works from what the book says, names its page, and says so when the excerpts do not hold what the learner means. Questions on an Instant help board use that thread's materials the same way.
+
+### Fixed
+
+- **Lessons always see their materials**: when no passage of the materials matched a lesson's words (a Chinese course on an English textbook, or a lesson worded differently from the book), the lesson, its practice, unit quizzes, flashcards and cheat sheets were written without any passages. They now get the stretch of each material where the lesson most likely is, since a course made from a book follows its order, and the prompt says these are excerpts rather than matches. Numbered things match by their number too: 例2 finds 例2, not 例1.
+
 ## 1.11.1 - 2026-11-04
 
 ### Fixed

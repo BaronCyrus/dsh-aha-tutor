@@ -6,7 +6,8 @@
 
 import { applyFixes, boardForCheck, describeFixes, normalizeVerdict, sanitizeStep, stepJson } from '../core/board-fix.js'
 import { boardToPlainText } from '../core/board-script.js'
-import { conceptIndex, findLesson, insertLesson, lessonAfter, LIMITS, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text, thinEvenly, unitCardRange, unitConcepts, unitQuizRange } from '../core/course-model.js'
+import { conceptIndex, courseSpan, findLesson, insertLesson, lessonAfter, LIMITS, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text, thinEvenly, unitCardRange, unitConcepts, unitQuizRange } from '../core/course-model.js'
+import { mentionedPages } from '../core/citations.js'
 import { answersTo, correctEvidence, itemKey, logEvidence, stateBefore, takeEvidence } from '../core/evidence-log.js'
 import { OBJECTIVE_KINDS } from '../core/grading.js'
 import { assertId, newId } from '../core/ids.js'
@@ -25,6 +26,8 @@ const STEP_ID = /^s\d{1,4}$/u
 const BOARD_JOBS = ['lesson/board', 'lesson/prefetch']
 // Earlier open answers to a fixed question the grader looks at again.
 const EARLIER_OPEN = 3
+// The material a raised hand is answered from, in characters.
+const ASK_PASSAGE_CHARS = 3500
 
 export function createLessons({ store, llm, jobs, courses, learner, now = () => new Date() }) {
   const stamp = () => now().toISOString()
@@ -77,7 +80,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       lesson: row.lesson,
       language: course.language,
       learner: { profile, mastery: masteryFor(course, progress, row.lesson.id) },
-      passages: passagesFor(materials, query, 8000),
+      passages: passagesFor(materials, query, 8000, { around: courseSpan(course, [row.lesson.id]) }),
       previous: previous ? `${previous.title}: ${previous.summary}` : '',
       directive: directive ?? kindDirective,
       style,
@@ -154,12 +157,13 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
   // or an explainer short. While that board is still being written (the first
   // time, or again over a saved one), it is the steps written so far: the
   // learner sees those, and the saved board starts with the same ones.
+  // materialIds: the materials the board was taught from.
   async function scopeBoard(scope) {
     if (scope?.kind === 'lesson') {
       const { course, row } = await context(scope.courseId, scope.lessonId)
       const writing = followedJob(scope, BOARD_JOBS, { courseId: course.id, lessonId: row.lesson.id })
       const board = writing ? { steps: writing.partial } : await store.readJson(store.paths.board(course.id, row.lesson.id), null)
-      return { course, lesson: row.lesson, board, language: course.language, writing }
+      return { course, lesson: row.lesson, board, language: course.language, writing, materialIds: course.materialIds ?? [] }
     }
     if (scope?.kind === 'thread' || scope?.kind === 'short') {
       const thread = scope.kind === 'thread'
@@ -169,9 +173,20 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       const board = writing ? { steps: writing.partial } : thread ? item.turns?.[Math.max(0, Math.min(item.turns.length - 1, Number(scope.turn) || 0))]?.board : item.board
       // A new thread or short has no saved language yet: its steps are written in it.
       const language = item?.language ?? detectLanguage((board?.steps ?? []).map(step => step.say).join(' '))
-      return { course: null, lesson: { title: item?.title ?? writing.meta?.title ?? '', objectives: [] }, board, language, writing }
+      return { course: null, lesson: { title: item?.title ?? writing.meta?.title ?? '', objectives: [] }, board, language, writing, materialIds: thread ? item?.materialIds ?? [] : [] }
     }
     throw new TutorError('invalid', 'Unknown board')
+  }
+
+  // What the materials say about a raised hand: the pages the question names
+  // first, then the passages matching the question and the lesson; when
+  // nothing matches, a lesson's question gets the part of the materials
+  // about where the lesson sits in the course.
+  async function askPassages({ course, lesson, materialIds, question }) {
+    if (!materialIds?.length) return ''
+    const materials = await readMaterials(store, materialIds)
+    const query = [question, lesson?.title, ...(lesson?.concepts ?? []).map(concept => concept.name)].filter(Boolean).join(' ')
+    return passagesFor(materials, query, ASK_PASSAGE_CHARS, { pages: mentionedPages(question), around: course && lesson?.id ? courseSpan(course, [lesson.id]) : undefined })
   }
 
   // A lesson keeps its questions and re-explanations, so they are still on
@@ -192,12 +207,13 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     const request = text(question, 1500)
     if (!request) throw new TutorError('empty-question', 'Type your question')
     return jobs.start('lesson/ask', async api => {
-      const { course, lesson, board, language } = await scopeBoard(scope)
+      const { course, lesson, board, language, materialIds } = await scopeBoard(scope)
       const profile = await readProfile(store)
       const boardSoFar = board ? boardToPlainText(board, { uptoStep: Number(stepIndex) || 0, maxChars: 6000 }) : ''
+      const passages = await askPassages({ course, lesson, materialIds, question: request })
       const answer = await generateSteps(llm, {
         purpose: 'quick',
-        prompt: askPrompt({ course, lesson, language, boardSoFar, question: request, learner: { profile } }),
+        prompt: askPrompt({ course, lesson, language, boardSoFar, question: request, learner: { profile }, passages }),
         maxTokens: 5000,
         signal: api.signal,
         conceptIds: lesson?.concepts?.map(concept => concept.id) ?? [],
@@ -703,7 +719,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       const outline = outlineForPrompt({ units: [unit] })
       const sheet = await generateJson(llm, {
         purpose: 'teach',
-        prompt: cheatsheetPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, passages: passagesFor(materials, outline, 9000), language: course.language }),
+        prompt: cheatsheetPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, passages: passagesFor(materials, outline, 9000, { around: unitSpan(course, unit) }), language: course.language }),
         maxTokens: 9000,
         signal: api.signal,
         normalize: normalizeCheatsheet,
@@ -734,7 +750,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     const outline = outlineForPrompt({ units: [unit] })
     // What the unit covers in the course's materials, found by its lessons
     // and concepts.
-    const passages = async () => passagesFor(await readMaterials(store, course.materialIds ?? []), `${outline}\n${concepts.map(concept => concept.name).join(' ')}`, 9000)
+    const passages = async () => passagesFor(await readMaterials(store, course.materialIds ?? []), `${outline}\n${concepts.map(concept => concept.name).join(' ')}`, 9000, { around: unitSpan(course, unit) })
     return { course, unit, concepts, outline, passages, about: { title: unit.title, n: index + 1 } }
   }
 
@@ -853,6 +869,11 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
 // cards have been written so far.
 function countWritten(api, field, total) {
   return fieldCounter(field, count => api.progress(Math.min(count, total), total, 'writing'))
+}
+
+// Where a unit sits in its course (see courseSpan).
+function unitSpan(course, unit) {
+  return courseSpan(course, (unit.lectures ?? []).flatMap(lecture => lecture.lessons.map(lesson => lesson.id)))
 }
 
 function pushEvent(progress, event) {

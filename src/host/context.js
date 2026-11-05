@@ -3,7 +3,7 @@
 
 import { conceptIndex, findLesson } from '../core/course-model.js'
 import { summarizeForPrompt } from '../core/mastery.js'
-import { formatPassages, selectPassages } from '../core/retrieval.js'
+import { fitPassages, formatPassages, samplePassages, selectPassages } from '../core/retrieval.js'
 
 export const EMPTY_PROFILE = Object.freeze({ name: '', background: '', goals: [], strengths: [], weaknesses: [], preferences: {}, notes: [], updatedAt: null })
 
@@ -61,19 +61,50 @@ export function materialsSummary(materials) {
   }).join('\n')
 }
 
-export function passagesFor(materials, query, maxChars = 9000) {
-  const blocks = []
-  let budget = maxChars
-  for (const { meta, chunks } of materials) {
-    if (!chunks.length || budget < 600) continue
-    const share = Math.max(1200, Math.floor(budget / Math.max(1, materials.length)))
-    const picked = selectPassages(chunks.map(chunk => ({ ...chunk, source: meta.title })), query, { maxChars: share })
+// Said before excerpts that were sampled because no passage matched.
+export const SAMPLED_NOTE = '(No passage of the materials matched these words. The excerpts below come from the part of each material where this most likely is, or are spread across it: use only what is relevant.)'
+
+// Where a passage is in its material, as the learner would name it.
+const pageOf = chunk => (chunk.page ? String(chunk.page) : null)
+
+// The passages of some materials a prompt needs, within maxChars, each
+// material its share: the pages the learner named first (`pages`, page
+// numbers as strings), then the passages matching `query`, best first.
+// When nothing in any material matches, excerpts from `around` (see
+// samplePassages) stand in, introduced by SAMPLED_NOTE. Returns the text
+// for the prompt and the passages in it.
+export function materialPassages(materials, { query = '', maxChars = 9000, around, pages = [] } = {}) {
+  const usable = materials.filter(({ chunks }) => chunks?.length)
+  if (!usable.length) return { text: '', passages: [], sampled: false }
+  const share = Math.max(600, Math.floor(maxChars / usable.length))
+  const named = new Set(pages.map(String))
+  const pick = sample => usable.map(({ meta, chunks }) => {
+    const own = chunks.map(chunk => ({ ...chunk, source: meta.title, materialId: meta.id }))
+    if (sample) return { meta, picked: samplePassages(own, { maxChars: share, around }).map(chunk => ({ ...chunk, sampled: true })) }
+    const first = named.size ? fitPassages(own.filter(chunk => named.has(pageOf(chunk))), Math.floor(share * 0.6)) : []
+    const taken = new Set(first.map(chunk => chunk.id))
+    const room = share - first.reduce((sum, chunk) => sum + chunk.text.length, 0)
+    const rest = !query && first.length ? [] : selectPassages(own.filter(chunk => !taken.has(chunk.id)), query, { maxChars: room, fallback: 'none' })
+    return { meta, picked: [...first, ...rest] }
+  })
+  let blocks = pick(false)
+  const sampled = Boolean(query) && !blocks.some(block => block.picked.length)
+  if (sampled) blocks = pick(true)
+  // Many materials together still keep to the budget, in their order.
+  const kept = []
+  let left = maxChars
+  for (const block of blocks) {
+    const picked = left >= 300 ? fitPassages(block.picked, left) : []
     if (!picked.length) continue
-    const block = formatPassages(picked, meta.title)
-    blocks.push(block)
-    budget -= block.length
+    left -= picked.reduce((sum, chunk) => sum + chunk.text.length, 0)
+    kept.push({ meta: block.meta, picked })
   }
-  return blocks.join('\n\n')
+  const text = kept.map(block => formatPassages(block.picked, block.meta.title)).join('\n\n')
+  return { text: text && sampled ? `${SAMPLED_NOTE}\n\n${text}` : text, passages: kept.flatMap(block => block.picked), sampled }
+}
+
+export function passagesFor(materials, query, maxChars = 9000, options = {}) {
+  return materialPassages(materials, { ...options, query, maxChars }).text
 }
 
 // Images from uploaded materials, for vision-capable models only.

@@ -2,13 +2,22 @@
 // turns calculator syntax ("A*sin(w*x)", "2x^2 − 3", "√(1 − x²)") into a
 // tree, and the tree is evaluated over numbers only. Shared by the host,
 // which checks a plot before it is saved, and the browser, which draws it.
+// A function given in pieces is written with comparisons and a choice:
+// "if(x < 0, -x, x)", "piecewise(x < 0, 0, x < 1, x, 1)" or
+// "x < 0 ? -x : x"; a comparison is 1 when it holds and 0 when not.
 
 export const EXPR_LIMITS = Object.freeze({ chars: 240, nodes: 400, depth: 40 })
 
 export class ExprError extends Error {
-  constructor(message) {
+  // unknown: a name the formula uses that is neither given nor known; call:
+  // a "(" follows it, so it was meant as a function.
+  constructor(message, { unknown, call = false } = {}) {
     super(message)
     this.name = 'ExprError'
+    if (unknown !== undefined) {
+      this.unknown = unknown
+      this.call = call
+    }
   }
 }
 
@@ -51,7 +60,23 @@ const FUNCTIONS = Object.freeze({
   min: [-2, Math.min],
   max: [-2, Math.max],
   pow: [2, Math.pow],
+  // if(condition, then, otherwise) and piecewise(condition₁, value₁,
+  // condition₂, value₂, …, otherwise). compileExpr evaluates only the piece
+  // in force; these say what that means.
+  if: [3, (condition, yes, no) => choose([condition, yes, no])],
+  piecewise: [-2, (...args) => choose(args)],
 })
+
+function choose(args) {
+  for (let at = 0; at + 1 < args.length; at += 2) {
+    if (Number.isNaN(args[at])) return NaN
+    if (args[at]) return args[at + 1]
+  }
+  return args.length % 2 ? args[args.length - 1] : NaN
+}
+
+// The functions whose value jumps: a curve breaks where they change.
+const STEPS = new Set(['floor', 'ceil', 'round', 'sign', 'sgn'])
 
 const CONSTANTS = Object.freeze({ pi: Math.PI, π: Math.PI, e: Math.E })
 
@@ -66,6 +91,11 @@ const GREEK = Object.freeze({
   Gamma: 'Γ', Delta: 'Δ', Theta: 'Θ', Lambda: 'Λ', Xi: 'Ξ', Sigma: 'Σ', Phi: 'Φ', Psi: 'Ψ', Omega: 'Ω',
 })
 const GREEK_VARIANTS = Object.freeze({ ϕ: 'φ', ϑ: 'θ', ϵ: 'ε', ϱ: 'ρ', ς: 'σ' })
+
+// The Greek letter a name spells ("omega" → "ω", "ϕ" → "φ"), or null.
+export function greekLetter(name) {
+  return GREEK[name] ?? GREEK_VARIANTS[name] ?? null
+}
 
 function greekAliases(name) {
   const letter = GREEK[name] ?? GREEK_VARIANTS[name] ?? name
@@ -85,7 +115,23 @@ const REPLACEMENTS = [
   [/[（[{]/gu, '('],
   [/[）\]}]/gu, ')'],
   [/[，]/gu, ','],
+  [/[≤⩽]/gu, '<='],
+  [/[≥⩾]/gu, '>='],
+  [/≠/gu, '!='],
+  [/＜/gu, '<'],
+  [/＞/gu, '>'],
+  [/＝/gu, '='],
+  [/？/gu, '?'],
+  [/：/gu, ':'],
+  [/∧/gu, '&&'],
+  [/∨/gu, '||'],
 ]
+
+// LaTeX for comparing and joining conditions.
+const LATEX_OPERATORS = Object.freeze({
+  le: '<=', leq: '<=', leqslant: '<=', lt: '<', ge: '>=', geq: '>=', geqslant: '>=', gt: '>', ne: '!=', neq: '!=',
+  land: '&&', wedge: '&&', lor: '||', vee: '||',
+})
 
 // The {…} group that opens at `at`: [its content, the index after it].
 function group(text, at) {
@@ -160,7 +206,7 @@ function fromLatex(source) {
       at = next
       continue
     }
-    out += ['cdot', 'times', 'ast'].includes(name) ? '*' : name === 'div' ? '/' : name
+    out += ['cdot', 'times', 'ast'].includes(name) ? '*' : name === 'div' ? '/' : LATEX_OPERATORS[name] ? ` ${LATEX_OPERATORS[name]} ` : name
     at += command[0].length
   }
   return out
@@ -189,7 +235,19 @@ function tokenize(source) {
       at += name[0].length
       continue
     }
-    if ('+-*/^(),|√'.includes(char)) {
+    // "||" stays two bars: the parser tells it from |x| by where it stands.
+    const pair = input.slice(at, at + 2)
+    if (['<=', '>=', '==', '!=', '&&'].includes(pair)) {
+      tokens.push({ type: pair === '==' ? '=' : pair })
+      at += 2
+      continue
+    }
+    if (char === '&') {
+      tokens.push({ type: '&&' })
+      at += 1
+      continue
+    }
+    if ('+-*/^(),|√<>=?:'.includes(char)) {
       tokens.push({ type: char })
       at += 1
       continue
@@ -232,7 +290,51 @@ export function parseExpr(source, names = []) {
       depth -= 1
     }
   }
-  const startsPrimary = token => token && (token.type === 'num' || token.type === 'name' || token.type === '(' || token.type === '√')
+  const word = (token, value) => token?.type === 'name' && token.value === value
+  const startsPrimary = token => token && (token.type === 'num' || (token.type === 'name' && !KEYWORDS.has(token.value)) || token.type === '(' || token.type === '√')
+
+  // c ? a : b, grouped from the right: c₁ ? a : c₂ ? b : d.
+  function choice() {
+    const condition = either()
+    if (peek()?.type !== '?') return condition
+    take()
+    const yes = nested(choice)
+    take(':')
+    const no = nested(choice)
+    return node({ k: 'call', f: 'if', args: [condition, yes, no] })
+  }
+
+  function either() {
+    let left = both()
+    for (;;) {
+      if (word(peek(), 'or')) take()
+      else if (peek()?.type === '|' && tokens[index + 1]?.type === '|') index += 2
+      else return left
+      left = node({ k: 'or', a: left, b: both() })
+    }
+  }
+
+  function both() {
+    let left = comparison()
+    while (word(peek(), 'and') || peek()?.type === '&&') {
+      take()
+      left = node({ k: 'and', a: left, b: comparison() })
+    }
+    return left
+  }
+
+  // a < b ≤ c holds when both comparisons do, as in a textbook.
+  function comparison() {
+    const first = sum()
+    if (!COMPARISONS.has(peek()?.type)) return first
+    const args = [first]
+    const ops = []
+    while (COMPARISONS.has(peek()?.type)) {
+      ops.push(take().type)
+      args.push(sum())
+    }
+    return node({ k: 'cmp', ops, args })
+  }
 
   function sum() {
     let left = product()
@@ -281,10 +383,10 @@ export function parseExpr(source, names = []) {
   function call(name) {
     const [arity] = FUNCTIONS[name]
     take('(')
-    const args = [nested(sum)]
+    const args = [nested(choice)]
     while (peek()?.type === ',') {
       take()
-      args.push(nested(sum))
+      args.push(nested(choice))
     }
     take(')')
     if (arity > 0 ? args.length !== arity : args.length < -arity) throw new ExprError(`${name} takes ${Math.abs(arity)} argument${Math.abs(arity) > 1 ? 's' : ''}`)
@@ -299,17 +401,18 @@ export function parseExpr(source, names = []) {
     const alias = greekAliases(value).find(name => known.has(name))
     if (alias) return node({ k: 'var', n: alias })
     if (isConstantName(value)) return node({ k: 'num', v: CONSTANTS[value] })
+    if (KEYWORDS.has(value)) throw new ExprError(`Unexpected "${value}"`)
     if (isFunctionName(value)) {
       if (peek()?.type !== '(') throw new ExprError(`Write ${value}(…) with parentheses`)
       return call(value)
     }
     const parts = splitName(value)
-    if (!parts) throw new ExprError(`Unknown name "${value}"`)
+    if (!parts) throw new ExprError(`Unknown name "${value}"`, { unknown: value, call: peek()?.type === '(' })
     let result = null
     for (const [partIndex, part] of parts.entries()) {
       let factor
       if (isFunctionName(part)) {
-        if (partIndex !== parts.length - 1 || peek()?.type !== '(') throw new ExprError(`Unknown name "${value}"`)
+        if (partIndex !== parts.length - 1 || peek()?.type !== '(') throw new ExprError(`Unknown name "${value}"`, { unknown: value })
         factor = call(part)
       } else factor = node(known.has(part) ? { k: 'var', n: part } : { k: 'num', v: CONSTANTS[part] })
       result = result ? node({ k: 'bin', op: '*', a: result, b: factor }) : factor
@@ -336,7 +439,7 @@ export function parseExpr(source, names = []) {
     if (token.type === 'num') return node({ k: 'num', v: token.value })
     if (token.type === 'name') return named(token.value)
     if (token.type === '(') {
-      const inner = nested(sum)
+      const inner = nested(choice)
       take(')')
       return inner
     }
@@ -349,26 +452,44 @@ export function parseExpr(source, names = []) {
     throw new ExprError(`Unexpected "${token.type}"`)
   }
 
-  const tree = sum()
+  const tree = choice()
   if (index < tokens.length) throw new ExprError(`Unexpected "${tokens[index].type === 'name' || tokens[index].type === 'num' ? tokens[index].value : tokens[index].type}"`)
   return tree
 }
+
+// Words that join conditions, never names: "x > 0 and x < 1".
+const KEYWORDS = new Set(['and', 'or'])
+const COMPARISONS = new Set(['<', '<=', '>', '>=', '=', '!='])
+const near = (a, b) => Math.abs(a - b) <= 1e-12 * Math.max(1, Math.abs(a), Math.abs(b))
+const COMPARE = Object.freeze({
+  '<': (a, b) => a < b,
+  '<=': (a, b) => a <= b || near(a, b),
+  '>': (a, b) => a > b,
+  '>=': (a, b) => a >= b || near(a, b),
+  '=': near,
+  '!=': (a, b) => !near(a, b),
+})
 
 // The names a tree reads, besides constants and functions.
 export function namesIn(tree, found = new Set()) {
   if (tree.k === 'var') found.add(tree.n)
   else if (tree.k === 'neg') namesIn(tree.a, found)
-  else if (tree.k === 'bin') {
+  else if (tree.k === 'bin' || tree.k === 'and' || tree.k === 'or') {
     namesIn(tree.a, found)
     namesIn(tree.b, found)
-  } else if (tree.k === 'call') for (const arg of tree.args) namesIn(arg, found)
+  } else if (tree.k === 'call' || tree.k === 'cmp') for (const arg of tree.args) namesIn(arg, found)
   return found
 }
 
 // A function of an array of values, in the order of `names`. Never throws:
-// outside its domain a formula gives NaN.
-export function compileExpr(tree, names = []) {
+// outside its domain a formula gives NaN, and so does a condition there.
+// trace, when given, follows the pieces an evaluation goes through: each
+// comparison, choice and step (floor, sign…) folds its outcome into
+// trace.sig, so two points whose signatures differ lie on different pieces
+// and a curve is not drawn across the jump between them (plot.js).
+export function compileExpr(tree, names = [], trace = null) {
   const slot = new Map(names.map((name, position) => [name, position]))
+  const note = trace ? value => { trace.sig = (trace.sig * 31 + (Number.isFinite(value) ? value : 0) + 7) % 1_000_000_007 } : () => {}
   const build = item => {
     switch (item.k) {
       case 'num': {
@@ -393,11 +514,75 @@ export function compileExpr(tree, names = []) {
         if (item.op === '/') return values => a(values) / b(values)
         return values => power(a(values), b(values))
       }
-      case 'call': {
-        const implementation = FUNCTIONS[item.f][1]
+      case 'cmp': {
         const args = item.args.map(build)
+        const tests = item.ops.map(op => COMPARE[op])
+        return values => {
+          let left = args[0](values)
+          for (let at = 0; at < tests.length; at += 1) {
+            const right = args[at + 1](values)
+            if (Number.isNaN(left) || Number.isNaN(right)) return NaN
+            if (!tests[at](left, right)) {
+              note(0)
+              return 0
+            }
+            left = right
+          }
+          note(1)
+          return 1
+        }
+      }
+      case 'and':
+      case 'or': {
+        const a = build(item.a)
+        const b = build(item.b)
+        const settled = item.k === 'and' ? 0 : 1
+        return values => {
+          const left = a(values)
+          if (Number.isNaN(left)) return NaN
+          if ((left ? 1 : 0) === settled) return settled
+          const right = b(values)
+          return Number.isNaN(right) ? NaN : right ? 1 : 0
+        }
+      }
+      case 'call': {
+        const args = item.args.map(build)
+        // Only the piece in force is evaluated, and the signature says which.
+        if (item.f === 'if' || item.f === 'piecewise') {
+          const pieces = Math.floor(args.length / 2)
+          const otherwise = args.length % 2 ? args[args.length - 1] : null
+          return values => {
+            for (let piece = 0; piece < pieces; piece += 1) {
+              const condition = args[piece * 2](values)
+              if (Number.isNaN(condition)) return NaN
+              if (condition) {
+                note(piece + 2)
+                return args[piece * 2 + 1](values)
+              }
+            }
+            note(1)
+            return otherwise ? otherwise(values) : NaN
+          }
+        }
+        const implementation = FUNCTIONS[item.f][1]
+        if (item.f === 'mod') {
+          const [a, b] = args
+          return values => {
+            const top = a(values)
+            const bottom = b(values)
+            note(Math.floor(top / bottom))
+            return implementation(top, bottom)
+          }
+        }
         if (args.length === 1) {
           const [a] = args
+          if (STEPS.has(item.f)) {
+            return values => {
+              const result = implementation(a(values))
+              note(result)
+              return result
+            }
+          }
           return values => implementation(a(values))
         }
         return values => implementation(...args.map(arg => arg(values)))
@@ -455,8 +640,31 @@ function formatNumber(value) {
 
 const superscript = value => [...String(value)].map(char => SUPERSCRIPT[char]).join('')
 const symbol = value => [...value].length === 1 && /\p{L}/u.test(value)
+const COMPARISON_TEXT = Object.freeze({ '<': '<', '<=': '≤', '>': '>', '>=': '≥', '=': '=', '!=': '≠' })
+const NEGATED = Object.freeze({ '<': '>=', '<=': '>', '>': '<=', '>=': '<', '=': '!=', '!=': '=' })
 
-// Plain Unicode for labels and exports: "A·sin(ωx)", "x² − 3", "√(1 − x²)".
+// A function in pieces as [condition, value] pairs, read in order; a chain
+// of choices is one list. The last value, "otherwise", has no condition,
+// unless the one before it is a single comparison it can be the opposite of.
+function piecesOf(item) {
+  const pairs = []
+  let current = item
+  for (;;) {
+    for (let at = 0; at + 1 < current.args.length; at += 2) pairs.push([current.args[at], current.args[at + 1]])
+    if (current.args.length % 2 === 0) return pairs
+    const rest = current.args[current.args.length - 1]
+    if (rest.k === 'call' && (rest.f === 'if' || rest.f === 'piecewise')) {
+      current = rest
+      continue
+    }
+    const only = pairs.length === 1 ? pairs[0][0] : null
+    const opposite = only?.k === 'cmp' && only.ops.length === 1 ? { ...only, ops: [NEGATED[only.ops[0]]] } : null
+    return [...pairs, [opposite, rest]]
+  }
+}
+
+// Plain Unicode for labels and exports: "A·sin(ωx)", "x² − 3", "√(1 − x²)";
+// a function in pieces reads "−x (x < 0); x (x ≥ 0)".
 export function exprToText(tree, display = DISPLAY_NAMES) {
   const show = name => display[name] ?? name
   const write = (item, parent = 0) => {
@@ -469,7 +677,20 @@ export function exprToText(tree, display = DISPLAY_NAMES) {
         const inner = write(item.a, 3)
         return parent > 2 ? `(−${inner})` : `−${inner}`
       }
+      case 'cmp': {
+        const out = item.args.map((arg, at) => `${at ? ` ${COMPARISON_TEXT[item.ops[at - 1]]} ` : ''}${write(arg, 1)}`).join('')
+        return parent > 0.5 ? `(${out})` : out
+      }
+      case 'and':
+      case 'or': {
+        const out = `${write(item.a, 0.5)} ${item.k} ${write(item.b, 0.5)}`
+        return parent > 0.4 ? `(${out})` : out
+      }
       case 'call': {
+        if (item.f === 'if' || item.f === 'piecewise') {
+          const out = piecesOf(item).map(([condition, value]) => (condition ? `${write(value)} (${write(condition)})` : write(value))).join('; ')
+          return parent > 0 ? `{${out}}` : out
+        }
         if (item.f === 'abs') return `|${write(item.args[0])}|`
         if (item.f === 'sqrt') return `√(${write(item.args[0])})`
         return `${item.f}(${item.args.map(arg => write(arg)).join(', ')})`

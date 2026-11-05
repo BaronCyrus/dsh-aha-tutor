@@ -11,6 +11,11 @@ import { chartSvg } from './charts.js'
 import { plotSvg } from './plot.js'
 import { sanitizeSvg } from './sanitize.js'
 import { BOARD_FONT } from './styles.js'
+import { fitSvgMarkup } from './svg-fit.js'
+
+// What a picture that could not be drawn says, unless the caller names it
+// in the learner's language.
+const FIGURE_LABELS = Object.freeze({ missing: 'Figure not drawn', animation: 'Animation could not play' })
 
 const W = 1280
 const H = 720
@@ -99,7 +104,7 @@ function loadImage(svg) {
   })
 }
 
-async function layout(ctx, steps, palette, theme) {
+async function layout(ctx, steps, palette, theme, labels = FIGURE_LABELS) {
   const items = []
   const pages = [{ title: '' }]
   let column = 0
@@ -144,7 +149,9 @@ async function layout(ctx, steps, palette, theme) {
         place(lines.length * lineHeight + (op.t === 'note' ? 22 : 0), { ...base, kind: 'text', size, weight: op.t === 'h' ? 700 : 400, lines, lineHeight, color: op.t === 'h' ? palette.head : palette.ink, center: op.t === 'math', note: op.t === 'note', marker: op.t === 'h' })
         continue
       }
-      const still = op.t === 'chart' ? chartSvg(op) : op.t === 'plot' ? plotSvg(op) : op.t === 'svg' ? sanitizeSvg(op.svg) : op.t === 'anim' && op.poster ? sanitizeSvg(op.poster) : ''
+      // A diagram becomes an image once fitted to all it draws (svg-fit.js).
+      const drawn = op.t === 'svg' ? sanitizeSvg(op.svg) : op.t === 'anim' && op.poster ? sanitizeSvg(op.poster) : ''
+      const still = op.t === 'chart' ? chartSvg(op) : op.t === 'plot' ? plotSvg(op) : drawn ? fitSvgMarkup(drawn, { font: family }) : ''
       const image = still ? await loadImage(themedSvg(still, palette, theme)) : null
       if (image) {
         const ratio = image.naturalHeight / Math.max(1, image.naturalWidth) || 0.62
@@ -153,7 +160,13 @@ async function layout(ctx, steps, palette, theme) {
         place(height + (op.caption ? 30 : 0), { ...base, kind: 'image', image, w: height / ratio, imageH: height, caption: op.caption ?? '' })
         continue
       }
-      if (op.t === 'svg' || op.t === 'chart' || op.t === 'plot') continue
+      if (op.t === 'missing' || op.t === 'svg' || op.t === 'chart' || op.t === 'plot') {
+        // A picture that could not be drawn says so, as on the board.
+        ctx.font = font(22)
+        const lines = wrap(ctx, `⚠ ${op.t === 'missing' && op.of === 'anim' ? labels.animation : labels.missing}${op.caption ? ` · ${op.caption}` : ''}`, COL_W - 28)
+        place(lines.length * 32 + 22, { ...base, kind: 'text', size: 22, weight: 400, lines, lineHeight: 32, color: palette.soft, note: true })
+        continue
+      }
       if (op.t === 'table') {
         const rows = [op.head, ...op.rows].filter(row => row.length).slice(0, 10)
         place(rows.length * 34 + 6, { ...base, kind: 'table', rows })
@@ -327,7 +340,9 @@ export function syncedStarts(step, writes, speechMs) {
 
 // fetchAudio(text) → { blob } | { base64, mime } (cloud voice) or null to
 // export silently.
-export async function exportVideo({ steps, title, fetchAudio, watermark, theme = 'light', font: fontChoice = 'hand', onProgress, signal }) {
+// labels: { missing, animation }, what a picture that could not be drawn
+// says (FIGURE_LABELS).
+export async function exportVideo({ steps, title, fetchAudio, watermark, theme = 'light', font: fontChoice = 'hand', labels = FIGURE_LABELS, onProgress, signal }) {
   if (!videoSupported()) throw new Error('unsupported')
   family = fontChoice === 'standard' ? getComputedStyle(document.body).fontFamily || 'system-ui,sans-serif' : BOARD_FONT
   // A canvas draws with whatever is loaded: fetch the slices first.
@@ -341,7 +356,7 @@ export async function exportVideo({ steps, title, fetchAudio, watermark, theme =
   canvas.width = W
   canvas.height = H
   const ctx = canvas.getContext('2d')
-  const { items, pages } = await layout(ctx, steps, palette, theme)
+  const { items, pages } = await layout(ctx, steps, palette, theme, { ...FIGURE_LABELS, ...labels })
 
   let audioCtx = null
   const buffers = []

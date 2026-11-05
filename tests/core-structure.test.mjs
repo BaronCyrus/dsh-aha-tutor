@@ -205,7 +205,7 @@ test('board normalization maps aliases, renumbers ops and repoints marks', () =>
   ] })
   assert.equal(board.steps.length, 3)
   assert.deepEqual(board.steps[0].ops.map(op => op.id), ['o1', 'o2'])
-  assert.equal(board.steps[1].ops.length, 1)
+  assert.deepEqual(board.steps[1].ops.map(op => op.t), ['mark', 'missing'], 'a picture that cannot be drawn keeps its place')
   assert.equal(board.steps[1].ops[0].ref, 'o2')
   assert.equal(board.steps[2].check.answer, 'a')
   assert.throws(() => normalizeBoard({ steps: [] }), /no steps/)
@@ -225,7 +225,7 @@ test('animations keep an SVG poster for places scripts cannot run', () => {
     { t: 'anim', html, poster: `<svg>${'x'.repeat(60 * 1024)}</svg>` },
   ] }] })
   const [kept, notSvg, tooBig] = board.steps[0].ops
-  assert.equal(kept.poster, poster)
+  assert.equal(kept.poster, poster.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" '), 'it gains the SVG namespace an image needs')
   assert.equal(kept.height, 520)
   assert.equal(notSvg.t, 'anim')
   assert.equal(notSvg.poster, '')

@@ -3,6 +3,8 @@
 // could fetch anything. Animations that need code run in a sandboxed iframe
 // instead (see animationDocument).
 
+import { repairSvg } from '../core/svg-check.js'
+
 const ELEMENTS = new Set([
   'svg', 'g', 'path', 'line', 'polyline', 'polygon', 'rect', 'circle', 'ellipse', 'text', 'tspan', 'textPath',
   'defs', 'marker', 'lineargradient', 'radialgradient', 'stop', 'title', 'desc', 'clippath', 'mask', 'pattern', 'use', 'symbol',
@@ -72,12 +74,14 @@ function clean(node) {
 }
 
 // Returns sanitized SVG markup, or null when the input is not usable SVG.
+// What can be fixed for free is fixed first (core/svg-check.js), also for
+// boards saved before the host did that.
 export function sanitizeSvg(markup, { DOMParserImpl = globalThis.DOMParser, XMLSerializerImpl = globalThis.XMLSerializer } = {}) {
   if (typeof markup !== 'string' || !/^\s*<svg[\s>]/iu.test(markup) || markup.length > 64 * 1024) return null
   if (!DOMParserImpl) return null
   let doc
   try {
-    doc = new DOMParserImpl().parseFromString(markup, 'image/svg+xml')
+    doc = new DOMParserImpl().parseFromString(repairSvg(markup), 'image/svg+xml')
   } catch {
     return null
   }
@@ -105,10 +109,22 @@ const ANIMATION_HEIGHT_KEY = 'ahaAnimHeight'
 export const ANIMATION_MAX_HEIGHT = 640
 const HEIGHT_REPORTER = `<script>(()=>{let width=-1;const send=()=>{try{const items=[...document.body.children].filter(item=>!/^(SCRIPT|STYLE|TEMPLATE)$/.test(item.tagName));const bottom=Math.max(document.body.scrollHeight,...items.map(item=>item.getBoundingClientRect().bottom+scrollY));if(bottom>0)parent.postMessage({${ANIMATION_HEIGHT_KEY}:Math.ceil(bottom)},'*')}catch{}};addEventListener('load',()=>{width=innerWidth;send();setTimeout(send,600)});addEventListener('resize',()=>{if(innerWidth!==width){width=innerWidth;send()}})})()</script>`
 
+// An error in the page's own code (a syntax error, a name it never
+// defined) is reported the same way, once, and the board shows the still
+// frame instead. It runs before the page's scripts, so it hears their
+// errors; a ResizeObserver's loop notice is not an error of the page.
+const ANIMATION_ERROR_KEY = 'ahaAnimError'
+const ERROR_REPORTER = `<script>(()=>{let sent=false;const report=()=>{if(sent)return;sent=true;try{parent.postMessage({${ANIMATION_ERROR_KEY}:1},'*')}catch{}};addEventListener('error',event=>{if(!/ResizeObserver loop/.test(String(event.message)))report()});addEventListener('unhandledrejection',report)})()</script>`
+
 // The height a page reported (a message from its frame), or 0.
 export function reportedAnimationHeight(data) {
   const value = Number(data?.[ANIMATION_HEIGHT_KEY])
   return Number.isFinite(value) && value > 0 ? Math.min(ANIMATION_MAX_HEIGHT, Math.ceil(value)) : 0
+}
+
+// Whether a message from an animation's frame says its code failed.
+export function reportedAnimationError(data) {
+  return data?.[ANIMATION_ERROR_KEY] === 1
 }
 
 // `theme` matches the board so Chromium does not paint an opaque backdrop
@@ -116,7 +132,7 @@ export function reportedAnimationHeight(data) {
 export function animationDocument(html, theme = 'light') {
   const body = String(html ?? '')
   const scheme = theme === 'dark' ? 'dark' : 'light'
-  const meta = `<meta http-equiv="Content-Security-Policy" content="${ANIMATION_CSP}"><meta charset="utf-8"><meta name="color-scheme" content="${scheme}"><style>:root{color-scheme:${scheme}}html,body{margin:0;background:transparent;overflow:hidden}canvas,svg{max-width:100%;height:auto}</style>${HEIGHT_REPORTER}`
+  const meta = `<meta http-equiv="Content-Security-Policy" content="${ANIMATION_CSP}"><meta charset="utf-8"><meta name="color-scheme" content="${scheme}"><style>:root{color-scheme:${scheme}}html,body{margin:0;background:transparent;overflow:hidden}canvas,svg{max-width:100%;height:auto}</style>${ERROR_REPORTER}${HEIGHT_REPORTER}`
   if (/<head[^>]*>/iu.test(body)) return body.replace(/<head[^>]*>/iu, match => `${match}${meta}`)
   if (/<html[^>]*>/iu.test(body)) return body.replace(/<html[^>]*>/iu, match => `${match}<head>${meta}</head>`)
   return `<!doctype html><html><head>${meta}</head><body>${body}</body></html>`

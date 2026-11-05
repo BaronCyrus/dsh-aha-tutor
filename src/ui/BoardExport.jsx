@@ -39,7 +39,7 @@ export function BoardExport({ steps, title, kind = 'ghost' }) {
     setMenu(false)
     if (!steps?.length || job) return
     if (format === 'md') {
-      downloadText(`${name}.md`, boardToMarkdown({ title, steps }), 'text/markdown')
+      downloadText(`${name}.md`, boardToMarkdown({ title, steps }, { missing: t('figureMissing') }), 'text/markdown')
       return
     }
     setJob({ id: Date.now(), format, done: 0, total: 0 })
@@ -102,7 +102,8 @@ export function BoardExport({ steps, title, kind = 'ghost' }) {
       <button type="button" role="menuitem" className="aha-btn" data-kind="ghost" onClick={() => start('md')}>{t('exportMarkdown')}</button>
     </div> : null}
     {job ? createPortal(<div ref={pagesRef} className="aha-exportPages" aria-hidden="true">
-      <BoardSheets steps={steps} title={title} theme={theme} font={font} footer={{ left: title, right: `${t('appName')} · ${t('appTagline')}` }} animationLabel={t('animationStill')} fixedLabel={t('fixed')} />
+      <BoardSheets steps={steps} title={title} theme={theme} font={font} footer={{ left: title, right: `${t('appName')} · ${t('appTagline')}` }} animationLabel={t('animationStill')} fixedLabel={t('fixed')}
+        figureLabels={{ missing: t('figureMissing'), redrawing: t('figureRedrawing'), animation: t('animationFailed') }} />
     </div>, document.body) : null}
   </span>
 }

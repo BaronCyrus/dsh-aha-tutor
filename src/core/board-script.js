@@ -2,9 +2,13 @@
 // narration the tutor speaks and the board operations written while speaking,
 // optionally followed by a quick understanding check. The normalizer accepts
 // loose model output and returns a strictly shaped, size-limited script.
+// A picture it cannot draw keeps its place as a "missing" op, which says so
+// on the board, and the normalizer reports what is wrong with it so the
+// model can be asked to fix it (figure-fix.js).
 
 import { normalizeItem, text } from './course-model.js'
-import { normalizePlot, plotToSource, plotToText } from './plot.js'
+import { normalizePlot, plotToSource, plotToText, rawFormulas } from './plot.js'
+import { repairSvg, svgProblems } from './svg-check.js'
 
 export const BOARD_LIMITS = Object.freeze({
   steps: 48,
@@ -21,7 +25,10 @@ export const BOARD_LIMITS = Object.freeze({
   chartSeries: 6,
 })
 
-export const OP_TYPES = Object.freeze(['title', 'h', 'p', 'math', 'list', 'svg', 'chart', 'plot', 'table', 'code', 'note', 'mark', 'anim', 'col', 'page'])
+export const OP_TYPES = Object.freeze(['title', 'h', 'p', 'math', 'list', 'svg', 'chart', 'plot', 'table', 'code', 'note', 'mark', 'anim', 'col', 'page', 'missing'])
+// The kinds of picture a board draws.
+export const FIGURES = Object.freeze(['svg', 'chart', 'plot', 'anim'])
+const SVG_START = /^<svg[\s>/]/iu
 const OP_ALIASES = Object.freeze({
   heading: 'h', header: 'h', subtitle: 'h', text: 'p', paragraph: 'p', write: 'p', formula: 'math', equation: 'math', latex: 'math',
   bullets: 'list', bullet: 'list', diagram: 'svg', drawing: 'svg', figure: 'svg', graph: 'chart', function: 'plot', curve: 'plot', callout: 'note',
@@ -52,85 +59,120 @@ function chartSeries(raw) {
   return { series, data }
 }
 
-export function normalizeOp(raw, index) {
+// What is wrong with model-written SVG once the free fixes are made, as
+// [markup, problems].
+function checkedSvg(raw) {
+  const svg = repairSvg(String(raw ?? '').trim())
+  if (!svg) return [svg, ['the svg is empty']]
+  if (!SVG_START.test(svg)) return [svg, ['the markup does not start with <svg']]
+  if (svg.length > BOARD_LIMITS.svgBytes) return [svg, [`the svg is longer than ${BOARD_LIMITS.svgBytes} characters`]]
+  return [svg, svgProblems(svg)]
+}
+
+// An op as the board keeps it, or why a picture cannot be drawn:
+// { op, figure, problems }. op is null when the board drops the op; figure
+// names the kind of picture the model meant (svg, chart, plot, anim), and
+// problems say what is wrong with it, also when part of it was kept (a plot
+// that lost a curve).
+export function readOp(raw, index) {
   const t = opType(raw)
-  if (!t) return null
+  const kept = (op, figure = null, problems = []) => ({ op, figure, problems })
+  if (!t) return kept(null)
   const id = typeof raw?.id === 'string' && /^[a-z0-9_-]{1,24}$/iu.test(raw.id) ? raw.id : `o${index + 1}`
   switch (t) {
     case 'title':
     case 'h':
     case 'p': {
       const value = text(raw?.text ?? raw?.content ?? raw?.value, t === 'p' ? BOARD_LIMITS.opText : 160)
-      return value ? { id, t, text: value } : null
+      return kept(value ? { id, t, text: value } : null)
     }
     case 'math': {
       const tex = text(raw?.tex ?? raw?.latex ?? raw?.formula, 600)
-      return tex ? { id, t, tex, text: text(raw?.text ?? raw?.plain, 300) } : null
+      return kept(tex ? { id, t, tex, text: text(raw?.text ?? raw?.plain, 300) } : null)
     }
     case 'list': {
       const items = (Array.isArray(raw?.items) ? raw.items : []).slice(0, BOARD_LIMITS.listItems).map(item => text(item, 400)).filter(Boolean)
-      return items.length ? { id, t, items, ordered: raw?.ordered === true } : null
+      return kept(items.length ? { id, t, items, ordered: raw?.ordered === true } : null)
     }
     case 'svg': {
-      const svg = String(raw?.svg ?? raw?.content ?? '').trim()
-      if (!/^<svg[\s>]/iu.test(svg) || svg.length > BOARD_LIMITS.svgBytes) return null
-      return { id, t, svg, caption: text(raw?.caption, 200), wide: raw?.wide === true }
+      const [svg, problems] = checkedSvg(raw?.svg ?? raw?.content)
+      if (problems.length) return kept(null, 'svg', problems)
+      return kept({ id, t, svg, caption: text(raw?.caption, 200), wide: raw?.wide === true }, 'svg')
     }
     case 'chart':
     case 'plot': {
       // A curve given by formulas is a plot, whatever the model called it;
       // data points are a chart.
       const formulas = raw?.fns ?? raw?.functions ?? raw?.curves ?? (typeof raw?.y === 'string' || raw?.fn !== undefined || raw?.expr !== undefined ? raw : null)
+      const problems = []
       if (formulas) {
-        const plot = normalizePlot(raw)
-        if (plot) return { id, t: 'plot', ...plot }
+        const plot = normalizePlot(raw, { problems })
+        if (plot) return kept({ id, t: 'plot', ...plot }, 'plot', problems)
       }
       const kind = CHART_KINDS.includes(raw?.kind) ? raw.kind : 'line'
       const { series, data } = chartSeries(raw)
-      if (!series.length && !data.length) return null
-      return { id, t: 'chart', kind, title: text(raw?.title, 120), xLabel: text(raw?.xLabel ?? raw?.x?.label, 60), yLabel: text(raw?.yLabel ?? raw?.y?.label, 60), series, data }
+      if (!series.length && !data.length) {
+        const plot = Boolean(formulas) || t === 'plot'
+        return kept(null, plot ? 'plot' : 'chart', problems.length ? problems : [plot ? 'the plot has no curves ("fns")' : 'the chart has no data points ("series" or "data")'])
+      }
+      return kept({ id, t: 'chart', kind, title: text(raw?.title, 120), xLabel: text(raw?.xLabel ?? raw?.x?.label, 60), yLabel: text(raw?.yLabel ?? raw?.y?.label, 60), series, data }, 'chart')
     }
     case 'table': {
       const head = (Array.isArray(raw?.head ?? raw?.columns) ? raw.head ?? raw.columns : []).slice(0, BOARD_LIMITS.tableCols).map(cell => text(cell, 120))
       const rows = (Array.isArray(raw?.rows) ? raw.rows : []).slice(0, BOARD_LIMITS.tableRows)
         .map(row => (Array.isArray(row) ? row : []).slice(0, BOARD_LIMITS.tableCols).map(cell => text(cell, 200)))
         .filter(row => row.length)
-      return rows.length ? { id, t, head, rows } : null
+      return kept(rows.length ? { id, t, head, rows } : null)
     }
     case 'code': {
       const code = String(raw?.code ?? raw?.content ?? '').replace(/\r\n/gu, '\n').slice(0, BOARD_LIMITS.codeBytes)
-      return code.trim() ? { id, t, lang: text(raw?.lang ?? raw?.language, 24).toLowerCase(), code, caption: text(raw?.caption, 200) } : null
+      return kept(code.trim() ? { id, t, lang: text(raw?.lang ?? raw?.language, 24).toLowerCase(), code, caption: text(raw?.caption, 200) } : null)
     }
     case 'note': {
       const value = text(raw?.text ?? raw?.content, 800)
-      return value ? { id, t, text: value, tone: NOTE_TONES.includes(raw?.tone) ? raw.tone : 'key' } : null
+      return kept(value ? { id, t, text: value, tone: NOTE_TONES.includes(raw?.tone) ? raw.tone : 'key' } : null)
     }
     case 'mark': {
       const ref = text(raw?.ref ?? raw?.target, 24)
-      return ref ? { id, t, ref, style: MARK_STYLES.includes(raw?.style) ? raw.style : 'underline' } : null
+      return kept(ref ? { id, t, ref, style: MARK_STYLES.includes(raw?.style) ? raw.style : 'underline' } : null)
     }
     case 'anim': {
       const html = String(raw?.html ?? raw?.content ?? '').trim()
-      if (!html || html.length > BOARD_LIMITS.animBytes) return null
+      if (!html) return kept(null, 'anim', ['the animation has no "html"'])
+      if (html.length > BOARD_LIMITS.animBytes) return kept(null, 'anim', [`the animation page is longer than ${BOARD_LIMITS.animBytes} characters`])
       const height = Math.round(Number(raw?.height))
-      // A still frame for places scripts cannot run, such as exported videos.
-      const poster = String(raw?.poster ?? '').trim()
-      return {
+      // A still frame for places scripts cannot run, such as exported
+      // videos, or the board when the animation fails. One that cannot be
+      // drawn is left out: the animation does not need it.
+      const [poster, posterProblems] = checkedSvg(raw?.poster)
+      return kept({
         id,
         t,
         html,
         height: Number.isFinite(height) ? Math.min(520, Math.max(160, height)) : 300,
         caption: text(raw?.caption, 200),
-        poster: /^<svg[\s>]/iu.test(poster) && poster.length <= BOARD_LIMITS.svgBytes ? poster : '',
-      }
+        poster: posterProblems.length ? '' : poster,
+      }, 'anim')
     }
     case 'col':
-      return { id, t }
+      return kept({ id, t })
     case 'page':
-      return { id, t, title: text(raw?.title, 160) }
+      return kept({ id, t, title: text(raw?.title, 160) })
+    case 'missing':
+      return kept({ id, t, of: FIGURES.includes(raw?.of) ? raw.of : 'svg', caption: text(raw?.caption, 200), formula: text(raw?.formula, 240) })
     default:
-      return null
+      return kept(null)
   }
+}
+
+export function normalizeOp(raw, index) {
+  return readOp(raw, index).op
+}
+
+// The op standing in for a picture that cannot be drawn: what it was meant
+// to show (its caption; a plot's formulas as written), without an id yet.
+export function missingFigure(raw, of) {
+  return { t: 'missing', of, caption: text(raw?.caption ?? raw?.title, 200), formula: of === 'plot' ? rawFormulas(raw) : '' }
 }
 
 // Synced steps: an op's "at" is the sentence of the narration it is written
@@ -152,7 +194,10 @@ function sentenceIndex(value) {
 
 // Ops get globally unique ids ("o1".."oN") so marks can point at earlier ops.
 // A step's "goal" names the lesson objective it serves (0-based).
-export function normalizeBoard(raw, { conceptIds = [] } = {}) {
+// problems, when given, collects each picture with something wrong with it:
+// { op (its id on the board), kind, reasons, say (its step's narration),
+// raw (the op as the model wrote it) }.
+export function normalizeBoard(raw, { conceptIds = [], problems } = {}) {
   const sourceSteps = Array.isArray(raw) ? raw : Array.isArray(raw?.steps) ? raw.steps : []
   const steps = []
   let opCounter = 0
@@ -163,13 +208,15 @@ export function normalizeBoard(raw, { conceptIds = [] } = {}) {
     const ops = []
     const ats = []
     for (const rawOp of (Array.isArray(rawStep?.ops ?? rawStep?.board) ? rawStep.ops ?? rawStep.board : []).slice(0, BOARD_LIMITS.opsPerStep)) {
-      const op = normalizeOp(rawOp, opCounter)
+      const read = readOp(rawOp, opCounter)
+      const op = read.op ?? (read.figure ? missingFigure(rawOp, read.figure) : null)
       if (!op) continue
       const originalId = typeof rawOp?.id === 'string' ? rawOp.id : null
       op.id = `o${++opCounter}`
       if (originalId) idMap.set(originalId, op.id)
       ops.push(op)
       ats.push(sentenceIndex(rawOp?.at))
+      if (problems && read.problems.length) problems.push({ op: op.id, kind: read.figure, reasons: read.problems, say, raw: rawOp })
     }
     syncOps(ops, ats)
     let check = rawStep?.check ? normalizeItem(rawStep.check, steps.length, conceptIds) : null
@@ -230,7 +277,7 @@ export function opVisibleLength(op) {
 // How long writing an op takes on the board, before speed adjustments.
 export function estimateWriteMs(op) {
   if (op.t === 'col' || op.t === 'page') return 0
-  if (op.t === 'mark') return 600
+  if (op.t === 'mark' || op.t === 'missing') return 600
   if (op.t === 'svg' || op.t === 'chart' || op.t === 'plot' || op.t === 'anim') return 2200
   return Math.min(7000, Math.max(450, opVisibleLength(op) * 55))
 }
@@ -260,6 +307,7 @@ export function boardToPlainText(board, { maxChars = 8000, uptoStep } = {}) {
       else if (op.t === 'table') lines.push(`  | ${op.head.join(' | ')} |`, ...op.rows.map(row => `  | ${row.join(' | ')} |`))
       else if (op.t === 'code') lines.push(`  \`\`\`${op.lang}\n${op.code}\n  \`\`\``)
       else if (op.t === 'plot') lines.push(`  (plot: ${plotToSource(op)})`)
+      else if (op.t === 'missing') lines.push(`  (a ${op.of} that could not be drawn${op.caption || op.formula ? `: ${[op.caption, op.formula].filter(Boolean).join(' — ')}` : ''})`)
       else if (op.text) lines.push(`  ${op.text}`)
       else if (op.caption) lines.push(`  (${op.t}: ${op.caption})`)
     }
@@ -268,12 +316,15 @@ export function boardToPlainText(board, { maxChars = 8000, uptoStep } = {}) {
   return output.length > maxChars ? `${output.slice(0, maxChars)}\n…` : output
 }
 
-export function boardToMarkdown(board) {
+// missing: what a picture that could not be drawn is called, in the
+// learner's language.
+export function boardToMarkdown(board, { missing = 'Figure not drawn' } = {}) {
   const out = []
   if (board.title) out.push(`# ${board.title}`, '')
   for (const step of board.steps) {
     for (const op of step.ops) {
-      if (op.t === 'title') out.push(`## ${op.text}`, '')
+      if (op.t === 'missing') out.push(`> ⚠ ${missing}${op.caption ? ` · ${op.caption}` : ''}${op.formula ? ` · \`${op.formula.replace(/`/gu, '\'')}\`` : ''}`, '')
+      else if (op.t === 'title') out.push(`## ${op.text}`, '')
       else if (op.t === 'h') out.push(`### ${op.text}`, '')
       else if (op.t === 'p') out.push(op.text, '')
       else if (op.t === 'math') out.push(`$$${op.tex}$$`, '')

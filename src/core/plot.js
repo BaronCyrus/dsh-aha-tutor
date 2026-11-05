@@ -4,7 +4,7 @@
 // learner can slide, and marks: points, dashed guides, shaded areas and
 // tangents. This module checks a plot (normalizePlot) and samples it.
 
-import { compileExpr, constantValue, exprToText, isFunctionName, namesIn, parseExpr } from './expr.js'
+import { compileExpr, constantValue, exprToText, greekLetter, isConstantName, isFunctionName, namesIn, parseExpr } from './expr.js'
 
 // The prompt asks for at most 4 sliders; a plot with a few more keeps them
 // rather than losing the curves that use them.
@@ -74,11 +74,12 @@ function sliderRange(param) {
   return { min, max, value: clamp(start ?? (min + max) / 2, min, max) }
 }
 
-// `taken`: the variables the plot's curves run over.
-function normalizeParams(raw, taken) {
+// `entries`: slider specs (sliderList); `taken`: the variables the plot's
+// curves run over.
+function normalizeParams(entries, taken) {
   const seen = new Set()
   const params = []
-  for (const param of sliderList(raw)) {
+  for (const param of entries) {
     if (params.length >= PLOT_LIMITS.params) break
     const name = clip(nameOf(param), 24)
     if (!/^\p{L}[\p{L}\p{N}_]{0,23}$/u.test(name) || isFunctionName(name) || NOT_SLIDERS.has(name) || taken.has(name) || seen.has(name)) continue
@@ -110,36 +111,66 @@ function namesOfCurve(fn, paramNames) {
 // "y = …", "f(x) = …" and "r(θ) = …" lose their left-hand side.
 const formulaText = value => clip(value, 240).replace(/^[\p{L}](?:\s*\(\s*[\p{L}]+\s*\))?\s*=(?!=)/u, '').trim()
 
-function checks(source, names) {
+// The parser's error for a formula, or null when it reads.
+function errorIn(source, names) {
   try {
     parseExpr(source, names)
-    return true
-  } catch {
-    return false
+    return null
+  } catch (error) {
+    return error
   }
 }
 
-function normalizeCurve(raw, paramNames) {
+// A curve as the board keeps it ({ fn }), or why it cannot be drawn:
+// { reason, unknown, call }, with the name the formula did not know.
+function readCurve(raw, paramNames) {
   const curve = typeof raw === 'string' ? { y: raw } : raw
-  if (!curve || typeof curve !== 'object') return null
+  if (!curve || typeof curve !== 'object') return { reason: 'a curve is neither a formula nor an object' }
   const name = clip(curve.name ?? curve.label, 40)
   const known = kind => [...curveVariables(kind, paramNames), ...paramNames]
+  const failed = (field, source, error) => ({ reason: `"${field}": ${error.message} in "${source.slice(0, 80)}"`, unknown: error.unknown, call: error.call })
   if (curve.r !== undefined) {
     const r = formulaText(curve.r)
-    if (!checks(r, known('polar'))) return null
-    return { kind: 'polar', r, t: readRange(curve.t ?? curve.theta ?? curve.θ ?? curve.range) ?? [0, 2 * Math.PI], name }
+    const error = errorIn(r, known('polar'))
+    if (error) return failed('r', r, error)
+    return { fn: { kind: 'polar', r, t: readRange(curve.t ?? curve.theta ?? curve.θ ?? curve.range) ?? [0, 2 * Math.PI], name } }
   }
   if (typeof curve.x === 'string' && typeof curve.y === 'string') {
     const x = formulaText(curve.x)
     const y = formulaText(curve.y)
-    if (!checks(x, known('param')) || !checks(y, known('param'))) return null
-    return { kind: 'param', x, y, t: readRange(curve.t ?? curve.range) ?? [0, 2 * Math.PI], name }
+    for (const [field, source] of [['x', x], ['y', y]]) {
+      const error = errorIn(source, known('param'))
+      if (error) return failed(field, source, error)
+    }
+    return { fn: { kind: 'param', x, y, t: readRange(curve.t ?? curve.range) ?? [0, 2 * Math.PI], name } }
   }
   const y = formulaText(curve.y ?? curve.fn ?? curve.f ?? curve.expr ?? curve.formula)
-  if (!y || !checks(y, known('fx'))) return null
+  if (!y) return { reason: 'a curve has no formula ("y")' }
+  const error = errorIn(y, known('fx'))
+  if (error) return failed('y', y, error)
   const domain = readRange(curve.domain ?? (Array.isArray(curve.x) ? curve.x : null))
-  return { kind: 'fx', y, ...(domain ? { domain } : {}), name }
+  return { fn: { kind: 'fx', y, ...(domain ? { domain } : {}), name } }
 }
+
+// The slider a formula needs but never declared: a letter (a, k, ω, also
+// written "omega"), optionally numbered (v0, x_1), and not followed by "("
+// (that is a function the parser does not know). i stays the imaginary
+// unit. Null when the name is something else.
+function sliderFor(error, taken) {
+  const name = error?.unknown
+  if (typeof name !== 'string' || error.call || name === 'i') return null
+  const parts = /^(\p{L}+?)(_?\d{1,2})?$/u.exec(name)
+  if (!parts) return null
+  const [, base, number = ''] = parts
+  const letter = [...base].length === 1 ? base : greekLetter(base)
+  if (!letter) return null
+  const slider = number ? name : letter
+  if (taken.has(slider) || taken.has(name) || isFunctionName(slider) || isConstantName(slider)) return null
+  return slider
+}
+
+// Where a model may put values its formulas use besides the sliders.
+const VALUE_KEYS = ['constants', 'consts', 'const', 'values', 'vars', 'variables', 'where']
 
 // An index of an y = f(x) curve, or null.
 function fxIndex(value, fns, fallback = true) {
@@ -151,15 +182,46 @@ function fxIndex(value, fns, fallback = true) {
   return first >= 0 ? first : null
 }
 
-export function normalizePlot(raw) {
-  if (!raw || typeof raw !== 'object') return null
+// The curves of a plot as the model wrote them: a list, or the op itself
+// when it holds one formula.
+function rawCurves(raw) {
   const single = typeof raw.y === 'string' || raw.fn !== undefined || raw.expr !== undefined || raw.f !== undefined || raw.formula !== undefined ? [{ ...raw, x: undefined, name: raw.name ?? raw.label }] : []
-  const curves = list(raw.fns ?? raw.functions ?? raw.curves ?? single, PLOT_LIMITS.fns * 2)
+  return list(raw.fns ?? raw.functions ?? raw.curves ?? single, PLOT_LIMITS.fns * 2)
+}
+
+// problems, when given, collects why curves were left out (and why the
+// whole plot was, when it returns null), for the model to fix them.
+export function normalizePlot(raw, { problems } = {}) {
+  if (!raw || typeof raw !== 'object') {
+    problems?.push('the plot is not an object')
+    return null
+  }
+  const curves = rawCurves(raw)
   // A slider may be called r, θ or e, unless a curve runs over that name.
   const taken = new Set(['x', 'y', ...curves.flatMap(curve => RUNS_OVER[curveKind(curve)])])
-  const declared = normalizeParams(raw.params ?? raw.parameters ?? raw.sliders, taken)
-  const fns = curves.map(curve => normalizeCurve(curve, declared.map(param => param.name))).filter(Boolean).slice(0, PLOT_LIMITS.fns)
-  if (!fns.length) return null
+  // Values given as constants keep their value, as sliders starting there.
+  const values = VALUE_KEYS.map(key => raw[key]).find(value => value && typeof value === 'object')
+  const declared = normalizeParams([...sliderList(raw.params ?? raw.parameters ?? raw.sliders), ...sliderList(values)], taken)
+  const fns = []
+  for (const [index, curve] of curves.entries()) {
+    // Curves past the limit are not drawn, so nothing about them is a problem.
+    if (fns.length >= PLOT_LIMITS.fns) break
+    let read = readCurve(curve, declared.map(param => param.name))
+    // A letter used but never declared becomes a slider from 0 to 2 at 1.
+    for (;;) {
+      const name = read.fn || declared.length >= PLOT_LIMITS.params ? null : sliderFor(read, taken)
+      const slider = name && !declared.some(param => param.name === name) ? normalizeParams([{ name }], taken)[0] : null
+      if (!slider) break
+      declared.push(slider)
+      read = readCurve(curve, declared.map(param => param.name))
+    }
+    if (read.fn) fns.push(read.fn)
+    else problems?.push(`curve ${index + 1}: ${read.reason}`)
+  }
+  if (!fns.length) {
+    if (!curves.length) problems?.push('the plot has no curves ("fns")')
+    return null
+  }
   // A slider no curve reads would move nothing.
   const used = new Set(fns.flatMap(fn => namesOfCurve(fn, declared.map(param => param.name))))
   const params = declared.filter(param => used.has(param.name))
@@ -223,16 +285,33 @@ export function normalizePlot(raw) {
 
 const isPiMultiple = value => Math.abs(value / (Math.PI / 4) - Math.round(value / (Math.PI / 4))) < 1e-3
 
+// The formulas of a plot as the model wrote them, one line, for a plot
+// that could not be drawn: the learner still sees what it was.
+export function rawFormulas(raw) {
+  if (!raw || typeof raw !== 'object') return ''
+  const shown = value => clip(typeof value === 'number' ? String(value) : typeof value === 'string' ? formulaText(value) : '', 120)
+  return rawCurves(raw).map(curve => {
+    if (typeof curve === 'string') return `y = ${shown(curve)}`
+    if (curve?.r !== undefined) return `r = ${shown(curve.r)}`
+    if (typeof curve?.x === 'string' && typeof curve?.y === 'string') return `x = ${shown(curve.x)}, y = ${shown(curve.y)}`
+    const y = shown(curve?.y ?? curve?.fn ?? curve?.f ?? curve?.expr ?? curve?.formula)
+    return y ? `y = ${y}` : ''
+  }).filter(line => line && !/= $/u.test(line)).join('; ').slice(0, 240)
+}
+
 // ── evaluating ─────────────────────────────────────────────────────────────
 
 // Each curve compiled once: evaluate(kindValue, paramValues) per formula.
+// A curve's `trace.sig` says which piece its last point (`at`) lies on,
+// for a function given in pieces (expr.js).
 export function compilePlot(plot) {
   const paramNames = plot.params.map(param => param.name)
   return plot.fns.map(fn => {
     const variables = curveVariables(fn.kind, paramNames)
     const names = [...variables, ...paramNames]
+    const trace = { sig: 0 }
     const build = source => {
-      const run = compileExpr(parseExpr(source, names), names)
+      const run = compileExpr(parseExpr(source, names), names, trace)
       const slots = new Array(names.length).fill(0)
       return (value, params) => {
         for (let index = 0; index < variables.length; index += 1) slots[index] = value
@@ -242,22 +321,28 @@ export function compilePlot(plot) {
     }
     if (fn.kind === 'polar') {
       const r = build(fn.r)
-      return { kind: 'polar', at: (theta, params) => { const radius = r(theta, params); return [radius * Math.cos(theta), radius * Math.sin(theta)] } }
+      return { kind: 'polar', trace, at: (theta, params) => { trace.sig = 0; const radius = r(theta, params); return [radius * Math.cos(theta), radius * Math.sin(theta)] } }
     }
     if (fn.kind === 'param') {
       const x = build(fn.x)
       const y = build(fn.y)
-      return { kind: 'param', at: (t, params) => [x(t, params), y(t, params)] }
+      return { kind: 'param', trace, at: (t, params) => { trace.sig = 0; return [x(t, params), y(t, params)] } }
     }
     const y = build(fn.y)
-    return { kind: 'fx', y, at: (value, params) => [value, y(value, params)] }
+    return { kind: 'fx', y, trace, at: (value, params) => { trace.sig = 0; return [value, y(value, params)] } }
   })
 }
 
 export const defaultValues = plot => plot.params.map(param => param.value)
 
+// Halvings that find where a new piece starts: far finer than a pixel.
+const PIECE_SEARCH = 24
+
 // The points of every curve for these parameter values, in world
-// coordinates; NaN where a curve is undefined.
+// coordinates; NaN where a curve is undefined. Where a function given in
+// pieces changes piece, the curve stops at the end of one piece and starts
+// again at the beginning of the next (a NaN point between), so a jump is
+// not drawn as a line and a continuous joint still meets.
 export function sampleCurves(plot, compiled, params, xRange = plot.x) {
   return plot.fns.map((fn, index) => {
     const curve = compiled[index]
@@ -267,7 +352,24 @@ export function sampleCurves(plot, compiled, params, xRange = plot.x) {
     const count = fn.kind === 'fx' ? PLOT_LIMITS.samples : PLOT_LIMITS.samples * 1.5
     const points = []
     if (!(to > from)) return points
-    for (let step = 0; step <= count; step += 1) points.push(curve.at(from + ((to - from) * step) / count, params))
+    let previous = null
+    for (let step = 0; step <= count; step += 1) {
+      const value = from + ((to - from) * step) / count
+      const point = curve.at(value, params)
+      const sig = curve.trace?.sig ?? 0
+      if (previous && sig !== previous.sig && previous.point.every(Number.isFinite) && point.every(Number.isFinite)) {
+        let [low, high] = [previous.value, value]
+        for (let round = 0; round < PIECE_SEARCH; round += 1) {
+          const middle = (low + high) / 2
+          curve.at(middle, params)
+          if (curve.trace.sig === previous.sig) low = middle
+          else high = middle
+        }
+        points.push(curve.at(low, params), [NaN, NaN], curve.at(high, params))
+      }
+      points.push(point)
+      previous = { value, point, sig }
+    }
     return points
   })
 }

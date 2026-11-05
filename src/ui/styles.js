@@ -379,6 +379,11 @@ a.aha-btn{text-decoration:none}
 .aha-op-figure>div{width:100%;display:flex;justify-content:center}
 .aha-op-figure svg{width:100%;max-width:560px;height:auto;max-height:380px;overflow:visible}
 .aha-figCaption{font-size:15px;color:var(--ink-soft)}
+.aha-op-missing{display:flex;flex-direction:column;align-items:center;gap:6px;width:100%;box-sizing:border-box;padding:16px 14px;border:2px dashed color-mix(in srgb,var(--ink-soft) 55%,transparent);border-radius:12px;text-align:center;color:var(--ink-soft)}
+.aha-op-missingHead{display:flex;align-items:center;justify-content:center;gap:8px;font-size:15px;font-weight:600}
+.aha-op-missing[data-redraw=true]{border-color:color-mix(in srgb,var(--head) 45%,transparent)}
+.aha-op-missing[data-redraw=true] .aha-op-missingHead{color:var(--head)}
+.aha-op-missingFormula{max-width:100%;font:12.5px/18px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink);opacity:.8;white-space:pre-wrap;overflow-wrap:anywhere}
 .aha-plot{display:flex;flex-direction:column;align-items:center;gap:6px;width:100%}
 .aha-plotSliders{display:grid;gap:4px;width:min(100%,520px);transition:opacity .3s}
 .aha-plotSliders[data-written=false]{opacity:0;pointer-events:none}

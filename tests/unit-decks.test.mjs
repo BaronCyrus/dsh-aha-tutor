@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 
 import { exportCoursePack, importCoursePack } from '../src/core/coursepack.js'
-import { LIMITS, normalizePractice, unitCardRange, unitConcepts, unitQuizRange } from '../src/core/course-model.js'
+import { inferConcepts, LIMITS, normalizeItem, normalizePractice, unitCardRange, unitConcepts, unitQuizRange } from '../src/core/course-model.js'
 import { newId } from '../src/core/ids.js'
 import { createCard, deckStatus, review } from '../src/core/srs.js'
 import { createCourses } from '../src/host/courses.js'
@@ -52,6 +52,21 @@ test('a deck at a glance: due again, not seen yet', () => {
   assert.deepEqual(deckStatus({ cards, srs }, T0 + 11 * MINUTE), { total: 4, due: 1, fresh: 2 }, 'a card no longer in the deck is not counted')
   assert.deepEqual(deckStatus({ cards, srs }, T0), { total: 4, due: 0, fresh: 2 })
   assert.deepEqual(deckStatus(null), { total: 0, due: 0, fresh: 0 })
+})
+
+test('a question names its concepts by id, by "id=name" or by name, or else by mentioning them', () => {
+  const concepts = [{ id: 'cpt_a', name: '积的近似数' }, { id: 'cpt_b', name: '小数乘整数' }, { id: 'cpt_c', name: '小数' }]
+  const item = normalizeItem({ kind: 'number', prompt: '?', answer: 1, conceptIds: ['cpt_a', 'cpt_b=小数乘整数', '小数', 'cpt_zz', '倒数', 'cpt_a'] }, 0, concepts)
+  assert.deepEqual(item.conceptIds, ['cpt_a', 'cpt_b', 'cpt_c'])
+  assert.deepEqual(normalizeItem({ kind: 'number', prompt: '?', answer: 1, conceptIds: ['cpt_a=积的近似数', '积的近似数'] }, 0, ['cpt_a']).conceptIds, ['cpt_a'], 'given ids alone, names do not count')
+  const [named, mentioned, none] = inferConcepts([
+    { prompt: 'x', conceptIds: ['cpt_b'] },
+    { prompt: '用小数乘整数的方法算 0.3 × 4，再求积的近似数。', conceptIds: [] },
+    { prompt: '用数对表示位置。', conceptIds: [] },
+  ], concepts)
+  assert.deepEqual(named.conceptIds, ['cpt_b'])
+  assert.deepEqual(mentioned.conceptIds, ['cpt_a', 'cpt_b'], '小数 is inside a longer name found')
+  assert.deepEqual(none.conceptIds, [])
 })
 
 test('quiz and flashcard prompts take a range, or a fixed count for the library', () => {
@@ -197,6 +212,31 @@ test('a unit quiz is as long as its unit, follows the material and counts what i
     const smallPrompt = llm.calls.findLast(call => call.user.includes('quiz across the whole scope')).user
     assert.match(smallPrompt, /at least 10 and at most 15/u)
     assert.match(smallPrompt, /<source_passages>\n<<五年级上册数学 · p\.80>>\n用数对表示位置时，先写列，再写行。\n<\/source_passages>/u, 'the passage on its own lessons')
+    jobs.dispose()
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('a new unit quiz asks new questions, and more on the concepts the learner is weakest on', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'aha-unit-'))
+  try {
+    const { llm, jobs, lessons, courseId, units } = await setup(root)
+    const [unit] = units
+    const concepts = unitConcepts(unit)
+    const quizPromptSent = () => llm.calls.findLast(call => call.user.includes('quiz across the whole scope')).user
+    await finish(jobs, (await lessons.unitQuiz({ courseId, unitId: unit.id })).job)
+    assert.doesNotMatch(quizPromptSent(), /earlier_questions|weak_concepts/u, 'nothing done yet')
+    // One concept answered wrongly and confidently, another right twice.
+    await lessons.record({ courseId, conceptIds: [concepts[2].id], evidence: { kind: 'quiz', score: 0, confidence: 'sure', errorTag: '小数点点错位置' } })
+    for (let index = 0; index < 2; index += 1) await lessons.record({ courseId, conceptIds: [concepts[0].id], evidence: { kind: 'quiz', score: 1, confidence: 'sure' } })
+    const second = (await finish(jobs, (await lessons.unitQuiz({ courseId, unitId: unit.id, force: true })).job)).quiz
+    const prompt = quizPromptSent()
+    assert.match(prompt, new RegExp(`<weak_concepts>\\n${concepts[2].id}=${concepts[2].name}\\n</weak_concepts>`, 'u'))
+    assert.match(prompt, /weakest on the concepts in weak_concepts/u)
+    assert.match(prompt, /<earlier_questions>\n1\. \$1 \\times 0\.1\$ 等于多少？\n2\. /u)
+    assert.match(prompt, /ask none of those questions again, reworded or with other numbers/u)
+    assert.equal(second.round, 2)
     jobs.dispose()
   } finally {
     await rm(root, { recursive: true, force: true })

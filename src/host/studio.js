@@ -2,6 +2,7 @@
 // materials made from it (cheat sheets, flashcards, notes, quizzes, digests),
 // instant-help sessions on the board, and two-minute explainer shorts.
 
+import { orderOptions } from '../core/choice-order.js'
 import { LIMITS, materialQuizRange, normalizeCards, normalizeCheatsheet, normalizePractice, partCardRange, shareRange, takeEvenly, text, thinEvenly, uniqueCards } from '../core/course-model.js'
 import { assertId, newId } from '../core/ids.js'
 import { createCard, review } from '../core/srs.js'
@@ -386,7 +387,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
           signal: api.signal,
           onText,
           normalize: raw => {
-            const items = thinEvenly(normalizePractice(raw, [], LIMITS.quizItems).items, range.max)
+            const items = thinEvenly(normalizePractice(raw, [], LIMITS.quizItems).items, range.max).map(orderOptions)
             if (!wanted && items.length < Math.min(3, range.min)) throw new Error(`The quiz is too short: write at least ${range.min} questions.`)
             return items
           },

@@ -86,7 +86,8 @@ export function SettingsScreen() {
       <p className="aha-hint">{t('modelsHint')}</p>
       {[['teach', 'teachModel'], ['quick', 'quickModel']].map(([prefix, label]) => <label key={prefix} className="aha-label">{t(label)}
         <select className="aha-select" value={routeValue(settings[`${prefix}Provider`], settings[`${prefix}Model`])} onChange={event => setRoute(prefix, event.currentTarget.value)}>
-          <option value="">{t('followDefault')}</option>
+          {/* Grading left empty uses the teaching model, which may itself follow DSH's default. */}
+          <option value="">{t(prefix === 'quick' ? 'followTeach' : 'followDefault')}</option>
           {modelOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
       </label>)}

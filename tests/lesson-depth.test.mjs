@@ -54,3 +54,48 @@ test('the profile keeps a name, and saving some fields keeps the others', async 
     await rm(root, { recursive: true, force: true })
   }
 })
+
+test('the refresh after a lesson changes the tutor\'s entries and keeps the learner\'s', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'aha-profile-'))
+  try {
+    const store = createStore({ root: join(root, 'data') })
+    const replies = []
+    const prompts = []
+    const llm = { complete: async request => { prompts.push(request.user); return JSON.stringify(replies.shift()) } }
+    let clock = Date.parse('2026-11-05T08:00:00Z')
+    const learner = createLearner({ store, llm, now: () => new Date(clock) })
+    const lesson = { course: { title: '微积分', language: 'zh-CN' }, lesson: { title: '导数' }, states: [] }
+    const refresh = async reply => {
+      replies.push(reply)
+      clock += 11 * 60_000
+      await learner.noteLesson(lesson)
+    }
+    // The tutor writes a first profile.
+    await refresh({ background: '高二学生', goals: ['考试拿高分'], strengths: ['计算快'], weaknesses: ['链式法则', '符号粗心'], preferences: { style: '多举例' } })
+    let profile = await learner.getProfile()
+    assert.deepEqual(profile.weaknesses, ['链式法则', '符号粗心'])
+    assert.deepEqual(profile.own.weaknesses, [])
+    // The learner rewrites a goal, deletes a weak spot, adds one and edits the style.
+    profile = await learner.saveProfile({ background: '高二学生', goals: ['期末考到 120 分'], strengths: ['计算快'], weaknesses: ['链式法则', '应用题读不懂'], preferences: { ...profile.preferences, style: '先讲直觉' } })
+    assert.deepEqual(profile.own, { background: false, style: true, goals: ['期末考到 120 分'], strengths: [], weaknesses: ['应用题读不懂'] })
+    assert.deepEqual(profile.removed, { goals: ['考试拿高分'], strengths: [], weaknesses: ['符号粗心'] })
+    // The tutor's next refresh sees only its own entries and cannot undo the learner's.
+    await refresh({ background: '高二理科生', goals: ['考试拿高分', '理解导数'], strengths: [], weaknesses: ['符号粗心'], preferences: { style: '多举例' } })
+    assert.match(prompts[1], /<learner_wrote>[\s\S]*期末考到 120 分[\s\S]*应用题读不懂[\s\S]*先讲直觉[\s\S]*<\/learner_wrote>/u)
+    assert.match(prompts[1], /<removed_by_learner>[\s\S]*符号粗心[\s\S]*<\/removed_by_learner>/u)
+    assert.doesNotMatch(prompts[1].split('<current_profile>')[1].split('</current_profile>')[0], /期末考到|应用题读不懂|先讲直觉/u)
+    profile = await learner.getProfile()
+    assert.equal(profile.background, '高二理科生', 'a background the learner never edited is the tutor\'s')
+    assert.deepEqual(profile.goals, ['期末考到 120 分', '理解导数'], 'a goal the learner replaced does not come back')
+    assert.deepEqual(profile.weaknesses, ['应用题读不懂'], 'the tutor dropped 链式法则; 符号粗心 stays deleted')
+    assert.equal(profile.preferences.style, '先讲直觉')
+    // Once the learner empties the style it is the tutor's again.
+    profile = await learner.saveProfile({ preferences: { ...profile.preferences, style: '' } })
+    assert.equal(profile.own.style, false)
+    await refresh({ preferences: { style: '多举例' } })
+    assert.equal((await learner.getProfile()).preferences.style, '多举例')
+    assert.deepEqual((await learner.clearProfile()).own, { background: false, style: false, goals: [], strengths: [], weaknesses: [] })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

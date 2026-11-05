@@ -6,7 +6,8 @@
 
 import { applyFixes, boardForCheck, describeFixes, normalizeVerdict, sanitizeStep, stepJson } from '../core/board-fix.js'
 import { boardToPlainText } from '../core/board-script.js'
-import { conceptIndex, findLesson, insertLesson, lessonAfter, LIMITS, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text, thinEvenly, unitCardRange, unitConcepts, unitQuizRange } from '../core/course-model.js'
+import { orderOptions } from '../core/choice-order.js'
+import { conceptIndex, findLesson, inferConcepts, insertLesson, lessonAfter, LIMITS, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text, thinEvenly, unitCardRange, unitConcepts, unitQuizRange } from '../core/course-model.js'
 import { answersTo, correctEvidence, itemKey, logEvidence, stateBefore, takeEvidence } from '../core/evidence-log.js'
 import { OBJECTIVE_KINDS } from '../core/grading.js'
 import { assertId, newId } from '../core/ids.js'
@@ -738,9 +739,12 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     return { course, unit, concepts, outline, passages, about: { title: unit.title, n: index + 1 } }
   }
 
-  // A unit quiz as long as the unit needs (unitQuizRange). force writes a
-  // new set, whose questions get new ids: answers to the old set are logged
-  // by question id and must never pass for answers to the new one.
+  // A unit quiz as long as the unit needs (unitQuizRange), with more
+  // questions on the concepts the learner is weakest on. force writes a new
+  // set that asks none of the old set's questions again, whose questions get
+  // new ids: answers to the old set are logged by question id and must never
+  // pass for answers to the new one. A question that names no concept of the
+  // unit is given the ones it mentions, so its answer counts.
   async function unitQuiz({ courseId, unitId, force = false }) {
     const { course, unit, concepts, outline, passages } = await unitOf(courseId, unitId)
     const path = store.paths.unitQuiz(courseId, unitId)
@@ -754,20 +758,22 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }
     const job = jobs.start('unit/quiz', async api => {
       const range = unitQuizRange(unit)
+      const previous = await store.readJson(path, null)
+      const weak = weakConcepts(concepts, await readProgress(store, courseId))
       const quiz = await generateJson(llm, {
         purpose: 'teach',
-        prompt: quizPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, concepts: concepts.map(concept => `${concept.id}=${concept.name}`).join(', '), passages: await passages(), language: course.language, range }),
+        prompt: quizPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, concepts: concepts.map(concept => `${concept.id}=${concept.name}`).join(', '), weak: weak.map(concept => `${concept.id}=${concept.name}`).join(', '), passages: await passages(), earlier: earlierQuestions(previous), language: course.language, range }),
         maxTokens: 2000 + range.max * 500,
         signal: api.signal,
         onText: countWritten(api, '"prompt"', range.max),
         normalize: raw => {
           // Too many questions are thinned out evenly: the last lessons keep theirs.
-          const set = { items: thinEvenly(normalizePractice(raw, concepts.map(concept => concept.id), LIMITS.quizItems * 2).items, range.max).map((item, index) => ({ ...item, id: `i${index + 1}` })) }
+          const items = inferConcepts(normalizePractice(raw, concepts, LIMITS.quizItems * 2).items, concepts)
+          const set = { items: thinEvenly(items, range.max).map((item, index) => ({ ...orderOptions(item), id: `i${index + 1}` })) }
           if (set.items.length < Math.max(3, Math.ceil(range.min / 2))) throw new Error(`The quiz is too short: write at least ${range.min} questions.`)
           return set
         },
       })
-      const previous = await store.readJson(path, null)
       const round = previous ? (previous.round ?? 1) + 1 : 1
       const items = round === 1 ? quiz.items : quiz.items.map(item => ({ ...item, id: `r${round}${item.id}` }))
       const saved = { unitId, round, items, createdAt: stamp() }
@@ -847,6 +853,30 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
   }
 
   return Object.freeze({ get, prepare, ask, reexplain, challenge, challengeItem, handout, record, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, unitCards, cardSession, reviewCard })
+}
+
+// The unit's concepts the learner is weakest on: tried, and below 70% or with
+// a misconception, the weakest first.
+function weakConcepts(concepts, progress) {
+  return concepts
+    .map(concept => ({ concept, state: progress.concepts?.[concept.id] }))
+    .filter(({ state }) => state?.attempts > 0 && (state.pKnown < 0.7 || state.misconceptions?.length))
+    .sort((a, b) => a.state.pKnown - b.state.pKnown)
+    .slice(0, 8)
+    .map(({ concept }) => concept)
+}
+
+// The questions of the set a new one replaces, one short line each.
+function earlierQuestions(set) {
+  const lines = []
+  let total = 0
+  for (const [index, item] of (set?.items ?? []).entries()) {
+    const line = `${index + 1}. ${text(item.prompt, 160).replace(/\s+/gu, ' ')}`
+    total += line.length
+    if (total > 6000) break
+    lines.push(line)
+  }
+  return lines.join('\n')
 }
 
 // The job's progress while a JSON answer streams in: how many questions or

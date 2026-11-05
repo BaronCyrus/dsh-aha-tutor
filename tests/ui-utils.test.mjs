@@ -12,7 +12,7 @@ import { keepInside, keepInsideWhileShown, revealTop } from '../src/ui/scroll.js
 import { STYLE } from '../src/ui/styles.js'
 import { ANIMATION_MAX_HEIGHT, animationDocument, reportedAnimationHeight, sanitizeSvg } from '../src/ui/sanitize.js'
 import { afterNarration, cloudVoiceOf, createSpeech, splitSentences } from '../src/ui/speech.js'
-import { syncedStarts, themedSvg, wrap } from '../src/ui/video.js'
+import { captionCues, cueAt, syncedStarts, themedSvg, wrap } from '../src/ui/video.js'
 import { captionSentences, inlinePlain, parseInline, sliceInline, spokenText, texToText } from '../src/ui/board/inline.js'
 
 test('a practice round is summed up in stars, accuracy and streaks, with one next step', () => {
@@ -495,4 +495,17 @@ test('exported videos write synced ops when their sentence starts', () => {
   assert.deepEqual(syncedStarts(step, [500, 500], 8000), [0, 4000])
   assert.deepEqual(syncedStarts(step, [6000, 500], 8000), [0, 6000], 'an op never starts before the one before it is done')
   assert.equal(syncedStarts({ say: '一。', ops: [{ t: 'p', text: 'a' }] }, [500], 1000), null)
+})
+
+test('a video caption shows the sentence being spoken, two lines at a time', () => {
+  // Lines of at most four characters.
+  const lines = value => value.match(/.{1,4}/gu) ?? []
+  const cues = captionCues(['一二三四。', '五六七八九十一二三四五六'], 17_000, lines)
+  assert.deepEqual(cues.map(cue => cue.lines), [['一二三四', '。'], ['五六七八', '九十一二'], ['三四五六']])
+  assert.deepEqual(cues.map(cue => cue.start), [0, 5000, 13_000], 'each page for its share of the speech: 5, 8 and 4 characters')
+  assert.equal(cueAt(cues, -1), null, 'nothing before the step starts')
+  assert.deepEqual(cueAt(cues, 0).lines, ['一二三四', '。'])
+  assert.deepEqual(cueAt(cues, 6000).lines, ['五六七八', '九十一二'])
+  assert.deepEqual(cueAt(cues, 20_000).lines, ['三四五六'], 'the last line stays while the board is still being written')
+  assert.deepEqual(captionCues([], 1000, lines), [])
 })

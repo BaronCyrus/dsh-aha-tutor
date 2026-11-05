@@ -11,6 +11,7 @@
 // (grading, in-lesson questions, profile notes).
 
 import { normalizeBoard } from '../core/board-script.js'
+import { orderBoardOptions } from '../core/choice-order.js'
 import { extractJson, JsonExtractError, parseJsonLines } from '../core/json-extract.js'
 
 export class TutorError extends Error {
@@ -109,7 +110,7 @@ export async function generateSteps(llm, { purpose = 'teach', effort, prompt, ma
     if (!raw.length) return
     let board
     try {
-      board = normalizeBoard(raw, { conceptIds })
+      board = orderBoardOptions(normalizeBoard(raw, { conceptIds }))
     } catch {
       return
     }
@@ -164,7 +165,7 @@ export async function generateSteps(llm, { purpose = 'teach', effort, prompt, ma
   }
   let board
   try {
-    board = normalizeBoard(raw, { conceptIds })
+    board = orderBoardOptions(normalizeBoard(raw, { conceptIds }))
   } catch {
     throw new TutorError('bad-output', 'The model did not return a usable lesson. Try again or pick a stronger model in settings.')
   }

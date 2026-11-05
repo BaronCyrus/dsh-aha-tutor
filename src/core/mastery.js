@@ -1,7 +1,8 @@
 // Concept mastery tracking: Bayesian Knowledge Tracing whose slip/guess
 // parameters are adjusted by how the learner answered (confidence, hints,
 // hesitation), so a lucky guess counts for little and a confident mistake
-// is flagged as a likely misconception.
+// is flagged as a likely misconception, until two right answers in a row
+// (the second not a guess) show it is overcome.
 
 export const BKT_DEFAULTS = Object.freeze({
   pInit: 0.2,
@@ -21,6 +22,7 @@ const CONFIDENCE = new Set(['sure', 'unsure', 'guess'])
 const EVIDENCE_KINDS = new Set(['check', 'practice', 'quiz', 'project', 'flashcard', 'reexplain', 'self'])
 const HISTORY_LIMIT = 50
 const MISCONCEPTION_LIMIT = 10
+const MISCONCEPTION_CLEARED_AFTER = 2
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value))
 const round4 = (value) => Math.round(value * 10000) / 10000
@@ -96,6 +98,9 @@ export function applyEvidence(state, evidence, now = Date.now()) {
     next.correct += 1
     next.streak += 1
     if (confidence === 'unsure' || confidence === 'guess') next.fragile += 1
+    // The streak starts again at every mistake, so these are right answers
+    // since the last one.
+    if (next.streak >= MISCONCEPTION_CLEARED_AFTER && confidence !== 'guess') next.misconceptions = []
   } else {
     next.streak = 0
     if (confidence === 'sure') {

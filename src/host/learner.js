@@ -1,6 +1,12 @@
 // The learner across courses: a profile the tutor remembers (and the learner
 // can edit or wipe), the study plan built from every active course, and the
 // review queue fed by spaced repetition.
+//
+// The profile knows which of its entries the learner wrote: what they add or
+// change on the profile page is theirs, and so are the background and the
+// preferred style once they edit them. The refresh after a lesson keeps the
+// learner's entries as they are and changes only the tutor's own; a tutor's
+// entry the learner deleted is remembered, so it does not come back.
 
 import { conceptIndex, findLesson, flattenLessons, text } from '../core/course-model.js'
 import { newId } from '../core/ids.js'
@@ -12,6 +18,8 @@ import { profilePrompt } from './prompts.js'
 
 const PROFILE_REFRESH_MS = 10 * 60_000
 const MAX_NOTES = 30
+const LIST_FIELDS = ['goals', 'strengths', 'weaknesses']
+const REMOVED_KEPT = 20
 
 const AGENDA_DAYS = 180
 const MAX_CHECKS = 1000
@@ -38,56 +46,82 @@ export function createLearner({ store, llm, now = () => new Date(), logger }) {
   let refreshing = null
 
   async function getProfile() {
-    return readProfile(store)
+    return cleanProfile(await readProfile(store))
   }
 
-  // Fields left out of the patch keep their values.
+  // Fields left out of the patch keep their values. What the learner adds or
+  // changes becomes theirs.
   async function saveProfile(patch = {}) {
     const given = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined))
-    return store.updateJson(store.paths.profile(), { ...EMPTY_PROFILE }, current => cleanProfile({ ...current, ...given, updatedAt: now().toISOString() }))
+    return store.updateJson(store.paths.profile(), { ...EMPTY_PROFILE }, current => cleanProfile({ ...current, ...given, ...authorship(cleanProfile(current), given), updatedAt: now().toISOString() }))
   }
 
   async function clearProfile() {
-    await store.writeJson(store.paths.profile(), { ...EMPTY_PROFILE, updatedAt: now().toISOString() })
-    return readProfile(store)
+    await store.writeJson(store.paths.profile(), cleanProfile({ ...EMPTY_PROFILE, updatedAt: now().toISOString() }))
+    return getProfile()
   }
 
   async function removeNote({ id }) {
     return store.updateJson(store.paths.profile(), { ...EMPTY_PROFILE }, current => ({ ...current, notes: (current.notes ?? []).filter(note => note.id !== id) }))
   }
 
-  // After a lesson, let the model refresh the profile — at most every ten
-  // minutes and in the background, so lessons never wait for it.
+  // After a lesson, let the model refresh the tutor's part of the profile —
+  // at most every ten minutes and in the background, so lessons never wait
+  // for it (the promise is for tests).
   async function noteLesson({ course, lesson, states }) {
     if (refreshing || now().getTime() - lastRefresh < PROFILE_REFRESH_MS) return
     lastRefresh = now().getTime()
     refreshing = (async () => {
-      const profile = await readProfile(store)
+      const profile = cleanProfile(await readProfile(store))
       const events = [
         `Finished "${lesson.title}" in the course "${course.title}".`,
         ...states.map(state => `Concept "${state.name}": mastery ${masteryPercent(state)}${state.misconceptions.length ? `, misconceptions: ${state.misconceptions.join('; ')}` : ''}${state.reexplains ? `, asked for ${state.reexplains} re-explanation(s)` : ''}`),
       ].join('\n')
+      const { own, removed } = profile
       const update = await generateJson(llm, {
         purpose: 'quick',
-        prompt: profilePrompt({ profile: { background: profile.background, goals: profile.goals, strengths: profile.strengths, weaknesses: profile.weaknesses, preferences: profile.preferences }, events, language: course.language }),
+        prompt: profilePrompt({
+          profile: {
+            ...(own.background ? {} : { background: profile.background }),
+            ...Object.fromEntries(LIST_FIELDS.map(field => [field, profile[field].filter(item => !own[field].includes(item))])),
+            ...(own.style ? {} : { preferences: { style: profile.preferences.style } }),
+          },
+          own: {
+            ...(own.background ? { background: profile.background } : {}),
+            ...Object.fromEntries(LIST_FIELDS.map(field => [field, own[field]]).filter(([, items]) => items.length)),
+            ...(own.style ? { preferences: { style: profile.preferences.style } } : {}),
+          },
+          removed: Object.fromEntries(LIST_FIELDS.map(field => [field, removed[field]]).filter(([, items]) => items.length)),
+          events,
+          language: course.language,
+        }),
         maxTokens: 1500,
       })
-      await store.updateJson(store.paths.profile(), { ...EMPTY_PROFILE }, current => {
-        const notes = [...(current.notes ?? [])]
+      await store.updateJson(store.paths.profile(), { ...EMPTY_PROFILE }, stored => {
+        const current = cleanProfile(stored)
+        const notes = [...current.notes]
         const note = text(update?.newNote, 200)
         if (note && !notes.some(item => item.text === note)) notes.push({ id: newId('nte'), text: note, source: 'auto', at: now().toISOString() })
+        // The learner's entries first, then the tutor's new list without them
+        // and without what the learner deleted.
+        const merged = field => {
+          const theirs = list(update?.[field])
+          if (!theirs) return current[field]
+          const mine = current.own[field]
+          return [...mine, ...theirs.filter(item => !mine.includes(item) && !current.removed[field].includes(item))]
+        }
+        const style = text(update?.preferences?.style, 120)
         return cleanProfile({
           ...current,
-          background: text(update?.background, 600) || current.background,
-          goals: list(update?.goals) ?? current.goals,
-          strengths: list(update?.strengths) ?? current.strengths,
-          weaknesses: list(update?.weaknesses) ?? current.weaknesses,
-          preferences: { ...current.preferences, ...(update?.preferences?.style ? { style: text(update.preferences.style, 120) } : {}) },
+          background: current.own.background ? current.background : text(update?.background, 600) || current.background,
+          ...Object.fromEntries(LIST_FIELDS.map(field => [field, merged(field)])),
+          preferences: { ...current.preferences, ...(style && !current.own.style ? { style } : {}) },
           notes: notes.slice(-MAX_NOTES),
           updatedAt: now().toISOString(),
         })
       })
     })().catch(error => logger?.debug?.('aha-tutor profile refresh skipped: %s', error?.message)).finally(() => { refreshing = null })
+    return refreshing
   }
 
   async function readPlanFile() {
@@ -258,17 +292,37 @@ export function createLearner({ store, llm, now = () => new Date(), logger }) {
 
 function list(value) {
   if (!Array.isArray(value)) return undefined
-  return value.map(item => text(item, 160)).filter(Boolean).slice(0, 8)
+  return [...new Set(value.map(item => text(item, 160)).filter(Boolean))].slice(0, 8)
+}
+
+// Who wrote what after the learner saves the profile page (current is clean).
+// An entry is theirs when they added or changed it, or it was theirs before;
+// the tutor's entries they took out are remembered. The background and the
+// style are theirs once they change them, and the tutor's again once they
+// empty them.
+function authorship(current, given) {
+  const own = { ...current.own }
+  const removed = { ...current.removed }
+  for (const field of LIST_FIELDS) {
+    const after = list(given[field])
+    if (!after) continue
+    const before = current[field]
+    own[field] = after.filter(item => current.own[field].includes(item) || !before.includes(item))
+    removed[field] = [...current.removed[field].filter(item => !after.includes(item)), ...before.filter(item => !after.includes(item) && !current.own[field].includes(item))].slice(-REMOVED_KEPT)
+  }
+  if (given.background !== undefined && text(given.background, 600) !== current.background) own.background = Boolean(text(given.background, 600))
+  const style = given.preferences?.style
+  if (style !== undefined && text(style, 120) !== current.preferences.style) own.style = Boolean(text(style, 120))
+  return { own, removed }
 }
 
 function cleanProfile(profile) {
+  const lists = Object.fromEntries(LIST_FIELDS.map(field => [field, list(profile[field]) ?? []]))
   return {
     // What the learner likes to be called; a lesson's opening uses it once.
     name: text(profile.name, 20).replace(/[\r\n]+/gu, ' '),
     background: text(profile.background, 600),
-    goals: list(profile.goals) ?? [],
-    strengths: list(profile.strengths) ?? [],
-    weaknesses: list(profile.weaknesses) ?? [],
+    ...lists,
     preferences: {
       style: text(profile.preferences?.style, 120),
       pace: ['slow', 'normal', 'fast'].includes(profile.preferences?.pace) ? profile.preferences.pace : 'normal',
@@ -277,6 +331,13 @@ function cleanProfile(profile) {
       .map(note => ({ id: /^nte_[a-z0-9]+$/u.test(String(note?.id)) ? note.id : newId('nte'), text: text(note?.text, 200), source: note?.source === 'user' ? 'user' : 'auto', at: note?.at ?? null }))
       .filter(note => note.text)
       .slice(-MAX_NOTES),
+    // The learner's own entries (see authorship).
+    own: {
+      background: profile.own?.background === true,
+      style: profile.own?.style === true,
+      ...Object.fromEntries(LIST_FIELDS.map(field => [field, (list(profile.own?.[field]) ?? []).filter(item => lists[field].includes(item))])),
+    },
+    removed: Object.fromEntries(LIST_FIELDS.map(field => [field, (Array.isArray(profile.removed?.[field]) ? profile.removed[field] : []).map(item => text(item, 160)).filter(Boolean).slice(-REMOVED_KEPT)])),
     updatedAt: profile.updatedAt ?? null,
   }
 }

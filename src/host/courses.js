@@ -1,6 +1,7 @@
 // Course crafting and the course library: intake questionnaire → blueprint →
 // revisions → confirmation (practice sets and project briefs) → ready.
 
+import { orderOptions } from '../core/choice-order.js'
 import { exportCoursePack, importCoursePack } from '../core/coursepack.js'
 import {
   blueprintOutline,
@@ -355,9 +356,9 @@ export function createCourses({ store, llm, jobs, research, now = () => new Date
     const written = {}
     for (const lesson of lessons) {
       const raw = sets?.[lesson.id] ?? sets?.[lesson.title] ?? (lessons.length === 1 ? Object.values(sets ?? {})[0] : undefined)
-      const set = normalizePractice(raw ?? { items: [] }, lesson.concepts.map(concept => concept.id))
+      const set = normalizePractice(raw ?? { items: [] }, lesson.concepts)
       if (!set.items.length) continue
-      written[lesson.id] = { lessonId: lesson.id, ...set, createdAt: stamp() }
+      written[lesson.id] = { lessonId: lesson.id, items: set.items.map(orderOptions), createdAt: stamp() }
       await store.writeJson(store.paths.practice(course.id, lesson.id), written[lesson.id])
     }
     return written

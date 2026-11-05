@@ -68,6 +68,10 @@ function learnerBlock({ profile, mastery } = {}) {
 
 // ── whiteboard format ───────────────────────────────────────────────────────
 
+// A question's options are reordered once it is written (core/choice-order.js),
+// so a letter in its text would name the wrong option.
+const OPTION_ORDER = 'Options are not shown in the order you write them: refer to an option by what it says, never by its letter or position, in the prompt, the explanation and the hints, and do not list the options in the prompt.'
+
 export const BOARD_SPEC = `THE WHITEBOARD
 The board has two columns and is written by hand while you speak. Put on it only what deserves to stay visible: headings, key phrases, formulas, diagrams, worked steps. Say the rest aloud.
 
@@ -99,7 +103,7 @@ A check is a short question asked right after the step, to see whether the idea 
 {"kind":"choice|multi|blank|number|short|work","prompt":"…","options":["…","…"],"answer":<option index (0-based) for choice, list of indexes for multi, accepted strings for blank, a number for number, a model answer for short, the full model working for work>,"tolerance":<number, for number>,"rubric":["…"],"explanation":"why the answer is right, in one or two sentences","conceptIds":["<ids from the concept list>"]}
 A "choice" has exactly one right option. When two or more options are right, use "multi" and say in the prompt that several may be chosen.
 A "work" check has the learner write out a whole calculation or derivation: "answer" is the model working, one step per line with inline math $…$, and "rubric" lists the 2–4 steps a correct working must contain. Use "work" only where the instructions ask for it.
-Make wrong options plausible (common mistakes), never trick questions.`
+Make wrong options plausible (common mistakes), never trick questions. ${OPTION_ORDER}`
 
 // ── course crafting ─────────────────────────────────────────────────────────
 
@@ -190,7 +194,7 @@ export function revisePrompt({ blueprint, instruction, language }) {
 
 // One practice or quiz item. Without the answer formats a model writes a
 // multi-select question as a choice, which then takes one answer.
-const ITEM_SHAPE = `Each item is {"kind":"choice|multi|blank|number|short","prompt":"…","options":["…","…"],"answer":<option index (0-based) for choice, list of option indexes for multi, list of accepted strings for blank, a number for number, a model answer for short>,"tolerance":<number, for number>,"rubric":["…" for short],"hints":["…"],"explanation":"…","difficulty":1,"conceptIds":["…"]}. A "choice" has exactly one right option. When two or more options are right, use "multi" and say in the prompt that several may be chosen.`
+const ITEM_SHAPE = `Each item is {"kind":"choice|multi|blank|number|short","prompt":"…","options":["…","…"],"answer":<option index (0-based) for choice, list of option indexes for multi, list of accepted strings for blank, a number for number, a model answer for short>,"tolerance":<number, for number>,"rubric":["…" for short],"hints":["…"],"explanation":"…","difficulty":1,"conceptIds":["…"]}. A "choice" has exactly one right option. When two or more options are right, use "multi" and say in the prompt that several may be chosen. ${OPTION_ORDER}`
 
 const ITEM_FIGURE = 'When a figure makes a question clearer (a shape to measure, a graph to read, a circuit, a diagram to label), give the item "svg": a small diagram following the same rules as the board\'s svg op (viewBox at most 480×320). For the graph of a formula give "plot" instead: an object shaped like the board\'s plot op, without "params". Most items need no figure.'
 
@@ -519,7 +523,9 @@ Return {"cards":[{"front":"…","back":"…","tag":"<topic>"}]}`,
   }
 }
 
-export function quizPrompt({ scopeTitle, outline, concepts, passages, language, count = 10, range, part, focus }) {
+// weak: concepts the learner is weakest on ("id=name, …"); earlier: the
+// questions of the set a new one replaces.
+export function quizPrompt({ scopeTitle, outline, concepts, passages, language, count = 10, range, part, focus, weak, earlier }) {
   const size = !range
     ? `Write a ${count}-question quiz across the whole scope.`
     : part
@@ -531,10 +537,12 @@ export function quizPrompt({ scopeTitle, outline, concepts, passages, language, 
       block('scope', scopeTitle),
       block('outline', outline),
       block('concepts', concepts),
+      block('weak_concepts', weak),
       partBlock(part),
       block('source_passages', passages),
+      block('earlier_questions', earlier),
       block('focus', focus),
-      `${size} About 30% recall, 50% application, 20% harder transfer questions. Mix choice, multi, blank, number and short items, each with explanation, difficulty and conceptIds (use the ids given).${passages ? ' Where the source passages show how this material poses problems (its exercises, notation, units), write in that style.' : ''}${focusRule(focus, '{"items":[]}')} ${ITEM_SHAPE} ${ITEM_FIGURE}
+      `${size} About 30% recall, 50% application, 20% harder transfer questions. Mix choice, multi, blank, number and short items, each with explanation, difficulty and conceptIds (use the ids given).${weak ? ' The learner is weakest on the concepts in weak_concepts: give each of them two or three questions that come at it from different sides.' : ''}${earlier ? ' The learner has already done the questions in earlier_questions: test the same ideas in new ways, and ask none of those questions again, reworded or with other numbers.' : ''}${passages ? ' Where the source passages show how this material poses problems (its exercises, notation, units), write in that style.' : ''}${focusRule(focus, '{"items":[]}')} ${ITEM_SHAPE} ${ITEM_FIGURE}
 
 Return {"items":[…]}`,
     ),
@@ -646,13 +654,19 @@ export function recognizePrompt() {
   }
 }
 
-export function profilePrompt({ profile, events, language }) {
+// profile: the tutor's own entries, which it rewrites; own: what the learner
+// wrote, kept as it is; removed: tutor's entries the learner deleted.
+export function profilePrompt({ profile, own, removed, events, language }) {
+  const hasOwn = own && Object.keys(own).length
+  const hasRemoved = removed && Object.keys(removed).length
   return {
     system: join(PERSONA, `You keep a short, respectful profile of the learner so future lessons fit them better. Only record what the evidence supports. ${languageRule(language)}`, JSON_ONLY),
     user: join(
+      block('learner_wrote', hasOwn ? own : ''),
       block('current_profile', profile),
+      block('removed_by_learner', hasRemoved ? removed : ''),
       block('recent_learning_events', events),
-      'Update the profile. Keep it short; merge rather than append duplicates; drop weaknesses the learner has clearly overcome. Return {"background":"…","goals":["…"],"strengths":["…"],"weaknesses":["…"],"preferences":{"style":"…"},"newNote":"<one sentence worth remembering, or empty>"}',
+      `Update the profile entries in current_profile, which are yours. Keep it short; merge rather than append duplicates; drop weaknesses the learner has clearly overcome.${hasOwn ? ' The learner wrote the entries in learner_wrote themselves and they stay as they are: do not repeat, reword or contradict them in your lists, and return a background or style only when current_profile has that field.' : ''}${hasRemoved ? ' Never add back an entry in removed_by_learner, in any wording.' : ''} Return {"background":"…","goals":["…"],"strengths":["…"],"weaknesses":["…"],"preferences":{"style":"…"},"newNote":"<one sentence worth remembering, or empty>"}`,
     ),
   }
 }

@@ -1,7 +1,7 @@
 {
  "format": "aha-tutor.coursepack",
  "version": 1,
- "exportedAt": "2026-10-22T07:38:00.045Z",
+ "exportedAt": "2026-11-05T02:41:57.403Z",
  "app": {
   "name": "dsh-aha-tutor",
   "version": "sample"
@@ -16,7 +16,7 @@
   "goal": "不需要高深数学，从掷骰子和人数表格出发，理解条件概率、基础比率和贝叶斯公式，最后亲手写一个会“学习”的垃圾短信过滤器。",
   "units": [
    {
-    "id": "unt_mvj8b7qkxzap73",
+    "id": "unt_mw2xwfbtky9kvg",
     "title": "条件概率的直觉",
     "summary": "新信息会把世界变小，概率要在小世界里重新计算。",
     "objectives": [
@@ -25,12 +25,12 @@
     ],
     "lectures": [
      {
-      "id": "lec_mvj8b7qk199u3n",
+      "id": "lec_mw2xwfbt80i1d6",
       "title": "条件概率",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvj8b7qkl4u2t0",
+        "id": "les_mw2xwfbtkyjb0h",
         "title": "条件概率：知道一点之后",
         "summary": "在信息划定的小世界里重新数一遍。",
         "objectives": [
@@ -39,11 +39,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvj8b7qkt07w9q",
+          "id": "cpt_mw2xwfbtpj96o7",
           "name": "条件概率"
          },
          {
-          "id": "cpt_mvj8b7qkh92r21",
+          "id": "cpt_mw2xwfbt0emah8",
           "name": "P(A|B) 与 P(B|A)"
          }
         ],
@@ -52,7 +52,7 @@
         "depth": "intuition"
        },
        {
-        "id": "les_mvj8b7qk387ppx",
+        "id": "les_mw2xwfbtc7pnm8",
         "title": "独立与不独立",
         "summary": "什么时候一个信息完全不改变另一个事件的概率。",
         "objectives": [
@@ -61,7 +61,7 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvj8b7qk2om3g5",
+          "id": "cpt_mw2xwfbtls11gx",
           "name": "独立事件"
          }
         ],
@@ -72,12 +72,12 @@
       ]
      },
      {
-      "id": "lec_mvj8b7qk16yq1q",
+      "id": "lec_mw2xwfbto8epri",
       "title": "全概率",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvj8b7qk7lrwi2",
+        "id": "les_mw2xwfbt4175zy",
         "title": "把世界切成几块：全概率公式",
         "summary": "分情况讨论，再把各部分加起来。",
         "objectives": [
@@ -86,7 +86,7 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvj8b7qkes1npo",
+          "id": "cpt_mw2xwfbt734bnx",
           "name": "全概率公式"
          }
         ],
@@ -99,7 +99,7 @@
     ]
    },
    {
-    "id": "unt_mvj8b7qko13f4j",
+    "id": "unt_mw2xwfbtdzhsk5",
     "title": "贝叶斯公式",
     "summary": "从结果反推原因，用证据更新信念。",
     "objectives": [
@@ -108,12 +108,12 @@
     ],
     "lectures": [
      {
-      "id": "lec_mvj8b7qkrebgtb",
+      "id": "lec_mw2xwfbtxzwl86",
       "title": "贝叶斯",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvj8b7qkqxxu37",
+        "id": "les_mw2xwfbtwyc7oh",
         "title": "医学检测悖论：基础比率的力量",
         "summary": "准确率 99% 的检测，阳性也未必意味着得病。",
         "objectives": [
@@ -122,11 +122,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvj8b7qkf072gp",
+          "id": "cpt_mw2xwfbtgknsql",
           "name": "基础比率"
          },
          {
-          "id": "cpt_mvj8b7qkid7qhf",
+          "id": "cpt_mw2xwfbtp8uyk9",
           "name": "贝叶斯公式"
          }
         ],
@@ -135,7 +135,7 @@
         "depth": "application"
        },
        {
-        "id": "les_mvj8b7qkck2pka",
+        "id": "les_mw2xwfbt7cl8wi",
         "title": "先验、似然与后验",
         "summary": "贝叶斯公式里每一项的含义。",
         "objectives": [
@@ -144,11 +144,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvj8b7qkepj9pp",
+          "id": "cpt_mw2xwfbtk729hf",
           "name": "先验与后验"
          },
          {
-          "id": "cpt_mvj8b7qkk18djq",
+          "id": "cpt_mw2xwfbtifksk1",
           "name": "似然"
          }
         ],
@@ -159,12 +159,12 @@
       ]
      },
      {
-      "id": "lec_mvj8b7qkpsplfw",
+      "id": "lec_mw2xwfbtggd1jj",
       "title": "用起来",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mvj8b7qkrlzttw",
+        "id": "les_mw2xwfbt4q01rs",
         "title": "一次次更新你的判断",
         "summary": "每一个新证据，都让昨天的后验变成今天的先验。",
         "objectives": [
@@ -173,7 +173,7 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mvj8b7qk3r6ppf",
+          "id": "cpt_mw2xwfbtd0yvaq",
           "name": "贝叶斯更新"
          }
         ],
@@ -188,7 +188,7 @@
   ],
   "projects": [
    {
-    "id": "prj_mvj8b7qkni92wg",
+    "id": "prj_mw2xwfbtsup3f4",
     "title": "写一个会学习的垃圾短信过滤器",
     "kind": "code",
     "brief": "用朴素贝叶斯的思路，统计正常短信和垃圾短信里各个词出现的频率，对一条新短信计算它是垃圾短信的后验概率。完成后，试着输入几条你自己的短信，看看过滤器的判断是否合理。",
@@ -259,12 +259,12 @@
       "content": "import csv\nimport math\nfrom collections import Counter\n\nrows = list(csv.DictReader(open(\"messages.csv\", encoding=\"utf-8\")))\n\n# TODO 1：分别统计 spam 和 ham 中每个词出现的次数\nspam_words, ham_words = Counter(), Counter()\n\n# TODO 2：计算先验 P(spam) 和 P(ham)\np_spam = None\np_ham = None\n\ndef score(text):\n    \"\"\"返回 log P(spam|text) - log P(ham|text)。大于 0 判为垃圾短信。\"\"\"\n    # TODO 3：对每个词累加 log 似然，记得做拉普拉斯平滑（每个词的计数 +1）\n    return 0.0\n\nfor text in [\"恭喜 中奖 点击 领取\", \"明天 一起 吃饭\"]:\n    print(text, \"->\", \"垃圾\" if score(text) > 0 else \"正常\")\n"
      }
     ],
-    "unitId": "unt_mvj8b7qko13f4j"
+    "unitId": "unt_mw2xwfbtdzhsk5"
    }
   ]
  },
  "boards": {
-  "les_mvj8b7qkl4u2t0": {
+  "les_mw2xwfbtkyjb0h": {
    "title": "条件概率：知道一点之后",
    "steps": [
     {
@@ -348,16 +348,16 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvj8b7qkt07w9q"
+       "cpt_mw2xwfbtpj96o7"
       ],
       "options": [
        {
         "id": "a",
-        "text": "1/3"
+        "text": "1/6"
        },
        {
         "id": "b",
-        "text": "1/6"
+        "text": "1/3"
        },
        {
         "id": "c",
@@ -368,7 +368,7 @@
         "text": "2/3"
        }
       ],
-      "answer": "a"
+      "answer": "b"
      }
     },
     {
@@ -461,7 +461,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvj8b7qkt07w9q"
+       "cpt_mw2xwfbtpj96o7"
       ],
       "answer": 0.25,
       "tolerance": 0.005,
@@ -522,33 +522,33 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvj8b7qkh92r21"
+       "cpt_mw2xwfbt0emah8"
       ],
       "options": [
        {
         "id": "a",
-        "text": "不能，P(男 | 小偷) 和 P(小偷 | 男) 是两回事"
-       },
-       {
-        "id": "b",
-        "text": "能，两个说法是等价的"
-       },
-       {
-        "id": "c",
         "text": "只有在人口足够多时才能"
        },
        {
-        "id": "d",
+        "id": "b",
+        "text": "不能，P(男 | 小偷) 和 P(小偷 | 男) 是两回事"
+       },
+       {
+        "id": "c",
         "text": "取决于调查的样本量"
+       },
+       {
+        "id": "d",
+        "text": "能，两个说法是等价的"
        }
       ],
-      "answer": "a"
+      "answer": "b"
      }
     }
    ],
-   "lessonId": "les_mvj8b7qkl4u2t0"
+   "lessonId": "les_mw2xwfbtkyjb0h"
   },
-  "les_mvj8b7qkqxxu37": {
+  "les_mw2xwfbtwyc7oh": {
    "title": "医学检测悖论：基础比率的力量",
    "steps": [
     {
@@ -584,27 +584,27 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvj8b7qkf072gp"
+       "cpt_mw2xwfbtgknsql"
       ],
       "options": [
        {
         "id": "a",
-        "text": "约 99%"
+        "text": "约 1%"
        },
        {
         "id": "b",
-        "text": "约 50%"
-       },
-       {
-        "id": "c",
         "text": "约 9%"
        },
        {
+        "id": "c",
+        "text": "约 50%"
+       },
+       {
         "id": "d",
-        "text": "约 1%"
+        "text": "约 99%"
        }
       ],
-      "answer": "c"
+      "answer": "b"
      }
     },
     {
@@ -745,8 +745,8 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvj8b7qkid7qhf",
-       "cpt_mvj8b7qkf072gp"
+       "cpt_mw2xwfbtp8uyk9",
+       "cpt_mw2xwfbtgknsql"
       ],
       "answer": 50,
       "tolerance": 1,
@@ -810,16 +810,16 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mvj8b7qkid7qhf"
+       "cpt_mw2xwfbtp8uyk9"
       ],
       "options": [
        {
         "id": "a",
-        "text": "看到证据之后，对假设成立的概率"
+        "text": "检测的准确率"
        },
        {
         "id": "b",
-        "text": "看到证据之前的概率"
+        "text": "看到证据之后，对假设成立的概率"
        },
        {
         "id": "c",
@@ -827,19 +827,19 @@
        },
        {
         "id": "d",
-        "text": "检测的准确率"
+        "text": "看到证据之前的概率"
        }
       ],
-      "answer": "a"
+      "answer": "b"
      }
     }
    ],
-   "lessonId": "les_mvj8b7qkqxxu37"
+   "lessonId": "les_mw2xwfbtwyc7oh"
   }
  },
  "practice": {
-  "les_mvj8b7qkl4u2t0": {
-   "lessonId": "les_mvj8b7qkl4u2t0",
+  "les_mw2xwfbtkyjb0h": {
+   "lessonId": "les_mw2xwfbtkyjb0h",
    "items": [
     {
      "id": "i1",
@@ -851,27 +851,27 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvj8b7qkt07w9q"
+      "cpt_mw2xwfbtpj96o7"
      ],
      "options": [
       {
        "id": "a",
-       "text": "1/3"
+       "text": "1/6"
       },
       {
        "id": "b",
-       "text": "1/2"
+       "text": "1/3"
       },
       {
        "id": "c",
-       "text": "1/6"
+       "text": "1/2"
       },
       {
        "id": "d",
        "text": "2/3"
       }
      ],
-     "answer": "a"
+     "answer": "b"
     },
     {
      "id": "i2",
@@ -883,7 +883,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvj8b7qkt07w9q"
+      "cpt_mw2xwfbtpj96o7"
      ],
      "answer": 0.3,
      "tolerance": 0.001,
@@ -899,12 +899,12 @@
      ],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvj8b7qkh92r21"
+      "cpt_mw2xwfbt0emah8"
      ],
      "options": [
       {
        "id": "a",
-       "text": "“大部分车祸发生在离家 5 公里内，所以家附近的路最危险”"
+       "text": "“袋子里红球多，摸到红球的可能更大”"
       },
       {
        "id": "b",
@@ -912,14 +912,14 @@
       },
       {
        "id": "c",
-       "text": "“袋子里红球多，摸到红球的可能更大”"
+       "text": "“连续两次掷硬币都是正面的概率是 1/4”"
       },
       {
        "id": "d",
-       "text": "“连续两次掷硬币都是正面的概率是 1/4”"
+       "text": "“大部分车祸发生在离家 5 公里内，所以家附近的路最危险”"
       }
      ],
-     "answer": "a"
+     "answer": "d"
     },
     {
      "id": "i4",
@@ -929,7 +929,7 @@
      "hints": [],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvj8b7qkt07w9q"
+      "cpt_mw2xwfbtpj96o7"
      ],
      "answer": [
       "P(B)",
@@ -945,7 +945,7 @@
      "hints": [],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvj8b7qkh92r21"
+      "cpt_mw2xwfbt0emah8"
      ],
      "answer": "例如：P(会游泳 | 是游泳运动员) 接近 100%，但 P(是游泳运动员 | 会游泳) 很小，因为会游泳的人里只有极少数是运动员。",
      "rubric": [
@@ -956,8 +956,8 @@
     }
    ]
   },
-  "les_mvj8b7qkqxxu37": {
-   "lessonId": "les_mvj8b7qkqxxu37",
+  "les_mw2xwfbtwyc7oh": {
+   "lessonId": "les_mw2xwfbtwyc7oh",
    "items": [
     {
      "id": "i1",
@@ -969,7 +969,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvj8b7qkf072gp"
+      "cpt_mw2xwfbtgknsql"
      ],
      "answer": 999,
      "tolerance": 1,
@@ -985,27 +985,27 @@
      ],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvj8b7qkf072gp"
+      "cpt_mw2xwfbtgknsql"
      ],
      "options": [
       {
        "id": "a",
-       "text": "降低健康人的误报率"
-      },
-      {
-       "id": "b",
        "text": "提高病人的检出率"
       },
       {
-       "id": "c",
+       "id": "b",
        "text": "增加参与检测的人数"
+      },
+      {
+       "id": "c",
+       "text": "降低健康人的误报率"
       },
       {
        "id": "d",
        "text": "延长每次检测的时间"
       }
      ],
-     "answer": "a"
+     "answer": "c"
     },
     {
      "id": "i3",
@@ -1017,7 +1017,7 @@
      ],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mvj8b7qkid7qhf"
+      "cpt_mw2xwfbtp8uyk9"
      ],
      "answer": 0.2687,
      "tolerance": 0.01,
@@ -1031,7 +1031,7 @@
      "hints": [],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mvj8b7qkid7qhf"
+      "cpt_mw2xwfbtp8uyk9"
      ],
      "options": [
       {
@@ -1061,8 +1061,8 @@
      "hints": [],
      "difficulty": 3,
      "conceptIds": [
-      "cpt_mvj8b7qkid7qhf",
-      "cpt_mvj8b7qkf072gp"
+      "cpt_mw2xwfbtp8uyk9",
+      "cpt_mw2xwfbtgknsql"
      ],
      "answer": "一次阳性后，患病的后验概率从很低升到较高（如从 0.1% 到约 9%）；复查时这个后验成为新的先验，若再次阳性，患病概率会大幅提高（约 91%），判断更可靠。",
      "rubric": [
@@ -1076,5 +1076,6 @@
  },
  "sheets": {},
  "cards": [],
+ "unitCards": {},
  "progress": null
 }

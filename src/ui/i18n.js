@@ -324,7 +324,7 @@ export const zh = {
   today: '今天',
 
   profileTitle: '我的画像',
-  profileHint: '老师会记住这些信息，让每门课都更贴合你。你可以随时修改或清空。',
+  profileHint: '老师会记住这些信息，让每门课都更贴合你。你亲手写下或改过的内容，课后自动更新时不会被改动；你也可以随时清空。',
   background: '背景',
   goals: '目标',
   strengthsLabel: '擅长',
@@ -340,6 +340,7 @@ export const zh = {
   teachModel: '出课与讲课',
   quickModel: '批改与问答',
   followDefault: '跟随 DSH 默认模型',
+  followTeach: '跟随「出课与讲课」',
   modelsHint: '讲课质量主要取决于「出课与讲课」模型；批改和课堂提问可以用更快的模型。带 🖼 的模型能看图，扫描件、照片和图片里的字靠它识别。',
   voiceTitle: '语音讲解',
   engine: '语音来源',
@@ -1078,7 +1079,7 @@ export const en = {
   today: 'Today',
 
   profileTitle: 'My profile',
-  profileHint: 'Your tutor remembers this to fit every course to you. Edit or clear it anytime.',
+  profileHint: 'Your tutor remembers this to fit every course to you. What you write or change here stays as you wrote it when the tutor updates the profile after a lesson. Clear it anytime.',
   background: 'Background',
   goals: 'Goals',
   strengthsLabel: 'Strengths',
@@ -1094,6 +1095,7 @@ export const en = {
   teachModel: 'Course design & teaching',
   quickModel: 'Grading & questions',
   followDefault: 'Follow the DSH default model',
+  followTeach: 'Same as Course design & teaching',
   modelsHint: 'Lesson quality depends mostly on the teaching model; grading and in-class questions can use a faster one. Models marked 🖼 can see images: they read the text in scans, photos and pictures.',
   voiceTitle: 'Narration',
   engine: 'Voice source',

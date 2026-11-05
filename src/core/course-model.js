@@ -253,6 +253,22 @@ const ITEM_KINDS = ['choice', 'multi', 'blank', 'number', 'short', 'work', 'orde
 const MULTI_KIND = /multi.?(?:select|answer|response)|select.?all|checkbox|多选|不定项/iu
 const MULTI_PROMPT = /多选|不定项|选出所有|所有正确|select all|all that apply|more than one (?:answer|option)/iu
 
+// The concepts an item names, out of the known ones: ids, or concepts ({ id,
+// name }), whose names count too. "id=name" is how prompts list them.
+function conceptsNamed(value, known = []) {
+  const ids = known.map(entry => (typeof entry === 'string' ? entry : entry?.id)).filter(Boolean)
+  const names = new Map(known.filter(entry => entry?.id && entry?.name).map(entry => [String(entry.name).trim().toLowerCase(), entry.id]))
+  const idOf = given => {
+    const raw = String(given ?? '').trim()
+    if (ids.includes(raw)) return raw
+    const cut = raw.indexOf('=')
+    if (cut > 0 && ids.includes(raw.slice(0, cut).trim())) return raw.slice(0, cut).trim()
+    return names.get(raw.slice(cut + 1).trim().toLowerCase()) ?? null
+  }
+  return [...new Set((Array.isArray(value) ? value : []).map(idOf).filter(Boolean))].slice(0, 4)
+}
+
+// conceptIds: the concepts an item may name, as ids or as concepts with names.
 export function normalizeItem(raw, index = 0, conceptIds = []) {
   const named = String(raw?.kind ?? raw?.type ?? '').trim().toLowerCase()
   const kind = ITEM_KINDS.includes(named) ? named : raw?.options ? (MULTI_KIND.test(named) ? 'multi' : 'choice') : 'short'
@@ -265,7 +281,7 @@ export function normalizeItem(raw, index = 0, conceptIds = []) {
     explanation: text(raw?.explanation, 2000),
     hints: strings(raw?.hints, 3, 400),
     difficulty: Math.min(3, Math.max(1, Math.round(Number(raw?.difficulty) || 2))),
-    conceptIds: (Array.isArray(raw?.conceptIds) ? raw.conceptIds : []).filter(id => conceptIds.includes(id)).slice(0, 4),
+    conceptIds: conceptsNamed(raw?.conceptIds, conceptIds),
   }
   // An optional figure; the client draws it only through the SVG allow-list.
   // A graph of formulas is a plot the client computes (without sliders).
@@ -281,7 +297,10 @@ export function normalizeItem(raw, index = 0, conceptIds = []) {
       return label ? { id: String.fromCharCode(97 + optionIndex), text: label } : null
     })
     if (item.options.length < 2) return null
+    item.options = withoutLetters(item.options)
+    item.prompt = withoutEchoedOptions(item.prompt, item.options)
     const ids = item.options.map(option => option.id)
+    const byText = value => item.options.find(option => option.text.toLowerCase() === value)?.id ?? null
     const toId = value => {
       if (typeof value === 'number') return ids[value] ?? null
       const raw = String(value ?? '').trim().toLowerCase()
@@ -289,8 +308,9 @@ export function normalizeItem(raw, index = 0, conceptIds = []) {
       // "A." or "(A)" for option a
       const letter = /^[(（[]?([a-z])[)）\].．、:：]?$/u.exec(raw)?.[1]
       if (letter && ids.includes(letter)) return letter
-      const byText = item.options.find(option => option.text.toLowerCase() === raw)
-      return byText ? byText.id : null
+      // "B. 6 m/s": the text decides when it names another option.
+      const labelled = /^[(（[]?([a-z])[)）\].．、:：]\s*(\S.*)$/u.exec(raw)
+      return byText(raw) ?? (labelled ? byText(labelled[2]) ?? (ids.includes(labelled[1]) ? labelled[1] : null) : null)
     }
     // The options an answer names, also as one string like "A, C" or "A、C"
     // (unless that string is an option itself).
@@ -327,6 +347,40 @@ export function normalizeItem(raw, index = 0, conceptIds = []) {
     item.rubric = strings(raw?.rubric, 6, 300)
   }
   return item
+}
+
+// Options the model lettered itself ("A. 3 m/s", "(B) 6 m/s") lose their
+// letters, since the card shows its own.
+function withoutLetters(options) {
+  const marks = options.map(option => new RegExp(`^[(（]?${option.id}[)）.．、:：]\\s*(?=\\S)`, 'iu').exec(option.text))
+  return marks.every(Boolean) ? options.map((option, index) => ({ ...option, text: option.text.slice(marks[index][0].length) })) : options
+}
+
+// A stem that ends by listing its options again ("…？ A. x B. y C. z") shows
+// them twice, and in another order once they are reordered: the list is cut
+// off when it repeats every option in order.
+function withoutEchoedOptions(prompt, options) {
+  const escape = value => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&').replace(/\s+/gu, '\\s*')
+  const parts = options.map(option => `[(（]?${option.id}[)）.．、:：]?\\s*${escape(option.text)}`)
+  const match = new RegExp(`(?<=^|[\\s:：？?。.,，;；)）])${parts.join('[\\s;；,，。.]*')}[\\s;；,，。.]*$`, 'iu').exec(prompt)
+  return match ? prompt.slice(0, match.index).trimEnd() || prompt : prompt
+}
+
+// Concepts for items that name none, from the concept names their question
+// or explanation mentions: the longest names first (not one inside another
+// found), at most two. Items that mention none stay as they are.
+export function inferConcepts(items, concepts) {
+  const named = concepts.filter(concept => String(concept?.name ?? '').trim().length >= 2).sort((a, b) => b.name.length - a.name.length)
+  return items.map(item => {
+    if (item.conceptIds?.length) return item
+    const content = `${item.prompt}\n${item.explanation ?? ''}`.toLowerCase()
+    const found = []
+    for (const concept of named) {
+      const name = concept.name.trim().toLowerCase()
+      if (found.length < 2 && content.includes(name) && !found.some(other => other.name.toLowerCase().includes(name))) found.push(concept)
+    }
+    return found.length ? { ...item, conceptIds: found.map(concept => concept.id) } : item
+  })
 }
 
 // max: a lesson's practice by default; a unit quiz may hold LIMITS.quizItems.

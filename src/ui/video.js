@@ -280,10 +280,46 @@ function drawItem(ctx, item, progress, palette) {
   }
 }
 
-function drawCaption(ctx, textValue) {
-  if (!textValue) return
-  ctx.font = `500 25px ${family}`
-  const lines = wrap(ctx, textValue, W - 200).slice(-2)
+const captionFont = () => `500 25px ${family}`
+const CAPTION_W = W - 200
+
+// The captions of a step: its sentences, as read aloud, in pages of at most
+// two lines, each shown for its share of the step's speech (by length, as
+// syncedStarts times the sentences). lines(text) wraps a sentence.
+export function captionCues(sentences, speechMs, lines) {
+  const pages = []
+  for (const sentence of sentences) {
+    const wrapped = lines(sentence)
+    for (let at = 0; at < wrapped.length; at += 2) {
+      const page = wrapped.slice(at, at + 2)
+      const length = [...page.join('')].length
+      if (length) pages.push({ lines: page, length })
+    }
+  }
+  const total = pages.reduce((sum, page) => sum + page.length, 0) || 1
+  let passed = 0
+  return pages.map(page => {
+    const start = (passed / total) * speechMs
+    passed += page.length
+    return { start, lines: page.lines }
+  })
+}
+
+// The caption at a time into the step: the last one started, kept while the
+// board is still being written after the speech.
+export function cueAt(cues, elapsed) {
+  if (!(elapsed >= 0)) return null
+  let found = null
+  for (const cue of cues) {
+    if (cue.start > elapsed) break
+    found = cue
+  }
+  return found
+}
+
+function drawCaption(ctx, lines) {
+  if (!lines?.length) return
+  ctx.font = captionFont()
   const height = lines.length * 34 + 24
   ctx.fillStyle = 'rgba(15,18,24,0.72)'
   ctx.beginPath()
@@ -366,12 +402,14 @@ export async function exportVideo({ steps, title, fetchAudio, watermark, theme =
 
   const timeline = []
   let cursor = 700
+  ctx.font = captionFont()
   for (const [index, step] of steps.entries()) {
     const speechMs = buffers[index] ? buffers[index].duration * 1000 : estimateSpeechMs(step.say)
     const timing = stepTiming(step, { speechMs })
     const starts = syncedStarts(step, timing.writeMs, speechMs)
     const durationMs = starts ? Math.max(timing.durationMs, starts.at(-1) + timing.writeMs.at(-1) + 350) : timing.durationMs
-    timeline.push({ start: cursor, end: cursor + durationMs, writes: timing.writeMs, starts })
+    const captions = captionCues(captionSentences(step.say).map(spokenText), speechMs, sentence => wrap(ctx, sentence, CAPTION_W))
+    timeline.push({ start: cursor, end: cursor + durationMs, writes: timing.writeMs, starts, captions })
     cursor += durationMs
   }
   const total = cursor + 1500
@@ -414,7 +452,7 @@ export async function exportVideo({ steps, title, fetchAudio, watermark, theme =
       ctx.fillText(pageTitle, MARGIN, 52)
     }
     for (const item of visible) if (item.page === page) drawItem(ctx, item, reveal(item), palette)
-    drawCaption(ctx, at.index < steps.length ? spokenText(steps[at.index].say) : '')
+    drawCaption(ctx, at.index < steps.length ? cueAt(timeline[at.index].captions, time - timeline[at.index].start)?.lines : null)
     if (watermark) drawWatermark(ctx, watermark, palette)
   }
 

@@ -9,6 +9,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { normalizeBoard } from '../src/core/board-script.js'
+import { orderBoardOptions, orderOptions } from '../src/core/choice-order.js'
 import { exportCoursePack } from '../src/core/coursepack.js'
 import { flattenLessons, normalizeBlueprint, normalizePractice } from '../src/core/course-model.js'
 
@@ -322,7 +323,8 @@ function build({ file, blueprint, boards, practice }) {
   for (const [title, steps] of Object.entries(boards)) {
     const lesson = byTitle(title)
     const raw = steps.map(step => (step.check ? { ...step, check: attachConcepts(step.check, lesson) } : step))
-    const board = normalizeBoard({ title, steps: raw }, { conceptIds: lesson.concepts.map(concept => concept.id) })
+    // Options in the order a generated board shows them.
+    const board = orderBoardOptions(normalizeBoard({ title, steps: raw }, { conceptIds: lesson.concepts.map(concept => concept.id) }))
     if (board.steps.length !== steps.length) throw new Error(`a step of "${title}" was dropped by normalization`)
     for (const [index, step] of board.steps.entries()) {
       if (steps[index].check && !step.check) throw new Error(`a check of "${title}" step ${index + 1} was dropped`)
@@ -335,7 +337,7 @@ function build({ file, blueprint, boards, practice }) {
     const lesson = byTitle(title)
     const set = normalizePractice({ items: items.map(item => attachConcepts(item, lesson)) }, lesson.concepts.map(concept => concept.id))
     if (set.items.length !== items.length) throw new Error(`a practice item of "${title}" was dropped`)
-    packPractice[lesson.id] = { lessonId: lesson.id, ...set }
+    packPractice[lesson.id] = { lessonId: lesson.id, items: set.items.map(orderOptions) }
   }
   const pack = exportCoursePack({ course, boards: packBoards, practice: packPractice }, { app: { name: 'dsh-aha-tutor', version: 'sample' } })
   const dir = fileURLToPath(new URL('../samples/', import.meta.url))

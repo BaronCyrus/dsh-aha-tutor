@@ -2,8 +2,13 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
 import { applyEvidence, createConceptState, masteryLevel, masteryPercent, masteryStage, recommendNext, stageForPercent, summarizeForPrompt } from '../src/core/mastery.js'
-import { createCard, dueCards, gradeFromScore, review } from '../src/core/srs.js'
+import { createCard, dueCards, gradeFromScore, review, SITTING_MS } from '../src/core/srs.js'
+import { takeEvidence } from '../src/core/evidence-log.js'
 import { gradeObjective, normalizeAnswerText } from '../src/core/grading.js'
+
+const MINUTE = 60 * 1000
+const HOUR = 60 * MINUTE
+const DAY = 24 * HOUR
 
 test('a confident correct answer raises mastery more than a lucky guess', () => {
   const base = createConceptState('cpt_a', 'limits')
@@ -21,6 +26,26 @@ test('a confident mistake is recorded as a misconception and triggers remediatio
   assert.deepEqual(state.misconceptions, ['forgot inner derivative'])
   assert.equal(recommendNext([state]).action, 'remediate')
   assert.equal(recommendNext([state]).reason, 'misconception')
+})
+
+test('two right answers in a row, the second not a guess, clear the misconceptions', () => {
+  const wrong = state => applyEvidence(state, { kind: 'practice', score: 0, confidence: 'sure', errorTag: 'forgot inner derivative' })
+  let state = wrong(createConceptState('cpt_b', 'chain rule'))
+  state = applyEvidence(state, { kind: 'practice', score: 1, confidence: 'sure' })
+  assert.deepEqual(state.misconceptions, ['forgot inner derivative'], 'one right answer may be luck')
+  state = applyEvidence(state, { kind: 'quiz', score: 1, confidence: 'guess' })
+  assert.deepEqual(state.misconceptions, ['forgot inner derivative'], 'a guess does not show it is overcome')
+  state = applyEvidence(state, { kind: 'check', score: 0.8, confidence: 'unsure' })
+  assert.deepEqual(state.misconceptions, [])
+  assert.notEqual(recommendNext([state]).reason, 'misconception')
+  // A mistake in between starts the count again.
+  state = wrong(state)
+  state = applyEvidence(state, { score: 1, confidence: 'sure' })
+  state = applyEvidence(state, { score: 0.2 })
+  state = applyEvidence(state, { score: 1, confidence: 'sure' })
+  assert.deepEqual(state.misconceptions, ['forgot inner derivative'])
+  state = applyEvidence(state, { score: 1 })
+  assert.deepEqual(state.misconceptions, [])
 })
 
 test('hints and hesitation weaken the evidence of a correct answer', () => {
@@ -72,20 +97,76 @@ test('SM-2 review intervals grow with good answers and reset on again', () => {
   let card = createCard('c1', now)
   card = review(card, 'good', now)
   assert.equal(card.intervalDays, 1)
-  card = review(card, 'good', now)
+  card = review(card, 'good', now + DAY)
   assert.equal(card.intervalDays, 6)
-  card = review(card, 'good', now)
+  card = review(card, 'good', now + 7 * DAY)
   assert.ok(card.intervalDays >= 14)
-  const lapsed = review(card, 'again', now)
+  const at = now + 10 * DAY
+  const lapsed = review(card, 'again', at)
   assert.equal(lapsed.reps, 0)
   assert.equal(lapsed.lapses, 1)
-  assert.equal(Date.parse(lapsed.dueAt) - now, 10 * 60 * 1000)
+  assert.equal(Date.parse(lapsed.dueAt) - at, 10 * MINUTE)
   assert.ok(lapsed.ease >= 1.3)
-  assert.deepEqual(dueCards([card, lapsed], now + 11 * 60 * 1000).map(item => item.id), ['c1'])
+  assert.deepEqual(dueCards([card, lapsed], at + 11 * MINUTE).map(item => item.id), ['c1'])
   assert.throws(() => review(card, 'perfect', now), /grade/)
   assert.equal(gradeFromScore(0.2), 'again')
   assert.equal(gradeFromScore(1, 'sure'), 'easy')
   assert.equal(gradeFromScore(0.9, 'guess'), 'hard')
+})
+
+test('right answers in one sitting schedule the next review once', () => {
+  const t0 = Date.parse('2026-10-18T08:00:00Z')
+  let card = createCard('c1', t0)
+  for (let index = 0; index < 7; index += 1) card = review(card, 'good', t0 + index * 5 * MINUTE)
+  assert.equal(card.intervalDays, 1, 'seven right answers minutes apart are one review, not 365 days')
+  assert.equal(card.reps, 1)
+  assert.equal(card.dueAt, new Date(t0 + DAY).toISOString())
+  // The sitting runs on while answers come less than six hours apart.
+  card = review(card, 'easy', t0 + 5 * HOUR)
+  assert.equal(card.intervalDays, 1)
+  assert.equal(card.lastReviewedAt, new Date(t0 + 5 * HOUR).toISOString())
+  // The next day is a new sitting and the next spaced review.
+  card = review(card, 'good', t0 + 26 * HOUR)
+  assert.equal(card.intervalDays, 6)
+  assert.equal(SITTING_MS, 6 * HOUR)
+})
+
+test('only the first miss of a sitting is a lapse', () => {
+  const t0 = Date.parse('2026-10-18T08:00:00Z')
+  let card = review(createCard('c1', t0), 'again', t0)
+  const ease = card.ease
+  card = review(card, 'again', t0 + 2 * MINUTE)
+  card = review(card, 'again', t0 + 4 * MINUTE)
+  assert.equal(card.ease, ease, 'three misses in a row lower the ease once')
+  assert.equal(card.lapses, 1)
+  assert.equal(card.dueAt, new Date(t0 + 14 * MINUTE).toISOString())
+  // Relearnt in the sitting: back tomorrow, and more right answers leave it there.
+  card = review(card, 'good', t0 + 6 * MINUTE)
+  assert.equal(card.intervalDays, 1)
+  card = review(card, 'good', t0 + 8 * MINUTE)
+  assert.equal(card.intervalDays, 1)
+  // Missed again in the same sitting: relearn, still one lapse.
+  card = review(card, 'again', t0 + 10 * MINUTE)
+  assert.equal(card.lapses, 1)
+  assert.equal(card.intervalDays, 0)
+  // A miss in a later sitting is a lapse again.
+  const later = review(review(card, 'good', t0 + 20 * MINUTE), 'again', t0 + DAY + HOUR)
+  assert.equal(later.lapses, 2)
+  assert.ok(later.ease < ease)
+  // A miss right after a right answer of the sitting is that sitting's first miss.
+  const fresh = review(review(createCard('c2', t0), 'good', t0), 'again', t0 + MINUTE)
+  assert.equal(fresh.lapses, 1)
+  assert.equal(fresh.intervalDays, 0)
+})
+
+test('practice answers minutes apart schedule a concept for tomorrow', () => {
+  const t0 = Date.parse('2026-10-18T08:00:00Z')
+  let state = createConceptState('cpt_a', 'x')
+  let card = null
+  for (let index = 0; index < 5; index += 1) ({ state, card } = takeEvidence(state, card, { kind: 'practice', score: 1, confidence: 'unsure' }, t0 + index * 3 * MINUTE))
+  assert.equal(state.attempts, 5, 'every answer still counts toward mastery')
+  assert.equal(card.intervalDays, 1)
+  assert.equal(card.dueAt, new Date(t0 + DAY).toISOString())
 })
 
 test('objective grading handles choices, partial multi-select, numbers and blanks', () => {

@@ -4,6 +4,7 @@
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
+import { orderOptions } from './core/choice-order.js'
 import { normalizePractice, text } from './core/course-model.js'
 import { newId } from './core/ids.js'
 import { readProfile } from './host/context.js'
@@ -99,7 +100,7 @@ export function apply(ctx) {
         normalize: raw => {
           const set = normalizePractice(raw, [])
           if (!set.items.length) throw new Error('no questions')
-          return set
+          return { items: set.items.map(orderOptions) }
         },
       })
       return { count: quiz.items.length, items: quiz.items }

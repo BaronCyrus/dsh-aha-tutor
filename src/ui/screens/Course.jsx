@@ -4,9 +4,10 @@ import { downloadText } from '../api.js'
 import { Confirm, Empty, ErrorLine, errorText, MasteryMeter, Modal, Progress, SourceList, Spinner } from '../components.jsx'
 import { useApp, useLoad } from '../hooks.js'
 import { Icon } from '../icons.jsx'
-import { courseProgress, flattenLessons, nextLesson } from '../../core/course-model.js'
+import { courseProgress, findLesson, flattenLessons, nextLesson } from '../../core/course-model.js'
 import { masteryPercent, masteryStage } from '../../core/mastery.js'
-import { courseNextStep, lessonStage, STAGE_LABELS } from '../practice.js'
+import { RichText } from '../markdown.jsx'
+import { courseNextStep, dayName, lessonStage, mistakesDue, mistakeWhen, STAGE_LABELS } from '../practice.js'
 
 // Flashcards live in the practice tab, per unit; links to the old tab land there.
 const TABS = [['outline', 'tabOutline'], ['practice', 'tabPractice'], ['sheets', 'tabSheets'], ['projects', 'tabProjects'], ['progress', 'tabProgress']]
@@ -21,10 +22,11 @@ export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
   const course = detail.value?.course
   const progress = detail.value?.progress
   const cards = detail.value?.ready?.cards
+  const mistakes = detail.value?.mistakes
 
   const stats = useMemo(() => (course?.units ? courseProgress(course, progress) : null), [course, progress])
   const next = useMemo(() => (course?.units ? nextLesson(course, progress) : null), [course, progress])
-  const step = useMemo(() => (course?.units ? courseNextStep(course, progress) : null), [course, progress])
+  const step = useMemo(() => (course?.units ? courseNextStep(course, progress, { mistakes: mistakesDue(mistakes) }) : null), [course, progress, mistakes])
 
   if (detail.loading && !detail.value) return <div className="aha-page"><Spinner label={t('loading')} /></div>
   if (!course) return <div className="aha-page"><ErrorLine error={detail.error} /></div>
@@ -100,6 +102,7 @@ export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
     </section> : null}
 
     {tab === 'practice' ? <div className="aha-col">
+      <MistakeBook courseId={courseId} course={course} rows={mistakes ?? []} />
       <div className="aha-row">
         <button type="button" className="aha-btn" data-kind="primary" onClick={() => navigate('practice', { courseId, review: true })}>{t('startReview')}</button>
         {cards?.decks ? <button type="button" className="aha-btn" disabled={!cards.review} onClick={() => navigate('cards', { courseId })}>{cards.review ? t('cardReviewDue', { count: cards.review }) : t('cardReviewNone')}</button> : null}
@@ -162,7 +165,7 @@ export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
 function NextStep({ step, courseId }) {
   const { t, navigate } = useApp()
   const view = {
-    review: [t('nextStepReview', { count: step.count }), t('startReview'), () => navigate('practice', { courseId, review: true })],
+    review: [step.mistakes ? (step.count ? t('nextStepReviewMistakes', { mistakes: step.mistakes, count: step.count }) : t('nextStepMistakes', { count: step.mistakes })) : t('nextStepReview', { count: step.count }), t('startReview'), () => navigate('practice', { courseId, review: true })],
     practice: [t('nextStepWeak', { concept: step.concept }), t('practiceThis'), () => navigate('practice', { courseId, lessonId: step.lessonId })],
     lesson: [t('nextStepLesson', { title: step.title }), t('continueLearning'), () => navigate('lesson', { courseId, lessonId: step.lessonId })],
     done: [t('nextStepDone'), t('unitQuiz'), step.unitId ? () => navigate('practice', { courseId, unitId: step.unitId }) : null],
@@ -176,6 +179,62 @@ function NextStep({ step, courseId }) {
     </div>
     {go ? <button type="button" className="aha-btn" data-kind="primary" onClick={go}>{label}</button> : null}
   </div>
+}
+
+// Open mistakes listed before "Show all".
+const MISTAKES_SHOWN = 5
+
+// The course's mistake book: how many are due again (redone in rounds),
+// each open mistake with the answer that was wrong, and the resolved ones
+// folded away.
+function MistakeBook({ courseId, course, rows }) {
+  const { t, navigate } = useApp()
+  const [all, setAll] = useState(false)
+  const now = Date.now()
+  const open = rows.filter(row => !row.resolvedAt)
+  const resolved = rows.filter(row => row.resolvedAt)
+  const due = mistakesDue(rows, now)
+  // Open ones come the longest due first, so the first one not due is the next.
+  const later = open.find(row => Date.parse(row.dueAt) > now)
+  const counts = [[due, 'mistakeCountDue'], [open.length, 'mistakeCountOpen'], [resolved.length, 'mistakeCountResolved']].filter(([count]) => count).map(([count, key]) => t(key, { count })).join(' · ')
+  return <section className="aha-card aha-mistakeBook">
+    <div className="aha-spread">
+      <div className="aha-col" style={{ gap: 2, flex: 1, minWidth: 'min(220px, 100%)' }}>
+        <b>{t('mistakeBook')}</b>
+        <span className="aha-hint">{counts || t('mistakeEmpty')}</span>
+      </div>
+      {open.length ? <button type="button" className="aha-btn" data-kind={due ? 'primary' : undefined} disabled={!due} onClick={() => navigate('practice', { courseId, mistakes: true })}>
+        {due ? t('practiceMistakesDue', { count: due }) : t('mistakeDueOn', { day: dayName(t, later.dueAt, now) })}
+      </button> : null}
+    </div>
+    {open.length ? <ul className="aha-mistakeList">{(all ? open : open.slice(0, MISTAKES_SHOWN)).map(row => <MistakeRow key={`${row.key}~${row.sig}`} row={row} course={course} now={now} />)}</ul> : null}
+    {open.length > MISTAKES_SHOWN ? <div><button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => setAll(value => !value)}>{all ? t('mistakeShowFewer') : t('mistakeShowAll', { count: open.length })}</button></div> : null}
+    {resolved.length ? <details className="aha-mistakeResolved">
+      <summary>{t('mistakeResolvedList', { count: resolved.length })}</summary>
+      <ul className="aha-mistakeList">{resolved.map(row => <MistakeRow key={`${row.key}~${row.sig}`} row={row} course={course} now={now} />)}</ul>
+    </details> : null}
+  </section>
+}
+
+// One mistake: the question, where it was asked, the last wrong answer, how
+// often it went wrong and when it comes back (or when it was resolved).
+function MistakeRow({ row, course, now }) {
+  const { t } = useApp()
+  const unitIndex = row.source?.kind === 'quiz' ? course.units.findIndex(unit => unit.id === row.unitId) : -1
+  const where = row.source?.kind === 'quiz'
+    ? `${t('mistakeFrom_quiz')} · ${unitIndex >= 0 ? `${t('unitN', { n: unitIndex + 1 })} ${course.units[unitIndex].title}` : ''}`
+    : `${t(row.source?.kind === 'check' ? 'mistakeFrom_check' : 'mistakeFrom_practice')} · ${findLesson(course, row.lessonId)?.lesson.title ?? ''}`
+  const due = !row.resolvedAt && Date.parse(row.dueAt) <= now
+  return <li className="aha-mistakeRow" data-due={due ? 'true' : undefined}>
+    <RichText text={row.prompt} compact className="aha-mistakePrompt" />
+    {row.answer ? <RichText text={t('mistakeLastAnswer', { answer: row.answer })} compact className="aha-mistakeAnswer" /> : null}
+    <div className="aha-mistakeMeta">
+      <span>{where}</span>
+      {row.figure ? <span>{t('mistakeFigure')}</span> : null}
+      <span>{t('mistakeWrongTimes', { count: row.wrong })}</span>
+      <span className="aha-mistakeWhen" data-due={due ? 'true' : undefined}>{mistakeWhen(t, row, now)}</span>
+    </div>
+  </li>
 }
 
 // A unit's flashcards, with the cards due again when it has some.

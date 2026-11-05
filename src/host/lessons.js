@@ -13,9 +13,11 @@ import { OBJECTIVE_KINDS } from '../core/grading.js'
 import { assertId, newId } from '../core/ids.js'
 import { cleanResponse, earlierGrade, fixItem, itemForCheck, normalizeItemVerdict, regrade, responseText } from '../core/item-fix.js'
 import { createConceptState, masteryPercent, recommendNext } from '../core/mastery.js'
+import { itemSig } from '../core/mistakes.js'
 import { createCard, isDue, review } from '../core/srs.js'
 import { masteryFor, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
 import { fieldCounter, generateJson, generateSteps, TutorError } from './generate.js'
+import { createMistakes } from './mistakes.js'
 import { askPrompt, challengePrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, flashcardsPrompt, gradePrompt, handoutPrompt, lessonPrompt, quizPrompt, reexplainPrompt, verifyItemPrompt, verifyStepPrompt } from './prompts.js'
 
 const EVENTS_KEPT = 200
@@ -27,7 +29,7 @@ const BOARD_JOBS = ['lesson/board', 'lesson/prefetch']
 // Earlier open answers to a fixed question the grader looks at again.
 const EARLIER_OPEN = 3
 
-export function createLessons({ store, llm, jobs, courses, learner, now = () => new Date() }) {
+export function createLessons({ store, llm, jobs, courses, learner, mistakes = createMistakes({ store }), now = () => new Date() }) {
   const stamp = () => now().toISOString()
 
   async function context(courseId, lessonId) {
@@ -283,10 +285,16 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     if (writing && (await jobs.wait(writing.id))?.status !== 'done') return applyFixes(place.steps, fixes).applied
     const missing = () => new TutorError('not-found', 'Not found')
     if (scope.kind === 'lesson') {
+      const checks = []
       await store.updateJson(store.paths.board(scope.courseId, scope.lessonId), null, saved => {
         if (!saved) throw missing()
-        return { ...saved, steps: fix(saved.steps) }
+        const steps = fix(saved.steps)
+        // Checks the fix changed, for the mistake book.
+        const before = new Map((saved.steps ?? []).map(step => [step.id, step.check]))
+        for (const step of steps) if (step.check && before.get(step.id) && JSON.stringify(step.check) !== JSON.stringify(before.get(step.id))) checks.push({ stepId: step.id, before: before.get(step.id), item: step.check })
+        return { ...saved, steps }
       })
+      for (const { stepId, before, item } of checks) await bookFix(scope.courseId, { kind: 'check', courseId: scope.courseId, lessonId: scope.lessonId, stepId }, { before, item, fixed: true, verdict: 'wrong' })
     } else if (scope.kind === 'thread') {
       await store.updateJson(store.paths.item('assist', scope.id), null, thread => {
         const turn = thread?.turns?.[Math.max(0, Math.min(thread.turns.length - 1, Number(scope.turn) || 0))]
@@ -351,8 +359,9 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
 
   // Apply one piece of evidence to the concepts it covers. It is logged
   // with what each concept was before it (evidenceId), so an answer graded
-  // wrongly can be graded again; item ({ source, response }): the question
-  // it answered and how, so a later fix of the question grades it again.
+  // wrongly can be graded again; item ({ source, response, sig }): the
+  // question it answered and how, so a later fix of the question grades it
+  // again, and the mistake book takes it (see host/mistakes.js).
   async function record({ courseId, lessonId, conceptIds = [], evidence = {}, item = null }) {
     const course = await courses.readCourse(courseId)
     const index = conceptIndex(course)
@@ -362,6 +371,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     const at = now().getTime()
     const evidenceId = newId('evd')
     const key = item?.source?.courseId === courseId ? itemKey(item.source) : null
+    const sig = key && typeof item.sig === 'string' && item.sig ? item.sig : null
     const next = await store.updateJson(store.paths.progress(courseId), null, progress => {
       const value = progress ?? { courseId, lessons: {}, concepts: {}, reviews: {}, practice: {}, projects: {}, events: [] }
       value.concepts ??= {}
@@ -373,16 +383,44 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
         value.concepts[id] = taken.state
         if (taken.card) value.reviews[id] = taken.card
       }
-      if (ids.length) logEvidence(value, { id: evidenceId, at: new Date(at).toISOString(), lessonId: lessonId ?? null, conceptIds: ids, evidence: JSON.parse(JSON.stringify(evidence)), before, ...(key ? { item: { key, response: item.response ?? '' } } : {}) })
+      if (ids.length) logEvidence(value, { id: evidenceId, at: new Date(at).toISOString(), lessonId: lessonId ?? null, conceptIds: ids, evidence: JSON.parse(JSON.stringify(evidence)), before, ...(key ? { item: { key, response: item.response ?? '', ...(sig ? { sig } : {}) } } : {}) })
       pushEvent(value, { type: 'evidence', lessonId: lessonId ?? null, conceptIds: ids, kind: evidence.kind ?? 'practice', score: evidence.score ?? null, confidence: evidence.confidence ?? null, at: new Date(at).toISOString() })
       return value
     })
+    const noted = key ? await noteMistake(courseId, { source: item.source, key, sig, conceptIds: ids, id: evidenceId, at, evidence, response: item.response }) : false
     const states = ids.map(id => next.concepts[id]).filter(Boolean)
     return {
       mastery: Object.fromEntries(states.map(state => [state.id, masteryPercent(state)])),
       recommendation: recommendNext(states),
-      evidenceId: ids.length ? evidenceId : null,
+      // Also the id of an answer only the mistake book keeps, so a check of its question finds it there.
+      evidenceId: ids.length || noted ? evidenceId : null,
     }
+  }
+
+  // An answer to a question the course keeps, for its mistake book. The
+  // answer is recorded whatever happens to the book.
+  function noteMistake(courseId, { source, key, sig, conceptIds, id, at, evidence, response }) {
+    const { courseId: _course, ...where } = source
+    const answer = { key, sig, source: where, lessonId: source.lessonId ?? null, unitId: source.unitId ?? null, conceptIds, id, at: new Date(at).toISOString(), score: evidence.score, correct: evidence.correct, response: response ?? '' }
+    return mistakes.note(courseId, answer, () => keptPlace(source).then(place => place.item)).catch(() => false)
+  }
+
+  // The mistake book follows a question a check fixed, or answers to it the
+  // check graded again (see core/mistakes.js fixMistakes). The answers
+  // logged to the question as it was are answers to the fixed one from now
+  // on, so a later fix of it grades them again too.
+  async function bookFix(courseId, source, change) {
+    const key = itemKey(source)
+    const { courseId: _course, ...where } = source
+    const place = { source: where, lessonId: source.lessonId ?? null, unitId: source.unitId ?? null, conceptIds: change.item.conceptIds ?? [] }
+    await mistakes.fixed(courseId, { ...change, key, place }).catch(() => false)
+    const [was, sig] = [itemSig(change.before), itemSig(change.item)]
+    const logged = entry => entry.item?.key === key && entry.item.sig === was
+    if (!change.fixed || was === sig || !(await store.readJson(store.paths.progress(courseId), null))?.evidenceLog?.some(logged)) return
+    await store.updateJson(store.paths.progress(courseId), null, progress => {
+      for (const entry of progress?.evidenceLog ?? []) if (logged(entry)) entry.item.sig = sig
+      return progress
+    })
   }
 
   // Grade a recorded answer again (see core/evidence-log.js). Null when the
@@ -404,11 +442,29 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }
   }
 
-  // Where a question the learner challenged is kept: a lesson's practice, a
+  // Where a question the learner challenged is kept (see keptPlace). sig
+  // tells which question they answered: one the course keeps in another
+  // form now (written anew, or gone) is found in the mistake book, and
+  // fixed there (book: true).
+  async function itemPlace(source, sig = null) {
+    if (!sig || source.kind === 'deck') return keptPlace(source)
+    const kept = await keptPlace(source).catch(error => { if (error?.code === 'not-found') return null; throw error })
+    if (kept && itemSig(kept.item) === sig) return kept
+    const course = kept?.course ?? await courses.readCourse(source.courseId)
+    const book = await mistakes.place(course.id, itemKey(source), sig)
+    if (!book) {
+      if (kept) return kept
+      throw new TutorError('not-found', 'Not found')
+    }
+    const part = source.kind === 'quiz' ? course.units?.find(unit => unit.id === source.unitId)?.title : findLesson(course, source.lessonId)?.lesson.title
+    return { item: book.item, course, lessonId: source.lessonId ?? null, language: course.language, scope: part ? `${course.title} — ${part}` : course.title, save: book.save, book: true }
+  }
+
+  // Where a course or the library keeps a question: a lesson's practice, a
   // unit quiz, a quiz from the library, or the check of a lesson step (a
   // review session draws on practice and checks). save(change) rewrites it
   // there and returns it as saved.
-  async function itemPlace(source) {
+  async function keptPlace(source) {
     const missing = () => new TutorError('not-found', 'Not found')
     const rewrite = (path, listOf) => async change => {
       let saved = null
@@ -466,22 +522,28 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
   // Earlier answers to a question a check fixed (in another round, a review
   // or the lesson itself) graded again against the fixed question, and
   // corrected in the learner's progress. Open answers go to the grader, the
-  // latest few only; one it cannot grade keeps its grade. Null when none
-  // changed.
-  async function regradeEarlier({ course, key, item, verdict, except, language, signal }) {
+  // latest few only; one it cannot grade keeps its grade. version: the
+  // question as those answers saw it (sig); answers logged before versions
+  // were told apart count too, unless strict (a question the course keeps
+  // only in the mistake book). Null when none changed; answers: each one
+  // graded again, for the mistake book.
+  async function regradeEarlier({ course, key, item, verdict, except, language, signal, version = {} }) {
     const answers = answersTo(await store.readJson(store.paths.progress(course.id), null), key, except)
+      .filter(entry => (entry.item.sig ? !version.sig || entry.item.sig === version.sig : !version.strict))
     const open = !OBJECTIVE_KINDS.includes(item.kind)
     const graded = await Promise.all((open ? answers.slice(-EARLIER_OPEN) : answers).map(async entry => {
       const again = open ? await grade({ item, response: entry.item.response, language, signal }).catch(error => { if (signal?.aborted) throw error; return null }) : null
       if (open && !again) return null
-      return { id: entry.id, next: earlierGrade(item, entry.item.response, { verdict, score: entry.evidence.score, grade: again }) }
+      return { id: entry.id, at: entry.at, response: entry.item.response, next: earlierGrade(item, entry.item.response, { verdict, score: entry.evidence.score, grade: again }) }
     }))
     let found = null
-    for (const { id, next } of graded.filter(entry => entry?.next)) {
-      const corrected = await regradeEvidence(course, id, { score: next.score, errorTag: next.errorTag })
+    const regraded = []
+    for (const { id, at, response, next } of graded.filter(entry => entry?.next)) {
+      regraded.push({ id, at, response, score: next.score, correct: next.correct })
+      const corrected = await regradeEvidence(course, id, { score: next.score, errorTag: next.errorTag, correct: next.correct })
       if (corrected) found = { count: (found?.count ?? 0) + 1, mastery: { ...found?.mastery, ...corrected.mastery }, recommendation: corrected.recommendation }
     }
-    return found
+    return found || regraded.length ? { count: found?.count ?? 0, mastery: found?.mastery ?? null, recommendation: found?.recommendation ?? null, answers: regraded } : null
   }
 
   // The learner says a practice or quiz question, or the grading of their
@@ -490,11 +552,12 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
   // recorded as evidence (evidenceId) is then corrected in the learner's
   // mastery and review schedule, as if it had been graded right the first
   // time, and so are earlier answers to the question. shown: the grade the
-  // learner saw.
-  function challengeItem({ source, response, shown = {}, evidenceId, note }) {
+  // learner saw; sig: which question they answered (see itemPlace). The
+  // mistake book follows the fix and the new grades.
+  function challengeItem({ source, response, shown = {}, evidenceId, note, sig = null }) {
     const doubt = text(note, 800)
     return jobs.start('item/challenge', async api => {
-      const place = await itemPlace(source)
+      const place = await itemPlace(source, sig)
       const answer = cleanResponse(place.item, response)
       const told = place.item.kind === 'short' || place.item.kind === 'work'
         ? [`A grader gave this answer a score of ${shown.score} (${shown.correct ? 'correct' : shown.partial ? 'partial' : 'incorrect'}).`, shown.feedback ? `Feedback shown: ${shown.feedback}` : '', shown.wrongStep ? `First wrong line found: ${shown.wrongStep}` : '', shown.fix ? `Fix shown: ${shown.fix}` : ''].filter(Boolean).join('\n')
@@ -512,13 +575,17 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       const result = regrade(item, answer, checked)
       const changed = Boolean(result) && (result.correct !== Boolean(shown.correct) || Math.abs(result.score - (Number(shown.score) || 0)) > 1e-6)
       const corrected = changed && evidenceId && place.course
-        ? await regradeEvidence(place.course, evidenceId, { score: result.score, ...(result.correct ? { errorTag: '' } : result.errorTag ? { errorTag: result.errorTag } : {}) })
+        ? await regradeEvidence(place.course, evidenceId, { score: result.score, correct: result.correct, ...(result.correct ? { errorTag: '' } : result.errorTag ? { errorTag: result.errorTag } : {}) })
         : null
       const earlier = checked.item && place.course
-        ? await regradeEarlier({ course: place.course, key: itemKey(source), item, verdict: checked.verdict, except: evidenceId, language: place.language, signal: api.signal })
+        ? await regradeEarlier({ course: place.course, key: itemKey(source), item, verdict: checked.verdict, except: evidenceId, language: place.language, signal: api.signal, version: { sig: itemSig(place.item), strict: Boolean(place.book) } })
         : null
+      if (place.course && (checked.item || changed)) {
+        const answers = [...(changed && evidenceId ? [{ id: evidenceId, at: stamp(), response: answer, score: result.score, correct: result.correct }] : []), ...(earlier?.answers ?? [])]
+        await bookFix(place.course.id, source, { before: place.item, item, fixed: Boolean(checked.item), verdict: checked.verdict, answers })
+      }
       if (place.course) await logEvent(place.course.id, { type: 'item-challenge', lessonId: place.lessonId, verdict: checked.verdict, changed, earlier: earlier?.count ?? 0 })
-      const mastery = corrected || earlier ? { ...corrected?.mastery, ...earlier?.mastery } : null
+      const mastery = corrected?.mastery || earlier?.mastery ? { ...corrected?.mastery, ...earlier?.mastery } : null
       return {
         verdict: checked.verdict,
         summary: checked.summary,

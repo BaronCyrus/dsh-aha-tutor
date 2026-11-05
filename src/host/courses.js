@@ -24,6 +24,7 @@ import { deckStatus } from '../core/srs.js'
 import { formatPassages, spreadPassages } from '../core/retrieval.js'
 import { COURSE_MATERIALS, emptyProgress, materialImages, materialsSummary, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
 import { generateJson, streamCounter, TutorError } from './generate.js'
+import { createMistakes } from './mistakes.js'
 import { blueprintPrompt, detectLanguage, materialsRevisePrompt, practicePrompt, projectsPrompt, questionnairePrompt, revisePrompt, reworkPrompt } from './prompts.js'
 
 const TIMELINES = ['intensive', 'balanced', 'relaxed']
@@ -49,7 +50,7 @@ function outlineStream(api) {
 }
 
 // research: optional web research (research.js) run before the questions.
-export function createCourses({ store, llm, jobs, research, now = () => new Date() }) {
+export function createCourses({ store, llm, jobs, research, mistakes = createMistakes({ store }), now = () => new Date() }) {
   const stamp = () => now().toISOString()
 
   async function readCourse(courseId) {
@@ -98,6 +99,8 @@ export function createCourses({ store, llm, jobs, research, now = () => new Date
     return {
       course,
       progress,
+      // The mistake book as the course page lists it.
+      mistakes: course.status === 'ready' ? await mistakes.list(course) : [],
       intake,
       proposal,
       jobs: {

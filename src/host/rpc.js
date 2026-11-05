@@ -73,14 +73,20 @@ function answerOf(value) {
   return Array.isArray(value) ? value.filter(id => typeof id === 'string' && /^[a-z]$/u.test(id)).slice(0, 12) : ''
 }
 
+// Which question the learner answered there (see core/mistakes.js itemSig).
+function sigOf(payload) {
+  return typeof payload?.sig === 'string' && /^[0-9a-z]{1,13}$/u.test(payload.sig) ? { sig: payload.sig } : {}
+}
+
 // The question a recorded answer was given to, where its course keeps it,
-// and the answer, so that a fix of the question can grade it again. Null
-// for anything else: the answer is recorded without them.
+// and the answer, so that a fix of the question can grade it again and the
+// mistake book can take it. Null for anything else: the answer is recorded
+// without them.
 function answeredItem(payload, courseId) {
   if (!payload?.source || payload.source.kind === 'deck') return null
   try {
     const source = itemSource(payload)
-    return source.courseId === courseId ? { source, response: answerOf(payload.response) } : null
+    return source.courseId === courseId ? { source, response: answerOf(payload.response), ...sigOf(payload) } : null
   } catch {
     return null
   }
@@ -146,10 +152,12 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
         expectedMs: payload.evidence?.expectedMs,
         errorTag: typeof payload.evidence?.errorTag === 'string' ? payload.evidence.errorTag.slice(0, 80) : undefined,
         rating: payload.evidence?.rating,
+        // Whether the learner was told the answer is right.
+        correct: typeof payload.evidence?.correct === 'boolean' ? payload.evidence.correct : undefined,
       },
     }),
     'lesson/grade': payload => lessons.grade({ item: payload.item, response: payload.response, language: typeof payload.language === 'string' ? payload.language.slice(0, 12) : undefined }),
-    'item/challenge': payload => ({ job: lessons.challengeItem({ source: itemSource(payload), response: answerOf(payload.response), shown: shownGrade(payload.shown), evidenceId: optional(payload, 'evidenceId', 'evd'), note: typeof payload.note === 'string' ? payload.note : '' }) }),
+    'item/challenge': payload => ({ job: lessons.challengeItem({ source: itemSource(payload), response: answerOf(payload.response), shown: shownGrade(payload.shown), evidenceId: optional(payload, 'evidenceId', 'evd'), note: typeof payload.note === 'string' ? payload.note : '', ...sigOf(payload) }) }),
     'lesson/correct': payload => ({ job: lessons.correct({ scope: scopeOf(payload), stepIndex: payload.stepIndex, anchorStepId: payload.anchorStepId, item: payload.item, response: payload.response, grade: payload.grade }) }),
     'lesson/position': payload => lessons.savePosition({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les'), stepIndex: payload.stepIndex }),
     'lesson/complete': payload => lessons.complete({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les'), selfRating: Number(payload.selfRating) || undefined }),
@@ -170,7 +178,7 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
     'plan/settings': payload => learner.savePlanSettings({ weeklyMinutes: payload.weeklyMinutes, studyDays: payload.studyDays }),
     'plan/add-exam': payload => learner.addExam({ title: payload.title, day: payload.day, courseId: payload.courseId }),
     'plan/remove-exam': payload => learner.removeExam({ id: need(payload, 'id', 'exm') }),
-    'review/session': payload => learner.reviewSession({ courseId: optional(payload, 'courseId', 'crs') }),
+    'review/session': payload => learner.reviewSession({ courseId: optional(payload, 'courseId', 'crs'), mistakes: payload.mistakes === true }),
 
     'material/upload': payload => ({ job: studio.upload({ name: payload.name, base64: payload.base64 }) }),
     'material/url': payload => ({ job: studio.addUrl({ url: payload.url }) }),

@@ -10,11 +10,13 @@ import { TeX } from '../math.jsx'
 import { nextStepFor, sessionStats, STAGE_LABELS } from '../practice.js'
 import { conceptIndex, flattenLessons, lessonAfter, nextLesson } from '../../core/course-model.js'
 import { masteryStage, stageForPercent } from '../../core/mastery.js'
+import { itemSig } from '../../core/mistakes.js'
 import { dueCards } from '../../core/srs.js'
 
 // ── practice, quizzes and reviews ──────────────────────────────────────────
 
-export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
+// mistakes: a round of the course's mistakes that are due again.
+export function PracticeScreen({ courseId, lessonId, unitId, review, mistakes, deckId }) {
   const { api, t, navigate } = useApp()
   const job = useJob()
   const [set, setSet] = useState(null)
@@ -47,9 +49,9 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
       freshSet.current = false
       try {
         if (courseId && !deckId) api.call('course/get', { courseId }).then(detail => { if (live) setContext(detail) }).catch(() => undefined)
-        if (review) {
-          const session = await api.call('review/session', courseId ? { courseId } : {})
-          if (live) setSet({ title: t('review'), items: session.items.map(entry => ({ ...entry.item, context: entry })), language: undefined })
+        if (review || mistakes) {
+          const session = await api.call('review/session', { ...(courseId ? { courseId } : {}), ...(mistakes ? { mistakes: true } : {}) })
+          if (live) setSet({ title: t(mistakes ? 'mistakeRound' : 'review'), items: session.items.map(entry => ({ ...entry.item, context: entry })), language: undefined, more: session.more ?? 0 })
           return
         }
         if (deckId) {
@@ -74,7 +76,7 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
     }
     load()
     return () => { live = false }
-  }, [courseId, lessonId, unitId, review, deckId, attempt])
+  }, [courseId, lessonId, unitId, review, mistakes, deckId, attempt])
 
   const item = set?.items[index]
   const record = result => {
@@ -82,14 +84,16 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
     setResults(current => [...current, { ...result, index: at }])
     const targetCourse = item?.context?.courseId ?? courseId
     if (!targetCourse || deckId) return
-    // With the question it answered, so a later fix of the question grades it again.
+    // With the question it answered (sig: which one, for the mistake book),
+    // so a later fix of the question grades it again.
     evidence.current.set(at, api.call('lesson/record', {
       courseId: targetCourse,
       lessonId: item?.context?.lessonId ?? lessonId,
       conceptIds: item?.conceptIds ?? [],
-      evidence: { kind: unitId ? 'quiz' : 'practice', score: result.score, confidence: result.confidence, hintsUsed: result.hintsUsed, timeMs: result.timeMs, expectedMs: 60_000, errorTag: result.errorTag },
+      evidence: { kind: unitId ? 'quiz' : 'practice', score: result.score, correct: result.correct === true, confidence: result.confidence, hintsUsed: result.hintsUsed, timeMs: result.timeMs, expectedMs: 60_000, errorTag: result.errorTag },
       source: itemSource({ courseId, lessonId, unitId }, item),
       response: result.given ?? result.response ?? '',
+      sig: itemSig(item),
     }).then(response => {
       if (response?.mastery) setAfter(current => ({ ...current, ...response.mastery }))
       if (response?.recommendation) setRecommendation(response.recommendation)
@@ -118,10 +122,12 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
     setChecks(current => ({ ...current, [at]: { ...current[at], status: 'checking', note, error: null } }))
     try {
       const evidenceId = await (evidence.current.get(at) ?? null)
-      const value = await api.run('item/challenge', { source, response: answered.given ?? answered.response ?? '', shown: shownGrade(answered), ...(evidenceId ? { evidenceId } : {}), note })
+      // sig: the question as the learner sees it (fixed by an earlier check of it, or not).
+      const value = await api.run('item/challenge', { source, response: answered.given ?? answered.response ?? '', shown: shownGrade(answered), ...(evidenceId ? { evidenceId } : {}), note, sig: itemSig(checks[at]?.item ?? asked) })
       if (round.current !== started) {
-        // The round started over meanwhile: its question is the fixed one.
-        if (value?.item) setSet(current => current && { ...current, items: current.items.map((entry, position) => (position === at ? value.item : entry)) })
+        // The round started over meanwhile: its question is the fixed one
+        // (unless another round of questions is on the page now).
+        if (value?.item) setSet(current => current && { ...current, items: current.items.map((entry, position) => (position === at && itemSig(entry) === itemSig(asked) ? keepContext(value.item, entry) : entry)) })
         return
       }
       setChecks(current => ({ ...current, [at]: checkDone(current[at], value, latest.current.results.find(result => result.index === at)) }))
@@ -139,13 +145,21 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
   // Again from the start, with the questions as the checks fixed them.
   function startOver() {
     round.current += 1
-    setSet(current => ({ ...current, items: current.items.map((entry, position) => checks[position]?.item ?? entry) }))
+    setSet(current => ({ ...current, items: current.items.map((entry, position) => (checks[position]?.item ? keepContext(checks[position].item, entry) : entry)) }))
     setChecks({})
     setNotices([])
     evidence.current = new Map()
     setIndex(0)
     setResults([])
     setRecommendation(null)
+  }
+
+  // The next mistakes that are due, once a round of them is done.
+  function nextRound() {
+    startOver()
+    setSet(null)
+    setAfter({})
+    setAttempt(value => value + 1)
   }
 
   // A unit quiz written anew, as long as the unit needs.
@@ -162,7 +176,7 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
     const written = unitId && job.progress?.label === 'writing' ? t('quizWriting', { count: job.progress.done }) : null
     return <div className="aha-page"><JobProgress progress={job.progress} label={t(unitId ? 'makingQuiz' : 'makingPractice')} detail={written} onCancel={job.running ? job.cancel : undefined} /></div>
   }
-  if (!set.items.length) return <div className="aha-page"><Empty>{review ? t('nothingToReview') : t('empty')}</Empty></div>
+  if (!set.items.length) return <div className="aha-page"><Empty>{review ? t('nothingToReview') : mistakes ? t('noMistakesDue') : t('empty')}</Empty></div>
 
   const done = index >= set.items.length
   return <div className="aha-page" style={{ maxWidth: 760 }}>
@@ -179,19 +193,26 @@ export function PracticeScreen({ courseId, lessonId, unitId, review, deckId }) {
       {notice.retry ? <button type="button" className="aha-btn" data-size="sm" onClick={() => { dismiss(notice.key); notice.retry() }}>{t('retry')}</button> : null}
       <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" aria-label={t('close')} onClick={() => dismiss(notice.key)}>×</button>
     </div>)}
-    {item?.context ? <p className="aha-hint">{item.context.courseTitle} · {item.context.conceptName}</p> : null}
+    {item?.context ? <p className="aha-hint">{[item.context.courseTitle, item.context.conceptName, item.context.mistake ? t('mistakeContext', { count: item.context.mistake.wrong }) : ''].filter(Boolean).join(' · ')}</p> : null}
     {!done ? <>
       <div className="aha-card"><ItemCard key={`${index}`} item={item} language={set.language} onResult={record} onContinue={() => setIndex(value => value + 1)} continueLabel={index + 1 < set.items.length ? t('continue') : t('confirm')} keyboard
         onChallenge={itemSource({ courseId, lessonId, unitId, deckId }, item) ? note => challenge(index, note) : undefined} check={checks[index] ?? null} /></div>
       <p className="aha-hint">{t('keysHint')}</p>
     </> : <PracticeSummary set={set} stats={stats} context={context} after={after} recommendation={recommendation} courseId={courseId} lessonId={lessonId} unitId={unitId}
-      onRetry={startOver} onNewSet={unitId && !review && !deckId ? newSet : undefined} />}
+      onRetry={mistakes ? undefined : startOver} onNewSet={unitId && !review && !deckId ? newSet : undefined} onNextRound={mistakes && set.more ? nextRound : undefined} backTab={mistakes ? 'practice' : undefined} />}
   </div>
+}
+
+// A question a check fixed, with where the round's question came from (a
+// review question's course, lesson and place).
+function keepContext(item, entry) {
+  return entry.context ? { ...item, context: entry.context } : item
 }
 
 // The end of a round: stars, accuracy, best streak, how each concept moved,
 // and one next step.
-function PracticeSummary({ set, stats, context, after, recommendation, courseId, lessonId, unitId, onRetry, onNewSet }) {
+// backTab: the course page's tab to go back to.
+function PracticeSummary({ set, stats, context, after, recommendation, courseId, lessonId, unitId, onRetry, onNewSet, onNextRound, backTab }) {
   const { t, navigate } = useApp()
   const course = context?.course
   const progress = context?.progress
@@ -221,7 +242,7 @@ function PracticeSummary({ set, stats, context, after, recommendation, courseId,
     review: () => navigate('practice', { courseId, review: true }),
     quiz: () => navigate('practice', { courseId, unitId: step.unitId }),
     next: () => navigate('lesson', { courseId, lessonId: step.lessonId }),
-    course: () => navigate('course', { courseId }),
+    course: () => navigate('course', { courseId, ...(backTab ? { tab: backTab } : {}) }),
   }
   const stepText = step ? t({ relearn: 'nextRelearn', review: 'nextReview', quiz: 'nextQuiz', next: 'nextLessonStep', course: 'nextCourse' }[step.kind]) : ''
   const stepButton = step ? t({ relearn: 'relearnLesson', review: 'reviewCourse', quiz: 'unitQuiz', next: 'nextLesson', course: 'backToCourse' }[step.kind]) : ''
@@ -245,7 +266,8 @@ function PracticeSummary({ set, stats, context, after, recommendation, courseId,
     {step && courseId ? <p>{stepText}</p> : null}
     <div className="aha-row">
       {step && courseId ? <button type="button" className="aha-btn" data-kind="primary" onClick={go[step.kind]}>{stepButton}</button> : null}
-      <button type="button" className="aha-btn" onClick={onRetry}>{t('retry')}</button>
+      {onNextRound ? <button type="button" className="aha-btn" onClick={onNextRound}>{t('mistakeRoundMore', { count: set.more })}</button> : null}
+      {onRetry ? <button type="button" className="aha-btn" onClick={onRetry}>{t('retry')}</button> : null}
       {onNewSet ? <button type="button" className="aha-btn" onClick={onNewSet}>{t('newQuizSet')}</button> : null}
       {courseId && step?.kind !== 'course' ? <button type="button" className="aha-btn" onClick={go.course}>{t('backToCourse')}</button> : null}
     </div>

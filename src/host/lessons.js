@@ -8,6 +8,7 @@ import { applyFixes, boardForCheck, describeFixes, normalizeVerdict, sanitizeSte
 import { boardToPlainText } from '../core/board-script.js'
 import { conceptIndex, courseSpan, findLesson, insertLesson, lessonAfter, LIMITS, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text, thinEvenly, unitCardRange, unitConcepts, unitQuizRange } from '../core/course-model.js'
 import { mentionedPages } from '../core/citations.js'
+import { lessonQuery, sourcesOf } from '../core/lesson-sources.js'
 import { answersTo, correctEvidence, itemKey, logEvidence, stateBefore, takeEvidence } from '../core/evidence-log.js'
 import { OBJECTIVE_KINDS } from '../core/grading.js'
 import { assertId, newId } from '../core/ids.js'
@@ -39,17 +40,28 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     return { course, row }
   }
 
+  // The pages a lesson teaches from that are still in its course, with the
+  // titles of their materials.
+  async function shownSources(course, lesson) {
+    const sources = (lesson.sources ?? []).filter(source => course.materialIds?.includes(source.materialId))
+    const titles = new Map()
+    for (const id of new Set(sources.map(source => source.materialId))) titles.set(id, (await store.readJson(store.paths.material(id), null))?.title ?? '')
+    return sources.map(source => ({ ...source, materialTitle: titles.get(source.materialId) }))
+  }
+
   async function get({ courseId, lessonId }) {
     const { course, row } = await context(courseId, lessonId)
-    const [board, practice, progress, asides] = await Promise.all([
+    const [board, practice, progress, asides, sources] = await Promise.all([
       store.readJson(store.paths.board(courseId, lessonId), null),
       store.readJson(store.paths.practice(courseId, lessonId), null),
       readProgress(store, courseId),
       store.readJson(store.paths.asides(courseId, lessonId), null),
+      shownSources(course, row.lesson),
     ])
     return {
       courseId,
       language: course.language,
+      sources,
       unit: { id: row.unit.id, title: row.unit.title },
       lecture: { id: row.lecture.id, title: row.lecture.title },
       lesson: row.lesson,
@@ -67,7 +79,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     const progress = await readProgress(store, course.id)
     const profile = await readProfile(store)
     const materials = await readMaterials(store, course.materialIds ?? [])
-    const query = `${row.lesson.title} ${row.lesson.objectives.join(' ')} ${row.lesson.concepts.map(concept => concept.name).join(' ')}`
+    const query = lessonQuery([row.lesson])
     const rows = conceptIndex(course)
     const lessonsInOrder = [...new Set([...rows.values()].map(concept => concept.lessonId))]
     const previousId = lessonsInOrder[lessonsInOrder.indexOf(row.lesson.id) - 1]
@@ -80,7 +92,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       lesson: row.lesson,
       language: course.language,
       learner: { profile, mastery: masteryFor(course, progress, row.lesson.id) },
-      passages: passagesFor(materials, query, 8000, { around: courseSpan(course, [row.lesson.id]) }),
+      passages: passagesFor(materials, query, 8000, { around: courseSpan(course, [row.lesson.id]), sources: row.lesson.sources }),
       previous: previous ? `${previous.title}: ${previous.summary}` : '',
       directive: directive ?? kindDirective,
       style,
@@ -179,14 +191,15 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
   }
 
   // What the materials say about a raised hand: the pages the question names
-  // first, then the passages matching the question and the lesson; when
-  // nothing matches, a lesson's question gets the part of the materials
-  // about where the lesson sits in the course.
+  // first, then the lesson's own pages (the parts matching the question when
+  // they do not all fit), then the passages matching the question and the
+  // lesson; when nothing matches, a lesson's question gets the part of the
+  // materials about where the lesson sits in the course.
   async function askPassages({ course, lesson, materialIds, question }) {
     if (!materialIds?.length) return ''
     const materials = await readMaterials(store, materialIds)
-    const query = [question, lesson?.title, ...(lesson?.concepts ?? []).map(concept => concept.name)].filter(Boolean).join(' ')
-    return passagesFor(materials, query, ASK_PASSAGE_CHARS, { pages: mentionedPages(question), around: course && lesson?.id ? courseSpan(course, [lesson.id]) : undefined })
+    const query = [question, lesson?.title, ...(lesson?.concepts ?? []).map(concept => concept.name), ...(lesson?.terms ?? [])].filter(Boolean).join(' ')
+    return passagesFor(materials, query, ASK_PASSAGE_CHARS, { pages: mentionedPages(question), sources: lesson?.sources, around: course && lesson?.id ? courseSpan(course, [lesson.id]) : undefined })
   }
 
   // A lesson keeps its questions and re-explanations, so they are still on
@@ -644,6 +657,8 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
         concepts: weak,
         estMinutes: Math.min(15, row.lesson.estMinutes || 12),
         kind: 'remedial',
+        sources: row.lesson.sources,
+        terms: row.lesson.terms,
       })
       await courses.saveCourse(course)
     }
@@ -719,7 +734,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       const outline = outlineForPrompt({ units: [unit] })
       const sheet = await generateJson(llm, {
         purpose: 'teach',
-        prompt: cheatsheetPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, passages: passagesFor(materials, outline, 9000, { around: unitSpan(course, unit) }), language: course.language }),
+        prompt: cheatsheetPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, passages: passagesFor(materials, `${outline}\n${lessonQuery(unitLessons(unit))}`, 9000, { around: unitSpan(course, unit), sources: sourcesOf(unitLessons(unit)) }), language: course.language }),
         maxTokens: 9000,
         signal: api.signal,
         normalize: normalizeCheatsheet,
@@ -750,7 +765,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     const outline = outlineForPrompt({ units: [unit] })
     // What the unit covers in the course's materials, found by its lessons
     // and concepts.
-    const passages = async () => passagesFor(await readMaterials(store, course.materialIds ?? []), `${outline}\n${concepts.map(concept => concept.name).join(' ')}`, 9000, { around: unitSpan(course, unit) })
+    const passages = async () => passagesFor(await readMaterials(store, course.materialIds ?? []), `${outline}\n${lessonQuery(unitLessons(unit))}`, 9000, { around: unitSpan(course, unit), sources: sourcesOf(unitLessons(unit)) })
     return { course, unit, concepts, outline, passages, about: { title: unit.title, n: index + 1 } }
   }
 
@@ -871,9 +886,11 @@ function countWritten(api, field, total) {
   return fieldCounter(field, count => api.progress(Math.min(count, total), total, 'writing'))
 }
 
+const unitLessons = unit => (unit.lectures ?? []).flatMap(lecture => lecture.lessons ?? [])
+
 // Where a unit sits in its course (see courseSpan).
 function unitSpan(course, unit) {
-  return courseSpan(course, (unit.lectures ?? []).flatMap(lecture => lecture.lessons.map(lesson => lesson.id)))
+  return courseSpan(course, unitLessons(unit).map(lesson => lesson.id))
 }
 
 function pushEvent(progress, event) {

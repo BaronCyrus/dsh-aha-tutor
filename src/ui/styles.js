@@ -283,6 +283,8 @@ a.aha-btn{text-decoration:none}
 .aha-outline li[data-level="1"] .aha-outlineTitle{font-weight:600}
 .aha-outlineTitle{min-width:0;overflow-wrap:anywhere}
 .aha-outline .aha-pageRef{flex:none;color:var(--aha-muted);font-size:${px(13)}}
+.aha-lessonSource{color:var(--aha-muted);font-size:${px(13)};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%;cursor:help}
+.aha-crumb .aha-lessonSource{max-width:none}
 .aha-libraryHitText{font-size:${px(14.5)};line-height:${px(21.5)};overflow-wrap:anywhere}
 .aha-libraryHitText mark{background:color-mix(in srgb,#f2c94c 55%,transparent);color:inherit;border-radius:3px;padding:0 1px}
 @keyframes aha-flash{0%,40%{background:color-mix(in srgb,var(--aha-brand) 16%,transparent)}100%{background:transparent}}

@@ -274,6 +274,17 @@ export function PageRef(props) {
   return <span className="aha-pageRef" title={pdf} data-pdf={pdf ? 'true' : undefined}>{text}</span>
 }
 
+// The pages of the course materials a lesson teaches from: "📖 第 12–15 页",
+// with the material, the contents entry and the PDF pages on hover.
+export function LessonSources({ sources }) {
+  const { t } = useApp()
+  const shown = (sources ?? []).map(source => ({ source, words: source.page ? pageWords(t, source) : null })).filter(({ source, words }) => words || source.title)
+  if (!shown.length) return null
+  const text = shown.map(({ source, words }) => words?.text ?? source.title).join(t('listJoin'))
+  const detail = shown.map(({ source, words }) => [source.materialTitle, source.title, words?.text, words?.pdf].filter(Boolean).join(' · ')).join('\n')
+  return <span className="aha-lessonSource" title={`${t('lessonSourcesTitle')}\n${detail}`}>📖 {text}</span>
+}
+
 // A material's contents: its bookmarks or headings, each with its pages.
 export function OutlineList({ material }) {
   const { t } = useApp()

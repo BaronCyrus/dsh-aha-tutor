@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 
 import { downloadText } from '../api.js'
-import { Confirm, Empty, ErrorLine, errorText, MasteryMeter, Modal, Progress, SourceList, Spinner } from '../components.jsx'
+import { Confirm, Empty, ErrorLine, errorText, LessonSources, MasteryMeter, Modal, Progress, SourceList, Spinner } from '../components.jsx'
 import { useApp, useLoad } from '../hooks.js'
 import { Icon } from '../icons.jsx'
 import { courseProgress, flattenLessons, nextLesson } from '../../core/course-model.js'
@@ -84,6 +84,7 @@ export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
             <span className="aha-dot" data-state={status(lesson.id)} />
             <span style={{ flex: 1, cursor: 'pointer' }} onClick={() => navigate('lesson', { courseId, lessonId: lesson.id })} title={lesson.summary}>{lesson.title}</span>
             {lesson.kind === 'remedial' ? <span className="aha-tag">{t('remedial')}</span> : null}
+            <LessonSources sources={(lesson.sources ?? []).filter(source => course.materialIds?.includes(source.materialId))} />
             {lesson.depth ? <span className="aha-depth" data-depth={lesson.depth} title={t('depthTitle')}>{t(`depth_${lesson.depth}`)}</span> : null}
             <span className="aha-hint">{t('estMinutes', { minutes: lesson.estMinutes })}</span>
             <LessonMeter lesson={lesson} progress={progress} />

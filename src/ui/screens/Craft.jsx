@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { blueprintDiff, diffIsEmpty, LESSON_DEPTHS } from '../../core/course-model.js'
 import { BlueprintMap } from '../BlueprintMap.jsx'
-import { Confirm, ErrorLine, JobProgress, MaterialPicker, SourceList, Spinner } from '../components.jsx'
+import { Confirm, ErrorLine, JobProgress, LessonSources, MaterialPicker, SourceList, Spinner } from '../components.jsx'
 import { useApp, useJob, useLoad } from '../hooks.js'
 import { outlineTree } from '../mindmap.js'
 
@@ -456,6 +456,7 @@ function Blueprint({ course, proposal, progress, boards, job, onChange, adding: 
                 <option value="">{t('depthNone')}</option>
                 {LESSON_DEPTHS.map(depth => <option key={depth} value={depth}>{t(`depth_${depth}`)}</option>)}
               </select>
+              <LessonSources sources={(lesson.sources ?? []).filter(source => course.materialIds?.includes(source.materialId))} />
               <span className="aha-hint">{t('estMinutes', { minutes: lesson.estMinutes })}</span>
               {reworking === key ? <Spinner /> : !started(lesson) ? <span className="aha-menuAnchor">
                 <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" title={t('reworkLesson')} aria-label={t('reworkLesson')} aria-expanded={reworkMenu === key} onClick={() => setReworkMenu(open => (open === key ? null : key))}>✦</button>

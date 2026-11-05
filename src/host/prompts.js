@@ -152,7 +152,20 @@ function sizeGuidance(timeline, size) {
   return `Size the course to the goal first. When the goal is a single idea or names a time budget ("in 20 minutes", "one evening", "this weekend"), fit it: one unit with a single lecture of 1–4 lessons can be the whole course. Never pad with filler lessons. ${broad}`
 }
 
-export function blueprintPrompt({ goal, language, intake, materialsSummary, profile, timeline, size, weeklyMinutes, sources }) {
+// How lessons name the pages of the materials they teach from (see
+// lesson-sources.js): the references of the materials' contents entries,
+// and words to find the pages by when the materials are in another language.
+// who: the lessons asked to.
+function sourcingRules(sourcing, who = 'Each lesson') {
+  const rules = []
+  if (sourcing?.refs) rules.push(`- ${who} that teaches from the materials' contents gets "src": the bracketed references of the contents entries it covers, in reading order, such as "src":["M1.3","M1.4"]. If it covers only some pages of a long entry, add those pages as the contents list them: "M1.3:12-14". A lesson that no entry covers gets "src":[]. Use only references listed above.`)
+  if (sourcing?.termsLanguage) rules.push(`- The materials are written in ${languageName(sourcing.termsLanguage)}. ${who} gets "terms": 2–5 of its key terms as the materials word them, in ${languageName(sourcing.termsLanguage)}, so that its pages can be found.`)
+  return rules.join('\n')
+}
+
+const sourcingFields = sourcing => `${sourcing?.refs ? ',"src":["M1.3"]' : ''}${sourcing?.termsLanguage ? ',"terms":["…"]' : ''}`
+
+export function blueprintPrompt({ goal, language, intake, materialsSummary, profile, timeline, size, weeklyMinutes, sources, sourcing }) {
   return {
     system: join(PERSONA, `You design personal courses with the care of an experienced curriculum designer: clear prerequisites first, one new idea per lesson, frequent practice, and applied projects that make the knowledge usable. ${languageRule(language)}`, JSON_ONLY),
     user: join(
@@ -165,25 +178,29 @@ export function blueprintPrompt({ goal, language, intake, materialsSummary, prof
 - ${sizeGuidance(timeline, size)}${weeklyMinutes ? ` The learner can study about ${weeklyMinutes} minutes per week.` : ''}
 - Structure: units → lectures (1–5 per unit) → lessons (1–5 per lecture). Each lesson takes 10–25 minutes and teaches one coherent idea.
 - Order lessons so every prerequisite comes first. Start from where the learner is, not from zero if they already know the basics.
-- If materials were provided, follow their scope and order where sensible.
+- If materials were provided, follow their scope and order where sensible.${sourcingRules(sourcing) ? `\n${sourcingRules(sourcing)}` : ''}
 - If web sources are given, use them for scope, ordering and current practice, and prefer what several of them agree on.
 - Each lesson lists 1–3 learning objectives (observable: "compute…", "explain why…") and 1–4 key concepts (short names).
 - Give each lesson a "depth": "intuition" (a feel for the idea through pictures and cases), "definition" (stating it precisely), "derivation" (deriving or proving it), "application" (using it on problems) or "extension" (edge cases, generalizations, connections). Let ideas be felt before they are formalized.
 - Add 1–3 projects (one is enough for a short course) that apply the course to something real for this learner, placed after the units they depend on. Use "kind":"code" only when the project is mainly programming or data work.
 - Pick one emoji that fits the subject.
 
-Return {"title":"…","subtitle":"one line promise of the course","emoji":"…","summary":"2–3 sentences: who it is for, what they will be able to do","level":"beginner|intermediate|advanced","units":[{"title":"…","summary":"…","objectives":["…"],"lectures":[{"title":"…","summary":"…","lessons":[{"title":"…","summary":"…","objectives":["…"],"concepts":["…"],"estMinutes":15,"depth":"intuition|definition|derivation|application|extension"}]}]}],"projects":[{"title":"…","kind":"code|writing|analysis|design|practice|other","brief":"…","skills":["…"],"unitIndex":<0-based unit after which it fits>,"milestones":["…"],"rubric":[{"criterion":"…","points":10}]}]}`,
+Return {"title":"…","subtitle":"one line promise of the course","emoji":"…","summary":"2–3 sentences: who it is for, what they will be able to do","level":"beginner|intermediate|advanced","units":[{"title":"…","summary":"…","objectives":["…"],"lectures":[{"title":"…","summary":"…","lessons":[{"title":"…","summary":"…","objectives":["…"],"concepts":["…"],"estMinutes":15,"depth":"intuition|definition|derivation|application|extension"${sourcingFields(sourcing)}}]}]}],"projects":[{"title":"…","kind":"code|writing|analysis|design|practice|other","brief":"…","skills":["…"],"unitIndex":<0-based unit after which it fits>,"milestones":["…"],"rubric":[{"criterion":"…","points":10}]}]}`,
     ),
   }
 }
 
-export function revisePrompt({ blueprint, instruction, language }) {
+// materials, sourcing: the course's materials with references, when lessons
+// you add or change should name their pages (see blueprintPrompt).
+export function revisePrompt({ blueprint, instruction, language, materials, sourcing }) {
+  const rules = sourcingRules(sourcing, 'Every lesson you add or change')
   return {
     system: join(PERSONA, `You revise course blueprints precisely as asked, keeping everything else intact. ${languageRule(language)}`, JSON_ONLY),
     user: join(
       block('current_blueprint', blueprint),
+      rules ? block('materials', materials) : '',
       block('change_request', instruction),
-      'Apply the change request and return the complete revised blueprint in the same JSON shape. Keep the "id" field of every unit, lecture, lesson and concept you do not substantially change; new items get no id.',
+      `Apply the change request and return the complete revised blueprint in the same JSON shape. Keep the "id" field of every unit, lecture, lesson and concept you do not substantially change; new items get no id.${rules ? `\n${rules}\nLessons you keep as they are need neither.` : ''}`,
     ),
   }
 }
@@ -196,7 +213,8 @@ const ITEM_FIGURE = 'When a figure makes a question clearer (a shape to measure,
 
 // Materials added to a course after it was designed: how the outline should
 // use them. `passages` are excerpts spread across each new material.
-export function materialsRevisePrompt({ blueprint, materials, passages, instruction, language }) {
+export function materialsRevisePrompt({ blueprint, materials, passages, instruction, language, sourcing }) {
+  const rules = sourcingRules(sourcing, 'Every lesson you add or change, and every lesson the new materials cover,')
   return {
     system: join(PERSONA, `You revise course blueprints to make good use of materials the learner has added, keeping everything else intact. ${languageRule(language)}`, JSON_ONLY),
     user: join(
@@ -204,7 +222,7 @@ export function materialsRevisePrompt({ blueprint, materials, passages, instruct
       block('new_materials', materials),
       block('material_passages', passages),
       block('learner_request', instruction),
-      `The learner added these materials to the course. Revise the blueprint so the course uses them: add lessons, or a unit, for what they cover that the course lacks, placed where the prerequisites allow; take existing lessons deeper where the materials go further; follow any request above. Keep everything else as it is, and remove a lesson only if the materials show it is wrong. Keep the "id" of every unit, lecture, lesson and concept you do not substantially change; new items get no id. Give every new lesson a "depth". Return the complete revised blueprint in the same JSON shape.`,
+      `The learner added these materials to the course. Revise the blueprint so the course uses them: add lessons, or a unit, for what they cover that the course lacks, placed where the prerequisites allow; take existing lessons deeper where the materials go further; follow any request above. Keep everything else as it is, and remove a lesson only if the materials show it is wrong. Keep the "id" of every unit, lecture, lesson and concept you do not substantially change; new items get no id. Give every new lesson a "depth". Return the complete revised blueprint in the same JSON shape.${rules ? `\n${rules}` : ''}`,
     ),
   }
 }

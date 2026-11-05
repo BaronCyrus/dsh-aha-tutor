@@ -2,8 +2,9 @@
 // concepts at hand, and the material passages relevant to a lesson.
 
 import { conceptIndex, findLesson } from '../core/course-model.js'
+import { boundChunks } from '../core/lesson-sources.js'
 import { summarizeForPrompt } from '../core/mastery.js'
-import { fitPassages, formatPassages, samplePassages, selectPassages } from '../core/retrieval.js'
+import { buildIndex, fitPassages, formatPassages, samplePassages, search, selectPassages } from '../core/retrieval.js'
 
 export const EMPTY_PROFILE = Object.freeze({ name: '', background: '', goals: [], strengths: [], weaknesses: [], preferences: {}, notes: [], updatedAt: null })
 
@@ -60,15 +61,17 @@ export function entryPages(entry) {
 }
 
 // A material's outline for a prompt, one entry a line, indented by level,
-// with its pages. A long outline loses its deepest levels first.
-export function outlineText(outline, { maxChars = 2500 } = {}) {
-  let entries = outline?.entries ?? []
-  const size = list => list.reduce((sum, entry) => sum + entry.title.length + entry.level * 2 + 16, 0)
+// with its pages. A long outline loses its deepest levels first. ref: the
+// material's reference ("M1"), to number the entries ("[M1.3]") by their
+// place in the whole outline.
+export function outlineText(outline, { maxChars = 2500, ref } = {}) {
+  let entries = (outline?.entries ?? []).map((entry, index) => ({ ...entry, n: index + 1 }))
+  const size = list => list.reduce((sum, entry) => sum + entry.title.length + entry.level * 2 + (ref ? 24 : 16), 0)
   while (size(entries) > maxChars && entries.some(entry => entry.level > 1)) {
     const deepest = Math.max(...entries.map(entry => entry.level))
     entries = entries.filter(entry => entry.level < deepest)
   }
-  const value = entries.map(entry => `${'  '.repeat(entry.level - 1)}- ${entry.title}${entryPages(entry) ? ` (${entryPages(entry)})` : ''}`).join('\n')
+  const value = entries.map(entry => `${'  '.repeat(entry.level - 1)}- ${ref ? `[${ref}.${entry.n}] ` : ''}${entry.title}${entryPages(entry) ? ` (${entryPages(entry)})` : ''}`).join('\n')
   return value.length > maxChars ? `${value.slice(0, value.lastIndexOf('\n', maxChars))}\n…` : value
 }
 
@@ -80,20 +83,49 @@ export function materialTopics(meta) {
   return top.length ? top.map(entry => entry.title).slice(0, 60).join('; ') : (meta?.brief?.topics ?? []).join('; ')
 }
 
-export function materialsSummary(materials) {
+// The materials for course design: what each is, and its contents with
+// pages. refs: number the materials and their contents entries (see
+// lesson-sources.js), the first one as M<offset + 1>.
+export function materialsSummary(materials, { refs = false, offset = 0 } = {}) {
   const share = Math.max(800, Math.floor(6000 / Math.max(1, materials.length)))
-  return materials.map(({ meta }) => {
+  return materials.map(({ meta }, index) => {
+    const ref = refs ? `M${offset + index + 1}` : ''
     const size = meta.pages ? `${meta.pages} pages` : meta.slides ? `${meta.slides} slides` : meta.kind
-    const lines = [`- ${meta.title} (${size})`]
+    const lines = [`- ${ref ? `[${ref}] ` : ''}${meta.title} (${size})`]
     if (meta.brief?.summary) lines.push(`  ${meta.brief.summary}`)
     if (meta.outline?.entries?.length) {
       lines.push(`  Contents${meta.printed ? ' (pages as printed in it)' : ''}:`)
-      lines.push(outlineText(meta.outline, { maxChars: share }).split('\n').map(line => `    ${line}`).join('\n'))
+      lines.push(outlineText(meta.outline, { maxChars: share, ref }).split('\n').map(line => `    ${line}`).join('\n'))
     } else if (meta.brief?.topics?.length) {
       lines.push(`  Topics: ${meta.brief.topics.slice(0, 24).join('; ')}`)
     }
     return lines.join('\n')
   }).join('\n')
+}
+
+// The language a material is written in, from a sample of its text: the
+// script most of its letters are in.
+export function materialLanguage(chunks) {
+  const sample = (chunks ?? []).filter((chunk, index, all) => index < 4 || index === Math.floor(all.length / 2)).map(chunk => chunk.text).join(' ').slice(0, 20000)
+  const han = (sample.match(/[\u4e00-\u9fff]/gu) ?? []).length
+  const kana = (sample.match(/[\u3040-\u30ff]/gu) ?? []).length
+  const hangul = (sample.match(/[\uac00-\ud7af]/gu) ?? []).length
+  const latin = (sample.match(/[a-z]/giu) ?? []).length
+  const top = Math.max(han, kana, hangul, latin)
+  if (!top) return null
+  if (top === latin) return 'en'
+  if (top === hangul) return 'ko'
+  return kana > han / 4 ? 'ja' : 'zh-CN'
+}
+
+// What course design is asked for when lessons are bound to materials: the
+// contents references, when a material has contents; words in a material's
+// own language, when it is not the course's.
+export function sourcing(materials, language) {
+  const base = code => String(code ?? '').split('-')[0]
+  const outlined = materials.some(({ meta }) => meta.outline?.entries?.length)
+  const other = materials.map(({ chunks }) => materialLanguage(chunks)).find(code => code && base(code) !== base(language)) ?? null
+  return { refs: outlined, termsLanguage: other }
 }
 
 // Said before excerpts that were sampled because no passage matched.
@@ -103,38 +135,62 @@ export const SAMPLED_NOTE = '(No passage of the materials matched these words. T
 // page number printed on it, else its place in the file.
 const pageOf = chunk => chunk.label ?? (chunk.page ? String(chunk.page) : null)
 
-// The passages of some materials a prompt needs, within maxChars, each
-// material its share: the pages the learner named first (`pages`, page
-// numbers as strings), then the passages matching `query`, best first.
-// When nothing in any material matches, excerpts from `around` (see
-// samplePassages) stand in, introduced by SAMPLED_NOTE. Returns the text
-// for the prompt and the passages in it.
-export function materialPassages(materials, { query = '', maxChars = 9000, around, pages = [] } = {}) {
+// The passages of some materials a prompt needs, within maxChars: the pages
+// the learner named first (`pages`, page numbers as printed), then the
+// pages the lesson is bound to (`sources`, see lesson-sources.js; the parts
+// matching `query` when they do not all fit), then the passages matching
+// `query` anywhere, best first, each material its share. When nothing in
+// any material matches, excerpts from `around` (see samplePassages) stand
+// in, introduced by SAMPLED_NOTE. Returns the text for the prompt and the
+// passages in it.
+export function materialPassages(materials, { query = '', maxChars = 9000, around, pages = [], sources = [] } = {}) {
   const usable = materials.filter(({ chunks }) => chunks?.length)
   if (!usable.length) return { text: '', passages: [], sampled: false }
-  const share = Math.max(600, Math.floor(maxChars / usable.length))
-  const named = new Set(pages.map(String))
-  const pick = sample => usable.map(({ meta, chunks }) => {
-    const own = chunks.map(chunk => ({ ...chunk, source: meta.title, materialId: meta.id }))
-    if (sample) return { meta, picked: samplePassages(own, { maxChars: share, around }).map(chunk => ({ ...chunk, sampled: true })) }
-    const first = named.size ? fitPassages(own.filter(chunk => named.has(pageOf(chunk))), Math.floor(share * 0.6)) : []
-    const taken = new Set(first.map(chunk => chunk.id))
-    const room = share - first.reduce((sum, chunk) => sum + chunk.text.length, 0)
-    const rest = !query && first.length ? [] : selectPassages(own.filter(chunk => !taken.has(chunk.id)), query, { maxChars: room, fallback: 'none' })
-    return { meta, picked: [...first, ...rest] }
-  })
-  let blocks = pick(false)
-  const sampled = Boolean(query) && !blocks.some(block => block.picked.length)
-  if (sampled) blocks = pick(true)
-  // Many materials together still keep to the budget, in their order.
-  const kept = []
+  const own = usable.map(({ meta, chunks }) => ({ meta, chunks: chunks.map(chunk => ({ ...chunk, source: meta.title, materialId: meta.id })) }))
+  const keyOf = chunk => `${chunk.materialId}:${chunk.id}`
+  const sizeOf = list => list.reduce((sum, chunk) => sum + chunk.text.length, 0)
+  const picked = own.map(() => [])
+  const taken = new Set()
   let left = maxChars
-  for (const block of blocks) {
-    const picked = left >= 300 ? fitPassages(block.picked, left) : []
-    if (!picked.length) continue
-    left -= picked.reduce((sum, chunk) => sum + chunk.text.length, 0)
-    kept.push({ meta: block.meta, picked })
+  const take = (list, room) => {
+    const fitted = fitPassages(list.filter(chunk => !taken.has(keyOf(chunk))), Math.min(room, left))
+    for (const chunk of fitted) {
+      picked[own.findIndex(material => material.meta.id === chunk.materialId)].push(chunk)
+      taken.add(keyOf(chunk))
+    }
+    left -= sizeOf(fitted)
   }
+  const named = new Set(pages.map(String))
+  if (named.size) take(own.flatMap(material => material.chunks.filter(chunk => named.has(pageOf(chunk)))), Math.floor(maxChars * 0.4))
+  if (sources?.length) {
+    const bound = own.flatMap(material => boundChunks(sources, material.meta.id, material.chunks)).filter(chunk => !taken.has(keyOf(chunk)))
+    const room = Math.floor(maxChars * 0.6)
+    if (sizeOf(bound) <= room || !query) {
+      take(bound, room)
+    } else {
+      // The parts of a long stretch that match best, in the book's order.
+      const best = new Set(fitPassages(search(buildIndex(bound), query, { limit: bound.length }).map(entry => entry.chunk), room).map(keyOf))
+      take(bound.filter(chunk => best.has(keyOf(chunk))), room)
+    }
+  }
+  if (left >= 300) {
+    const share = Math.max(600, Math.floor(left / own.length))
+    const nothingYet = picked.every(list => !list.length)
+    for (const material of own) {
+      if (!query && !nothingYet) break
+      take(selectPassages(material.chunks.filter(chunk => !taken.has(keyOf(chunk))), query, { maxChars: share, fallback: 'none' }), share)
+    }
+  }
+  const sampled = Boolean(query) && picked.every(list => !list.length)
+  if (sampled) {
+    const share = Math.max(600, Math.floor(maxChars / own.length))
+    left = maxChars
+    own.forEach((material, index) => {
+      picked[index] = fitPassages(samplePassages(material.chunks, { maxChars: Math.min(share, left), around }), Math.max(0, left)).map(chunk => ({ ...chunk, sampled: true }))
+      left -= sizeOf(picked[index])
+    })
+  }
+  const kept = own.map((material, index) => ({ meta: material.meta, picked: picked[index] })).filter(block => block.picked.length)
   const text = kept.map(block => formatPassages(block.picked, block.meta.title)).join('\n\n')
   return { text: text && sampled ? `${SAMPLED_NOTE}\n\n${text}` : text, passages: kept.flatMap(block => block.picked), sampled }
 }

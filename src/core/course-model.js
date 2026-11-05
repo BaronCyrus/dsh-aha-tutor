@@ -3,6 +3,7 @@
 // progress. Every limit here protects the UI and the token budget.
 
 import { newId } from './ids.js'
+import { normalizeSources, normalizeTerms } from './lesson-sources.js'
 import { normalizePlot } from './plot.js'
 
 export const COURSE_SCHEMA_VERSION = 1
@@ -115,9 +116,14 @@ function keepId(value, prefix) {
 // It shapes the board and shows beside the lesson.
 export const LESSON_DEPTHS = Object.freeze(['intuition', 'definition', 'derivation', 'application', 'extension'])
 
+// A lesson made from the course's materials keeps the pages it teaches
+// from (`sources`, see lesson-sources.js) and words to find them by in the
+// materials' language (`terms`).
 export function normalizeLesson(raw) {
   const title = text(raw?.title, 120)
   if (!title) return null
+  const sources = normalizeSources(raw?.sources)
+  const terms = normalizeTerms(raw?.terms)
   return {
     id: keepId(raw?.id, 'les'),
     title,
@@ -127,6 +133,8 @@ export function normalizeLesson(raw) {
     estMinutes: minutes(raw?.estMinutes ?? raw?.minutes),
     kind: ['lesson', 'remedial', 'review', 'challenge'].includes(raw?.kind) ? raw.kind : 'lesson',
     ...(LESSON_DEPTHS.includes(raw?.depth) ? { depth: raw.depth } : {}),
+    ...(sources.length ? { sources } : {}),
+    ...(terms.length ? { terms } : {}),
   }
 }
 

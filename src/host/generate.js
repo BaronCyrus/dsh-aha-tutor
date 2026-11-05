@@ -86,12 +86,23 @@ export function writingHint(partial) {
 
 const PROGRESS_EVERY_MS = 250
 
+// A board with each step passed through clean(step) (see scrubStep), and
+// marks pointing at ops that cleaning left out dropped.
+function cleanBoard(board, clean) {
+  if (!clean) return board
+  const steps = board.steps.map(step => clean(step))
+  const known = new Set(steps.flatMap(step => step.ops.map(op => op.id)))
+  return { ...board, steps: steps.map(step => ({ ...step, ops: step.ops.filter(op => op.t !== 'mark' || known.has(op.ref)) })) }
+}
+
 // Streams a board. onStep(step, index) fires for each finished step, with the
 // same ids the final board will have. onProgress({ phase, thinking, chars,
 // steps, current }) reports what the model is doing: 'starting' before
 // anything arrives, 'thinking' while it reasons, 'writing' with the step
-// being written and its hint. Returns the normalized board.
-export async function generateSteps(llm, { purpose = 'teach', effort, prompt, maxTokens = 12000, signal, conceptIds = [], onStep, onProgress, progressEveryMs = PROGRESS_EVERY_MS, minSteps = 1, images }) {
+// being written and its hint. clean(step), when given, changes every step
+// before it is shown or kept (pages not read are left out). Returns the
+// normalized board.
+export async function generateSteps(llm, { purpose = 'teach', effort, prompt, maxTokens = 12000, signal, conceptIds = [], onStep, onProgress, progressEveryMs = PROGRESS_EVERY_MS, minSteps = 1, images, clean }) {
   const raw = []
   let buffer = ''
   let emitted = 0
@@ -109,7 +120,7 @@ export async function generateSteps(llm, { purpose = 'teach', effort, prompt, ma
     if (!raw.length) return
     let board
     try {
-      board = normalizeBoard(raw, { conceptIds })
+      board = cleanBoard(normalizeBoard(raw, { conceptIds }), clean)
     } catch {
       return
     }
@@ -164,7 +175,7 @@ export async function generateSteps(llm, { purpose = 'teach', effort, prompt, ma
   }
   let board
   try {
-    board = normalizeBoard(raw, { conceptIds })
+    board = cleanBoard(normalizeBoard(raw, { conceptIds }), clean)
   } catch {
     throw new TutorError('bad-output', 'The model did not return a usable lesson. Try again or pick a stronger model in settings.')
   }

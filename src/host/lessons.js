@@ -7,7 +7,7 @@
 import { applyFixes, boardForCheck, describeFixes, normalizeVerdict, sanitizeStep, stepJson } from '../core/board-fix.js'
 import { boardToPlainText } from '../core/board-script.js'
 import { conceptIndex, courseSpan, findLesson, insertLesson, lessonAfter, LIMITS, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text, thinEvenly, unitCardRange, unitConcepts, unitQuizRange } from '../core/course-model.js'
-import { mentionedPages } from '../core/citations.js'
+import { checkSheet, mentionedPages, readPages, scrubCard, scrubDeep, scrubItem, scrubPages, scrubStep, shownAside, shownBoard, shownSheet } from '../core/citations.js'
 import { lessonQuery, sourcesOf } from '../core/lesson-sources.js'
 import { answersTo, correctEvidence, itemKey, logEvidence, stateBefore, takeEvidence } from '../core/evidence-log.js'
 import { OBJECTIVE_KINDS } from '../core/grading.js'
@@ -15,7 +15,7 @@ import { assertId, newId } from '../core/ids.js'
 import { cleanResponse, earlierGrade, fixItem, itemForCheck, normalizeItemVerdict, regrade, responseText } from '../core/item-fix.js'
 import { createConceptState, masteryPercent, recommendNext } from '../core/mastery.js'
 import { createCard, isDue, review } from '../core/srs.js'
-import { masteryFor, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
+import { allChunks, masteryFor, materialPassages, readMaterials, readProfile, readProgress } from './context.js'
 import { fieldCounter, generateJson, generateSteps, TutorError } from './generate.js'
 import { askPrompt, challengePrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, flashcardsPrompt, gradePrompt, handoutPrompt, lessonPrompt, quizPrompt, reexplainPrompt, verifyItemPrompt, verifyStepPrompt } from './prompts.js'
 
@@ -65,9 +65,9 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       unit: { id: row.unit.id, title: row.unit.title },
       lecture: { id: row.lecture.id, title: row.lecture.title },
       lesson: row.lesson,
-      board,
+      board: shownBoard(board),
       practice,
-      asides: Array.isArray(asides?.items) ? asides.items : [],
+      asides: Array.isArray(asides?.items) ? asides.items.map(shownAside) : [],
       state: progress.lessons?.[lessonId] ?? { status: 'new', stepIndex: 0 },
       next: lessonAfter(course, lessonId)?.lesson ?? null,
       job: jobs.running(`board:${courseId}:${lessonId}`),
@@ -85,6 +85,9 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     const previousId = lessonsInOrder[lessonsInOrder.indexOf(row.lesson.id) - 1]
     const previous = previousId ? findLesson(course, previousId)?.lesson : null
     const kindDirective = row.lesson.kind === 'remedial' ? 'remediate' : row.lesson.kind === 'review' ? 'review' : row.lesson.kind === 'challenge' ? 'challenge' : undefined
+    // The board names only pages it was given.
+    const read = materialPassages(materials, { query, maxChars: 8000, around: courseSpan(course, [row.lesson.id]), sources: row.lesson.sources })
+    const allowed = readPages(read.passages)
     const prompt = lessonPrompt({
       course,
       unit: row.unit,
@@ -92,12 +95,12 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       lesson: row.lesson,
       language: course.language,
       learner: { profile, mastery: masteryFor(course, progress, row.lesson.id) },
-      passages: passagesFor(materials, query, 8000, { around: courseSpan(course, [row.lesson.id]), sources: row.lesson.sources }),
+      passages: read.text,
       previous: previous ? `${previous.title}: ${previous.summary}` : '',
       directive: directive ?? kindDirective,
       style,
     })
-    return generateSteps(llm, {
+    const board = await generateSteps(llm, {
       purpose: 'teach',
       effort: 'lowest',
       prompt,
@@ -107,7 +110,9 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       onStep,
       onProgress,
       minSteps: 3,
+      clean: step => scrubStep(step, allowed),
     })
+    return { ...board, pagesChecked: true }
   }
 
   // Generate (or regenerate) a lesson board; steps stream into the job.
@@ -124,7 +129,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       const existing = await store.readJson(store.paths.board(courseId, lessonId), null)
       if (existing) {
         prefetchNext(course, lessonId)
-        return { board: existing }
+        return { board: shownBoard(existing) }
       }
     }
     const job = jobs.start('lesson/board', async api => {
@@ -174,7 +179,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     if (scope?.kind === 'lesson') {
       const { course, row } = await context(scope.courseId, scope.lessonId)
       const writing = followedJob(scope, BOARD_JOBS, { courseId: course.id, lessonId: row.lesson.id })
-      const board = writing ? { steps: writing.partial } : await store.readJson(store.paths.board(course.id, row.lesson.id), null)
+      const board = shownBoard(writing ? { steps: writing.partial, pagesChecked: true } : await store.readJson(store.paths.board(course.id, row.lesson.id), null))
       return { course, lesson: row.lesson, board, language: course.language, writing, materialIds: course.materialIds ?? [] }
     }
     if (scope?.kind === 'thread' || scope?.kind === 'short') {
@@ -182,7 +187,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       const writing = thread ? followedJob(scope, ['assist/turn'], { threadId: scope.id }) : followedJob(scope, ['short/make'], { id: scope.id })
       const item = await store.readJson(store.paths.item(thread ? 'assist' : 'shorts', scope.id), null)
       if (!item && !writing) throw new TutorError('not-found', 'Not found')
-      const board = writing ? { steps: writing.partial } : thread ? item.turns?.[Math.max(0, Math.min(item.turns.length - 1, Number(scope.turn) || 0))]?.board : item.board
+      const board = shownBoard(writing ? { steps: writing.partial, pagesChecked: true } : thread ? item.turns?.[Math.max(0, Math.min(item.turns.length - 1, Number(scope.turn) || 0))]?.board : item.board)
       // A new thread or short has no saved language yet: its steps are written in it.
       const language = item?.language ?? detectLanguage((board?.steps ?? []).map(step => step.say).join(' '))
       return { course: null, lesson: { title: item?.title ?? writing.meta?.title ?? '', objectives: [] }, board, language, writing, materialIds: thread ? item?.materialIds ?? [] : [] }
@@ -195,12 +200,19 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
   // they do not all fit), then the passages matching the question and the
   // lesson; when nothing matches, a lesson's question gets the part of the
   // materials about where the lesson sits in the course.
+  // Returns the text for the prompt and the pages in it.
   async function askPassages({ course, lesson, materialIds, question }) {
-    if (!materialIds?.length) return ''
+    if (!materialIds?.length) return { text: '', read: new Set() }
     const materials = await readMaterials(store, materialIds)
     const query = [question, lesson?.title, ...(lesson?.concepts ?? []).map(concept => concept.name), ...(lesson?.terms ?? [])].filter(Boolean).join(' ')
-    return passagesFor(materials, query, ASK_PASSAGE_CHARS, { pages: mentionedPages(question), sources: lesson?.sources, around: course && lesson?.id ? courseSpan(course, [lesson.id]) : undefined })
+    const found = materialPassages(materials, { query, maxChars: ASK_PASSAGE_CHARS, pages: mentionedPages(question), sources: lesson?.sources, around: course && lesson?.id ? courseSpan(course, [lesson.id]) : undefined })
+    return { text: found.text, read: readPages(found.passages) }
   }
+
+  // The pages an answer at the board may name: those it was given, and those
+  // the board it answers on already names (they were checked when it was
+  // written).
+  const pagesFor = (read, ...texts) => new Set([...(read ?? []), ...texts.flatMap(value => mentionedPages(value))])
 
   // A lesson keeps its questions and re-explanations, so they are still on
   // the board (and in the classroom's transcript) when the learner comes back.
@@ -224,15 +236,17 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       const profile = await readProfile(store)
       const boardSoFar = board ? boardToPlainText(board, { uptoStep: Number(stepIndex) || 0, maxChars: 6000 }) : ''
       const passages = await askPassages({ course, lesson, materialIds, question: request })
+      const allowed = pagesFor(passages.read, boardSoFar)
       const answer = await generateSteps(llm, {
         purpose: 'quick',
-        prompt: askPrompt({ course, lesson, language, boardSoFar, question: request, learner: { profile }, passages }),
+        prompt: askPrompt({ course, lesson, language, boardSoFar, question: request, learner: { profile }, passages: passages.text }),
         maxTokens: 5000,
         signal: api.signal,
         conceptIds: lesson?.concepts?.map(concept => concept.id) ?? [],
         onStep: step => api.push(step),
+        clean: step => scrubStep(step, allowed),
       })
-      const aside = await keepAside(scope, { kind: 'question', question: request, anchorStepId: anchorFor(board, stepIndex, anchorStepId), steps: answer.steps })
+      const aside = await keepAside(scope, { kind: 'question', question: request, anchorStepId: anchorFor(board, stepIndex, anchorStepId), steps: answer.steps, pagesChecked: true })
       if (scope.kind === 'lesson') await logEvent(scope.courseId, { type: 'question', lessonId: scope.lessonId, text: request.slice(0, 200) })
       return { steps: answer.steps, aside }
     })
@@ -244,16 +258,19 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       if (!board?.steps?.length) throw new TutorError('no-board', 'The board is not written yet. Try again once its first step is up.')
       const index = Math.min(board.steps.length - 1, Math.max(0, Number(stepIndex) || 0))
       const step = boardToPlainText({ steps: [board.steps[index]] }, { maxChars: 3000 })
+      const boardSoFar = boardToPlainText(board, { uptoStep: index, maxChars: 5000 })
+      const allowed = pagesFor(null, step, boardSoFar)
       const answer = await generateSteps(llm, {
         purpose: 'teach',
         effort: 'lowest',
-        prompt: reexplainPrompt({ lesson, language, step, boardSoFar: boardToPlainText(board, { uptoStep: index, maxChars: 5000 }), style }),
+        prompt: reexplainPrompt({ lesson, language, step, boardSoFar, style }),
         maxTokens: 6000,
         signal: api.signal,
         conceptIds: lesson?.concepts?.map(concept => concept.id) ?? [],
         onStep: next => api.push(next),
+        clean: next => scrubStep(next, allowed),
       })
-      const aside = await keepAside(scope, { kind: 'reexplain', style, anchorStepId: anchorFor(board, index, anchorStepId), steps: answer.steps })
+      const aside = await keepAside(scope, { kind: 'reexplain', style, anchorStepId: anchorFor(board, index, anchorStepId), steps: answer.steps, pagesChecked: true })
       if (scope.kind === 'lesson' && course) {
         const conceptIds = lesson.concepts.map(concept => concept.id)
         await record({ courseId: course.id, lessonId: lesson.id, conceptIds, evidence: { kind: 'reexplain' } })
@@ -270,7 +287,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     const stepId = String(target?.stepId ?? '')
     if (target?.asideId) {
       const kept = scope.kind === 'lesson' ? await store.readJson(store.paths.asides(scope.courseId, scope.lessonId), null) : null
-      const aside = kept?.items?.find(item => item.id === target.asideId)
+      const aside = shownAside(kept?.items?.find(item => item.id === target.asideId))
       const index = aside?.steps?.findIndex(item => item.id === stepId) ?? -1
       if (index < 0) throw new TutorError('not-found', 'Not found')
       const anchor = board?.steps?.findIndex(step => step.id === aside.anchorStepId) ?? -1
@@ -341,6 +358,8 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     return jobs.start('lesson/challenge', async api => {
       const { course, lesson, board, language, writing } = await scopeBoard(scope)
       const place = await challengedPlace(scope, board, { ...target, anchorStepId })
+      // Fixes and the answer name only pages the board already names.
+      const allowed = pagesFor(null, boardToPlainText({ steps: place.steps }, { maxChars: 20000 }), boardToPlainText({ steps: place.context }, { maxChars: 20000 }))
       api.preview({ phase: 'checking' })
       const checked = await generateJson(llm, {
         purpose: 'teach',
@@ -348,7 +367,10 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
         prompt: verifyStepPrompt({ course, lesson, language, board: boardForCheck(place.steps, place.step.id), step: stepJson(place.step, { full: true }), stepId: place.step.id, note: doubt }),
         maxTokens: 6000,
         signal: api.signal,
-        normalize: raw => normalizeVerdict(raw, place.steps),
+        normalize: raw => {
+          const verdict = normalizeVerdict(raw, place.steps)
+          return { ...verdict, fixes: verdict.fixes.map(fix => checkedFix(fix, allowed)) }
+        },
       })
       api.preview({ phase: 'answering', verdict: checked.verdict })
       const answer = await generateSteps(llm, {
@@ -369,9 +391,10 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
         signal: api.signal,
         conceptIds: lesson?.concepts?.map(concept => concept.id) ?? [],
         onStep: step => api.push(step),
+        clean: step => scrubStep(step, allowed),
       })
       const fixes = checked.fixes.length ? await storeFixes(scope, place, checked.fixes, writing) : []
-      const aside = await keepAside(scope, { kind: 'challenge', verdict: checked.verdict, note: doubt, summary: checked.summary, anchorStepId: anchorFor(board, stepIndex, anchorStepId), steps: answer.steps })
+      const aside = await keepAside(scope, { kind: 'challenge', verdict: checked.verdict, note: doubt, summary: checked.summary, anchorStepId: anchorFor(board, stepIndex, anchorStepId), steps: answer.steps, pagesChecked: true })
       if (scope.kind === 'lesson') await logEvent(scope.courseId, { type: 'challenge', lessonId: scope.lessonId, verdict: checked.verdict })
       return { verdict: checked.verdict, summary: checked.summary, target: place.ref, fixes, steps: answer.steps, aside }
     })
@@ -534,7 +557,12 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
         prompt: verifyItemPrompt({ scope: place.scope, language: place.language, item: itemForCheck(place.item), kind: place.item.kind, response: responseText(place.item, answer), grading: told, note: doubt }),
         maxTokens: 5000,
         signal: api.signal,
-        normalize: raw => normalizeItemVerdict(raw, place.item),
+        // The check saw no material: it names only pages the question named.
+        normalize: raw => {
+          const verdict = normalizeItemVerdict(raw, place.item)
+          const allowed = new Set(mentionedPages(JSON.stringify(place.item)))
+          return { ...verdict, summary: scrubPages(verdict.summary, allowed), explanation: scrubPages(verdict.explanation, allowed), item: verdict.item ? scrubItem(verdict.item, allowed) : verdict.item }
+        },
       })
       const item = checked.item ? await place.save(stored => fixItem(stored, checked.item, { at: stamp() })) : place.item
       const result = regrade(item, answer, checked)
@@ -593,8 +621,10 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     return jobs.start('lesson/correct', async api => {
       const { course, lesson, board, language } = await scopeBoard(scope)
       const boardSoFar = board ? boardToPlainText(board, { uptoStep: Number(stepIndex) || 0, maxChars: 5000 }) : ''
+      const allowed = pagesFor(null, boardSoFar)
       const answer = await generateSteps(llm, {
         purpose: 'quick',
+        clean: step => scrubStep(step, allowed),
         prompt: correctionPrompt({
           course,
           lesson,
@@ -609,7 +639,7 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
         conceptIds: lesson?.concepts?.map(concept => concept.id) ?? [],
         onStep: step => api.push(step),
       })
-      const aside = await keepAside(scope, { kind: 'correction', errorTag: text(notes.errorTag, 80), anchorStepId: anchorFor(board, stepIndex, anchorStepId), steps: answer.steps })
+      const aside = await keepAside(scope, { kind: 'correction', errorTag: text(notes.errorTag, 80), anchorStepId: anchorFor(board, stepIndex, anchorStepId), steps: answer.steps, pagesChecked: true })
       return { steps: answer.steps, aside }
     })
   }
@@ -703,16 +733,19 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
       const existing = await store.readJson(store.paths.handout(courseId, lessonId), null)
       if (existing) return { handout: existing }
     }
-    const board = await store.readJson(store.paths.board(courseId, lessonId), null)
+    const board = shownBoard(await store.readJson(store.paths.board(courseId, lessonId), null))
     if (!board?.steps?.length) throw new TutorError('no-board', 'The board is not written yet. Try again once its first step is up.')
     const job = jobs.start('lesson/handout', async api => {
+      const taught = boardToPlainText(board, { maxChars: 12000 })
+      // A handout names only the pages its board names.
+      const allowed = pagesFor(null, taught)
       const made = await generateJson(llm, {
         purpose: 'teach',
         effort: 'lowest',
-        prompt: handoutPrompt({ course, lesson: row.lesson, language: course.language, board: boardToPlainText(board, { maxChars: 12000 }) }),
+        prompt: handoutPrompt({ course, lesson: row.lesson, language: course.language, board: taught }),
         maxTokens: 5000,
         signal: api.signal,
-        normalize: normalizeHandout,
+        normalize: raw => scrubDeep(normalizeHandout(raw), allowed),
       })
       const saved = { ...made, title: made.title || row.lesson.title, lessonId, createdAt: stamp() }
       await store.writeJson(store.paths.handout(courseId, lessonId), saved)
@@ -727,17 +760,18 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     if (!unit) throw new TutorError('not-found', 'Unit not found')
     if (!force) {
       const existing = await store.readJson(store.paths.sheet(courseId, unitId), null)
-      if (existing) return { sheet: existing }
+      if (existing) return { sheet: shownSheet(existing) }
     }
     const job = jobs.start('unit/sheet', async api => {
       const materials = await readMaterials(store, course.materialIds ?? [])
       const outline = outlineForPrompt({ units: [unit] })
+      const read = materialPassages(materials, { query: `${outline}\n${lessonQuery(unitLessons(unit))}`, maxChars: 9000, around: unitSpan(course, unit), sources: sourcesOf(unitLessons(unit)) })
       const sheet = await generateJson(llm, {
         purpose: 'teach',
-        prompt: cheatsheetPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, passages: passagesFor(materials, `${outline}\n${lessonQuery(unitLessons(unit))}`, 9000, { around: unitSpan(course, unit), sources: sourcesOf(unitLessons(unit)) }), language: course.language }),
+        prompt: cheatsheetPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, passages: read.text, language: course.language }),
         maxTokens: 9000,
         signal: api.signal,
-        normalize: normalizeCheatsheet,
+        normalize: raw => checkSheet(normalizeCheatsheet(raw), { read: read.passages, all: allChunks(materials) }),
       })
       const saved = { ...sheet, title: sheet.title || unit.title, unitId, createdAt: stamp() }
       await store.writeJson(store.paths.sheet(courseId, unitId), saved)
@@ -765,7 +799,10 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     const outline = outlineForPrompt({ units: [unit] })
     // What the unit covers in the course's materials, found by its lessons
     // and concepts.
-    const passages = async () => passagesFor(await readMaterials(store, course.materialIds ?? []), `${outline}\n${lessonQuery(unitLessons(unit))}`, 9000, { around: unitSpan(course, unit), sources: sourcesOf(unitLessons(unit)) })
+    const passages = async () => {
+      const found = materialPassages(await readMaterials(store, course.materialIds ?? []), { query: `${outline}\n${lessonQuery(unitLessons(unit))}`, maxChars: 9000, around: unitSpan(course, unit), sources: sourcesOf(unitLessons(unit)) })
+      return { text: found.text, read: readPages(found.passages) }
+    }
     return { course, unit, concepts, outline, passages, about: { title: unit.title, n: index + 1 } }
   }
 
@@ -785,15 +822,16 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     }
     const job = jobs.start('unit/quiz', async api => {
       const range = unitQuizRange(unit)
+      const found = await passages()
       const quiz = await generateJson(llm, {
         purpose: 'teach',
-        prompt: quizPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, concepts: concepts.map(concept => `${concept.id}=${concept.name}`).join(', '), passages: await passages(), language: course.language, range }),
+        prompt: quizPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, concepts: concepts.map(concept => `${concept.id}=${concept.name}`).join(', '), passages: found.text, language: course.language, range }),
         maxTokens: 2000 + range.max * 500,
         signal: api.signal,
         onText: countWritten(api, '"prompt"', range.max),
         normalize: raw => {
           // Too many questions are thinned out evenly: the last lessons keep theirs.
-          const set = { items: thinEvenly(normalizePractice(raw, concepts.map(concept => concept.id), LIMITS.quizItems * 2).items, range.max).map((item, index) => ({ ...item, id: `i${index + 1}` })) }
+          const set = { items: thinEvenly(normalizePractice(raw, concepts.map(concept => concept.id), LIMITS.quizItems * 2).items, range.max).map((item, index) => ({ ...scrubItem(item, found.read), id: `i${index + 1}` })) }
           if (set.items.length < Math.max(3, Math.ceil(range.min / 2))) throw new Error(`The quiz is too short: write at least ${range.min} questions.`)
           return set
         },
@@ -817,14 +855,15 @@ export function createLessons({ store, llm, jobs, courses, learner, now = () => 
     if (existing?.cards?.length) return { deck: existing, unit: about }
     const job = jobs.start('unit/cards', async api => {
       const range = unitCardRange(unit)
+      const found = await passages()
       const cards = await generateJson(llm, {
         purpose: 'teach',
-        prompt: flashcardsPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, concepts: concepts.map(concept => concept.name).join(', '), passages: await passages(), language: course.language, range }),
+        prompt: flashcardsPrompt({ scopeTitle: `${course.title} — ${unit.title}`, outline, concepts: concepts.map(concept => concept.name).join(', '), passages: found.text, language: course.language, range }),
         maxTokens: 2000 + range.max * 250,
         signal: api.signal,
         onText: countWritten(api, '"front"', range.max),
         normalize: raw => {
-          const value = thinEvenly(normalizeCards(raw, LIMITS.cards * 2), range.max).map((card, index) => ({ ...card, id: `c${index + 1}` }))
+          const value = thinEvenly(normalizeCards(raw, LIMITS.cards * 2), range.max).map((card, index) => ({ ...scrubCard(card, found.read), id: `c${index + 1}` }))
           if (value.length < Math.max(4, Math.ceil(range.min / 2))) throw new Error(`Too few cards: write at least ${range.min}.`)
           return value
         },
@@ -887,6 +926,14 @@ function countWritten(api, field, total) {
 }
 
 const unitLessons = unit => (unit.lectures ?? []).flatMap(lecture => lecture.lessons ?? [])
+
+// A fix of a challenged step with its pages checked (see scrubStep).
+function checkedFix(fix, allowed) {
+  if (fix.replace) return { ...fix, replace: scrubStep({ say: '', ops: [fix.replace] }, allowed).ops[0] ?? fix.replace }
+  if (typeof fix.say === 'string') return { ...fix, say: scrubPages(fix.say, allowed) }
+  if (fix.check) return { ...fix, check: scrubItem(fix.check, allowed) }
+  return fix
+}
 
 // Where a unit sits in its course (see courseSpan).
 function unitSpan(course, unit) {

@@ -309,7 +309,7 @@ export function lessonPrompt({ course, unit, lecture, lesson, language, learner,
 - Draw a diagram, chart or plot whenever a picture makes the idea click; a plot with a slider is often the clearest way to show how a formula behaves.
 - Put 2–4 checks after the key ideas, plus one at the end; every check must name its conceptIds.
 - If the lesson works through a calculation or a derivation, make exactly one check a "work" check, right after the key worked example: a similar problem the learner solves alone, writing every step. A lesson without a calculation or derivation gets no "work" check.
-- If source passages are given, stay consistent with them and mention the page when you lean on one.
+- If source passages are given, stay consistent with them, and when you lean on one, name its page as the passage's label gives it (the number printed on that page of the book). Never name a page you were not given.
 - Close with a recap step: a "key" note with the 2–3 takeaways, and say what comes next.
 - Give each step that works towards one of the objectives "goal": its 0-based index in the objectives above (${lesson.objectives.map((objective, index) => `${index} = ${objective}`).join('; ') || 'none'}); leave it out for the hook and the recap. Cover the objectives in order.
 Start with a step whose ops begin with {"t":"title","text":"${lesson.title.replace(/"/gu, '\\"')}"}.`,
@@ -504,9 +504,9 @@ export function cheatsheetPrompt({ scopeTitle, outline, passages, language, focu
       block('outline', outline),
       block('source_passages', passages),
       block('focus', focus),
-      `Write a cheat sheet organized by THEME (not by chapter): group what belongs together even if it was taught in different places, and link related sections. Items are terse: definitions, formulas (LaTeX in "tex"), key facts, worked mini-examples, comparisons, and common pitfalls. Cite the page or slide when an item comes from a source passage. 6–14 sections, 3–10 items each.
+      `Write a cheat sheet organized by THEME (not by chapter): group what belongs together even if it was taught in different places, and link related sections. Items are terse: definitions, formulas (LaTeX in "tex"), key facts, worked mini-examples, comparisons, and common pitfalls. When an item comes from a source passage, cite it: "page" as the passage's label gives it, "source" the material, and "quote" 6–20 words of the passage's text copied exactly (words, not a formula), so that the citation can be checked. Items from elsewhere get no "cite". 6–14 sections, 3–10 items each.
 
-Return {"title":"…","sections":[{"title":"…","related":["<other section title>"],"items":[{"kind":"definition|formula|fact|tip|pitfall|example|compare","title":"…","text":"…","tex":"…","cite":{"page":12,"source":"…"}}]}]}`,
+Return {"title":"…","sections":[{"title":"…","related":["<other section title>"],"items":[{"kind":"definition|formula|fact|tip|pitfall|example|compare","title":"…","text":"…","tex":"…","cite":{"page":"12","source":"…","quote":"…"}}]}]}`,
     ),
   }
 }
@@ -573,7 +573,7 @@ export function summaryPrompt({ scopeTitle, passages, outline, language, focus }
       block('outline', outline),
       block('source_passages', passages),
       block('focus', focus),
-      `Write structured study notes in Markdown: a 3–5 sentence overview, then sections with headings, key points, formulas ($…$ / $$…$$), and short examples, then a "Check yourself" list of 5 questions. Cite pages as (p. N) where the source says so.${focus ? ' Cover only what falls within the learner\'s focus.' : ''}`,
+      `Write structured study notes in Markdown: a 3–5 sentence overview, then sections with headings, key points, formulas ($…$ / $$…$$), and short examples, then a "Check yourself" list of 5 questions. Cite a passage you use as (p. N), with N as its label gives it; never cite a page you were not given.${focus ? ' Cover only what falls within the learner\'s focus.' : ''}`,
     ),
   }
 }

@@ -460,6 +460,7 @@ a.aha-btn{text-decoration:none}
 .aha-sheet[data-highlight=true] .aha-sheetItem[data-kind=formula],.aha-sheet[data-highlight=true] .aha-sheetItem[data-kind=definition]{background:color-mix(in srgb,#ffd64f 26%,transparent);border-radius:4px;padding:0 3px}
 .aha-sheet[data-highlight=true] .aha-sheetItem[data-kind=pitfall]{color:var(--aha-bad)}
 .aha-cite{color:var(--aha-muted);font-size:.85em;margin-left:4px}
+.aha-cite[title]{cursor:help}
 /* Printing shows only the printable part: everything else is taken out, and
    the boxes around it stop scrolling and clipping, so it flows across pages. */
 @media print{body *:not(:has(.aha-printable)):not(.aha-printable):not(.aha-printable *){display:none!important}*:has(.aha-printable){display:block!important;position:static!important;overflow:visible!important;height:auto!important;min-height:0!important;max-height:none!important;width:auto!important;max-width:none!important;transform:none!important;margin:0!important;padding:0!important;border:0!important;box-shadow:none!important;background:#fff!important}.aha-printable{position:static!important;width:auto!important;padding:0 6mm}.aha-noprint{display:none!important}.aha-sheetSection{border-color:#999;background:#fff}}

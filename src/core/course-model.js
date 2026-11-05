@@ -397,13 +397,17 @@ export function normalizeCheatsheet(raw) {
       const body = text(typeof item === 'string' ? item : item?.text ?? item?.body, 800)
       const tex = text(item?.tex ?? item?.latex, 400)
       if (!body && !tex) return null
-      const page = Math.round(Number(item?.cite?.page ?? item?.page))
+      // A citation as the model wrote it: the page, and the words it quotes
+      // so that it can be checked (see checkSheet in citations.js).
+      const cite = item?.cite && typeof item.cite === 'object' ? item.cite : {}
+      const page = text(cite.page ?? item?.page, 16)
+      const quote = text(cite.quote ?? item?.quote, 300)
       return {
         kind: SHEET_KINDS.includes(item?.kind) ? item.kind : 'fact',
         title: text(item?.title ?? item?.term, 120),
         text: body,
         tex,
-        cite: Number.isFinite(page) && page > 0 ? { page, source: text(item?.cite?.source ?? item?.source, 120) } : null,
+        cite: page || quote ? { page, source: text(cite.source ?? item?.source, 120), quote } : null,
       }
     })
     if (!items.length) return null

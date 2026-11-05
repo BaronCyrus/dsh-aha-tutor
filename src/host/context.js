@@ -141,9 +141,10 @@ const pageOf = chunk => chunk.label ?? (chunk.page ? String(chunk.page) : null)
 // matching `query` when they do not all fit), then the passages matching
 // `query` anywhere, best first, each material its share. When nothing in
 // any material matches, excerpts from `around` (see samplePassages) stand
-// in, introduced by SAMPLED_NOTE. Returns the text for the prompt and the
-// passages in it.
-export function materialPassages(materials, { query = '', maxChars = 9000, around, pages = [], sources = [] } = {}) {
+// in, introduced by SAMPLED_NOTE. whole: a material that fits in its share
+// is given whole (a study aid on all of it). Returns the text for the
+// prompt and the passages in it.
+export function materialPassages(materials, { query = '', maxChars = 9000, around, pages = [], sources = [], whole = false } = {}) {
   const usable = materials.filter(({ chunks }) => chunks?.length)
   if (!usable.length) return { text: '', passages: [], sampled: false }
   const own = usable.map(({ meta, chunks }) => ({ meta, chunks: chunks.map(chunk => ({ ...chunk, source: meta.title, materialId: meta.id })) }))
@@ -159,6 +160,10 @@ export function materialPassages(materials, { query = '', maxChars = 9000, aroun
       taken.add(keyOf(chunk))
     }
     left -= sizeOf(fitted)
+  }
+  if (whole) {
+    const share = Math.floor(maxChars / own.length)
+    for (const material of own) if (sizeOf(material.chunks) <= share) take(material.chunks, share)
   }
   const named = new Set(pages.map(String))
   if (named.size) take(own.flatMap(material => material.chunks.filter(chunk => named.has(pageOf(chunk)))), Math.floor(maxChars * 0.4))
@@ -193,6 +198,12 @@ export function materialPassages(materials, { query = '', maxChars = 9000, aroun
   const kept = own.map((material, index) => ({ meta: material.meta, picked: picked[index] })).filter(block => block.picked.length)
   const text = kept.map(block => formatPassages(block.picked, block.meta.title)).join('\n\n')
   return { text: text && sampled ? `${SAMPLED_NOTE}\n\n${text}` : text, passages: kept.flatMap(block => block.picked), sampled }
+}
+
+// Every chunk of some materials, each knowing its material: where a quote
+// is looked for when it is not in the passages a call was given.
+export function allChunks(materials) {
+  return materials.flatMap(({ meta, chunks }) => (chunks ?? []).map(chunk => ({ ...chunk, source: meta.title, materialId: meta.id })))
 }
 
 export function passagesFor(materials, query, maxChars = 9000, options = {}) {

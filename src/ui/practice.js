@@ -4,6 +4,7 @@
 
 import { conceptIndex, nextLesson } from '../core/course-model.js'
 import { masteryPercent, masteryStage, stageForPercent } from '../core/mastery.js'
+import { addDays, parseDay, toDay } from '../core/planner.js'
 
 // The i18n key of each mastery stage.
 export const STAGE_LABELS = Object.freeze({ none: 'stageNone', weak: 'stageWeak', learning: 'stageLearning', proficient: 'stageProficient', mastered: 'stageMastered' })
@@ -48,12 +49,13 @@ export function lessonStage(lesson, progress) {
   return { stage: stageForPercent(percent), percent }
 }
 
-// The one thing a course page suggests: reviews that are due, then the
-// weakest concept, then the next lesson.
-export function courseNextStep(course, progress, { now = Date.now() } = {}) {
+// The one thing a course page suggests: reviews that are due (mistakes:
+// how many of its mistakes are due again), then the weakest concept, then
+// the next lesson.
+export function courseNextStep(course, progress, { now = Date.now(), mistakes = 0 } = {}) {
   const concepts = conceptIndex(course)
   const due = Object.entries(progress?.reviews ?? {}).filter(([id, card]) => concepts.has(id) && Date.parse(card?.dueAt) <= now).length
-  if (due) return { kind: 'review', count: due }
+  if (due || mistakes) return { kind: 'review', count: due, ...(mistakes ? { mistakes } : {}) }
   const weakest = [...concepts.values()]
     .map(concept => ({ concept, state: progress?.concepts?.[concept.id] }))
     .filter(entry => masteryStage(entry.state) === 'weak')
@@ -62,4 +64,26 @@ export function courseNextStep(course, progress, { now = Date.now() } = {}) {
   const next = nextLesson(course, progress)
   if (next) return { kind: 'lesson', lessonId: next.lesson.id, title: next.lesson.title }
   return { kind: 'done', unitId: course.units?.at(-1)?.id ?? null }
+}
+
+// How many of the mistakes a course page lists (see core/mistakes.js
+// listMistakes) are due again.
+export function mistakesDue(rows, now = Date.now()) {
+  return (Array.isArray(rows) ? rows : []).filter(row => !row.resolvedAt && Date.parse(row.dueAt) <= now).length
+}
+
+// A day as the mistake book names it: today, tomorrow, or its date.
+export function dayName(t, at, now = Date.now()) {
+  const day = toDay(new Date(at))
+  const today = toDay(new Date(now))
+  if (day === today) return t('dayToday')
+  if (day === addDays(today, 1)) return t('dayTomorrow')
+  const date = parseDay(day)
+  return t('monthDay', { month: date.getMonth() + 1, day: date.getDate() })
+}
+
+// When a listed mistake comes back, or when it was resolved.
+export function mistakeWhen(t, row, now = Date.now()) {
+  if (row.resolvedAt) return t('mistakeResolvedOn', { day: dayName(t, row.resolvedAt, now) })
+  return Date.parse(row.dueAt) <= now ? t('mistakeDueNow') : t('mistakeDueOn', { day: dayName(t, row.dueAt, now) })
 }

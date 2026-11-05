@@ -66,6 +66,8 @@ export function createStore({ root }) {
     courseDir: id => join(root, 'courses', assertId(id, 'crs')),
     course: id => join(paths.courseDir(id), 'course.json'),
     progress: id => join(paths.courseDir(id), 'progress.json'),
+    // The questions the learner got wrong, with a copy of each (see core/mistakes.js).
+    mistakes: id => join(paths.courseDir(id), 'mistakes.json'),
     intake: id => join(paths.courseDir(id), 'intake.json'),
     proposal: id => join(paths.courseDir(id), 'proposal.json'),
     // The whole-course deck of versions before 1.10; decks are per unit now.

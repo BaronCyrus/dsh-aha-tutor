@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { applyFixes, prefixFixes } from '../core/board-fix.js'
+import { itemSig } from '../core/mistakes.js'
 import { boardScope } from './api.js'
 import { Board, Inline } from './board/Board.jsx'
 import { captionSentences } from './board/inline.js'
@@ -467,9 +468,10 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
       courseId: scope.courseId,
       lessonId: scope.lessonId,
       conceptIds: check?.conceptIds ?? [],
-      evidence: { kind: 'check', score: result.score, confidence: result.confidence, hintsUsed: result.hintsUsed, timeMs: result.timeMs, expectedMs: 40_000, errorTag: result.errorTag },
-      // A check on the board itself is kept there, so a later fix of it grades this answer again.
-      ...(current?.id && !current.aside ? { source: { kind: 'check', courseId: scope.courseId, lessonId: scope.lessonId, stepId: current.id }, response: result.given ?? result.response ?? '' } : {}),
+      evidence: { kind: 'check', score: result.score, correct: result.correct === true, confidence: result.confidence, hintsUsed: result.hintsUsed, timeMs: result.timeMs, expectedMs: 40_000, errorTag: result.errorTag },
+      // A check on the board itself is kept there, so a later fix of it grades
+      // this answer again, and a wrong answer goes to the mistake book.
+      ...(current?.id && !current.aside ? { source: { kind: 'check', courseId: scope.courseId, lessonId: scope.lessonId, stepId: current.id }, response: result.given ?? result.response ?? '', sig: itemSig(check) } : {}),
     }).catch(() => undefined)
   }
 

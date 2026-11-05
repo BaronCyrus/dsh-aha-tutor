@@ -302,6 +302,18 @@ a.aha-btn{text-decoration:none}
 .aha-level[data-level=proficient]{background:color-mix(in srgb,var(--aha-brand) 14%,transparent);color:var(--aha-brand)}
 .aha-level[data-level=mastered]{background:color-mix(in srgb,var(--aha-ok) 16%,transparent);color:var(--aha-ok)}
 .aha-nextStep{flex-direction:row;align-items:center;gap:12px;flex-wrap:wrap;border-color:color-mix(in srgb,var(--aha-brand) 40%,var(--aha-border))}
+.aha-mistakeBook{border-color:color-mix(in srgb,var(--aha-bad) 30%,var(--aha-border))}
+.aha-mistakeList{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.aha-mistakeResolved summary{cursor:pointer;color:var(--aha-muted);font-size:${px(14)}}
+.aha-mistakeResolved[open] summary{margin-bottom:6px}
+.aha-mistakeResolved .aha-mistakeList{opacity:.75}
+.aha-mistakeRow{display:flex;flex-direction:column;gap:4px;min-width:0;padding:10px 0 10px 10px;border-top:1px solid var(--aha-border);border-left:3px solid transparent}
+.aha-mistakeRow[data-due=true]{border-left-color:var(--aha-bad)}
+.aha-mistakePrompt{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;overflow-wrap:anywhere;font-size:${px(15)};line-height:${px(22)}}
+.aha-mistakeAnswer{color:var(--aha-muted);font-size:${px(13.5)};line-height:${px(20)};overflow-wrap:anywhere}
+.aha-mistakeMeta{display:flex;flex-wrap:wrap;gap:2px 12px;color:var(--aha-muted);font-size:${px(13)};line-height:${px(19.5)}}
+.aha-mistakeMeta>span{min-width:0;overflow-wrap:anywhere}
+.aha-mistakeWhen[data-due=true]{color:var(--aha-bad);font-weight:600}
 .aha-sourceList{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px;font-size:${px(14.5)};line-height:${px(21.5)}}
 .aha-sourceList a{color:var(--aha-brand);text-decoration:none;overflow-wrap:anywhere}
 .aha-sourceList a:hover{text-decoration:underline}

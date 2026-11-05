@@ -15,6 +15,7 @@ import { createJobs } from './host/jobs.js'
 import { createLearner } from './host/learner.js'
 import { createLessons } from './host/lessons.js'
 import { createLlmPort } from './host/llm.js'
+import { createMistakes } from './host/mistakes.js'
 import { createPluginManager } from './host/plugin-version.js'
 import { createProjects } from './host/projects.js'
 import { createResearch } from './host/research.js'
@@ -48,10 +49,11 @@ export function apply(ctx) {
 
   let uiLanguage = 'zh-CN'
   const jobs = createJobs({ logger })
-  const learner = createLearner({ store, llm, logger })
+  const mistakes = createMistakes({ store })
+  const learner = createLearner({ store, llm, logger, mistakes })
   const research = createResearch({ getWeb: () => ctx.get?.('web'), llm, logger })
-  const courses = createCourses({ store, llm, jobs, research })
-  const lessons = createLessons({ store, llm, jobs, courses, learner })
+  const courses = createCourses({ store, llm, jobs, research, mistakes })
+  const lessons = createLessons({ store, llm, jobs, courses, learner, mistakes })
   const studio = createStudio({ store, llm, jobs, uiLanguage: () => uiLanguage })
   const projects = createProjects({ store, llm, jobs, courses })
   const samples = createSamples({ dirUrl: new URL('../samples/', import.meta.url), courses })

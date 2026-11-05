@@ -1,13 +1,16 @@
 // The learner across courses: a profile the tutor remembers (and the learner
 // can edit or wipe), the study plan built from every active course, and the
-// review queue fed by spaced repetition.
+// review queue fed by spaced repetition and the mistake books.
 
 import { conceptIndex, findLesson, flattenLessons, text } from '../core/course-model.js'
+import { itemKey } from '../core/evidence-log.js'
 import { newId } from '../core/ids.js'
 import { masteryPercent } from '../core/mastery.js'
+import { dueMistakes, itemSig, MISTAKE_ROUND, mistakeState } from '../core/mistakes.js'
 import { addDays, buildPlan, mergeAgenda, planCalendar, toDay } from '../core/planner.js'
 import { EMPTY_PROFILE, readProfile, readProgress } from './context.js'
 import { generateJson, TutorError } from './generate.js'
+import { createMistakes } from './mistakes.js'
 import { profilePrompt } from './prompts.js'
 
 const PROFILE_REFRESH_MS = 10 * 60_000
@@ -33,7 +36,7 @@ function agendaItem(raw) {
   }
 }
 
-export function createLearner({ store, llm, now = () => new Date(), logger }) {
+export function createLearner({ store, llm, now = () => new Date(), logger, mistakes = createMistakes({ store }) }) {
   let lastRefresh = 0
   let refreshing = null
 
@@ -223,18 +226,34 @@ export function createLearner({ store, llm, now = () => new Date(), logger }) {
     return plan()
   }
 
-  // Due concept reviews → a short mixed practice session.
-  // Due reviews across all courses, or one course's only.
-  async function reviewSession({ limit = 8, courseId } = {}) {
+  // Due reviews → a short mixed practice session, across all courses or one
+  // course's only: the mistakes due again first (the longest due first),
+  // then each due concept's question answered longest ago (or never), of
+  // the ones not in the book as open mistakes. mistakes: a round of due
+  // mistakes alone (more: how many more are due).
+  async function reviewSession({ limit = 8, courseId, mistakes: only = false } = {}) {
     const at = now().getTime()
-    const items = []
-    for (const { course, progress } of await activeCourses()) {
-      if (courseId && course.id !== courseId) continue
+    const active = (await activeCourses()).filter(({ course }) => !courseId || course.id === courseId)
+    const books = new Map()
+    const due = []
+    for (const { course } of active) {
+      books.set(course.id, await mistakes.entries(course))
+      for (const entry of dueMistakes(books.get(course.id), at)) due.push({ course, entry, dueAt: Date.parse(mistakeState(entry).dueAt) })
+    }
+    due.sort((a, b) => a.dueAt - b.dueAt)
+    const room = only ? MISTAKE_ROUND : limit
+    const items = due.slice(0, room).map(({ course, entry }) => mistakeItem(course, entry))
+    if (only) return { items, more: Math.max(0, due.length - room) }
+    // A due concept a mistake already practises needs no other question.
+    const covered = new Set(items.flatMap(entry => (entry.item.conceptIds ?? []).map(id => `${entry.courseId}:${id}`)))
+    for (const { course, progress } of active) {
       const index = conceptIndex(course)
-      const due = Object.entries(progress.reviews ?? {})
-        .filter(([id, card]) => index.has(id) && Date.parse(card.dueAt) <= at)
+      const open = new Set(books.get(course.id).filter(entry => mistakeState(entry)?.resolvedAt === null).map(entry => `${entry.key}~${entry.sig}`))
+      const answered = lastAnswered(progress)
+      const concepts = Object.entries(progress.reviews ?? {})
+        .filter(([id, card]) => index.has(id) && Date.parse(card.dueAt) <= at && !covered.has(`${course.id}:${id}`))
         .sort((a, b) => Date.parse(a[1].dueAt) - Date.parse(b[1].dueAt))
-      for (const [conceptId] of due) {
+      for (const [conceptId] of concepts) {
         if (items.length >= limit) break
         const concept = index.get(conceptId)
         const lesson = findLesson(course, concept.lessonId)?.lesson
@@ -245,15 +264,62 @@ export function createLearner({ store, llm, now = () => new Date(), logger }) {
         const candidates = [
           ...(set?.items ?? []).map(item => ({ item, source: { kind: 'practice', courseId: course.id, lessonId: concept.lessonId, itemId: item.id } })),
           ...(board?.steps ?? []).filter(step => step.check).map(step => ({ item: step.check, source: { kind: 'check', courseId: course.id, lessonId: concept.lessonId, stepId: step.id } })),
-        ].filter(({ item }) => item.conceptIds?.includes(conceptId) && item.kind !== 'short' && item.kind !== 'work')
-        const pick = candidates[Math.floor(Math.random() * candidates.length)]
+        ].filter(({ item, source }) => item.conceptIds?.includes(conceptId) && item.kind !== 'short' && item.kind !== 'work' && !open.has(`${itemKey(source)}~${itemSig(item)}`))
+        const pick = longestAgo(candidates, answered)
         if (pick) items.push({ courseId: course.id, courseTitle: course.title, lessonId: concept.lessonId, lessonTitle: lesson?.title ?? '', conceptId, conceptName: concept.name, item: pick.item, source: pick.source })
       }
     }
     return { items }
   }
 
+  // A mistake as a review question: the question as the learner got it
+  // wrong (fixed since, if a check fixed it), and where its course keeps it.
+  function mistakeItem(course, entry) {
+    const index = conceptIndex(course)
+    const conceptId = [...(entry.item?.conceptIds ?? []), ...(entry.conceptIds ?? [])].find(id => index.has(id)) ?? null
+    const lessonId = entry.lessonId ?? null
+    const state = mistakeState(entry)
+    return {
+      courseId: course.id,
+      courseTitle: course.title,
+      lessonId,
+      lessonTitle: lessonId ? findLesson(course, lessonId)?.lesson.title ?? '' : '',
+      conceptId,
+      conceptName: conceptId ? index.get(conceptId).name : '',
+      item: entry.item,
+      source: { ...entry.source, courseId: course.id },
+      mistake: { wrong: state.wrong, lastWrongAt: state.lastWrongAt },
+    }
+  }
+
   return Object.freeze({ getProfile, saveProfile, clearProfile, removeNote, noteLesson, plan, check, uncheck, savePlanSettings, addExam, removeExam, reviewSession })
+}
+
+// When each question of a course was last answered, by its key (from the
+// recent answers the course logs).
+function lastAnswered(progress) {
+  const times = new Map()
+  for (const entry of Array.isArray(progress?.evidenceLog) ? progress.evidenceLog : []) {
+    if (entry.item?.key) times.set(entry.item.key, Math.max(times.get(entry.item.key) ?? 0, Date.parse(entry.at) || 0))
+  }
+  return times
+}
+
+// The question answered longest ago, one never answered (as far as the log
+// goes) first; a random one among equals.
+function longestAgo(candidates, answered) {
+  let best = []
+  let oldest = Infinity
+  for (const candidate of candidates) {
+    const at = answered.get(itemKey(candidate.source)) ?? 0
+    if (at < oldest) {
+      oldest = at
+      best = [candidate]
+    } else if (at === oldest) {
+      best.push(candidate)
+    }
+  }
+  return best[Math.floor(Math.random() * best.length)] ?? null
 }
 
 function list(value) {

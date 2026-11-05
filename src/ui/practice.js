@@ -60,7 +60,7 @@ export function courseNextStep(course, progress, { now = Date.now(), mistakes = 
     .map(concept => ({ concept, state: progress?.concepts?.[concept.id] }))
     .filter(entry => masteryStage(entry.state) === 'weak')
     .sort((a, b) => a.state.pKnown - b.state.pKnown)[0]
-  if (weakest) return { kind: 'practice', lessonId: weakest.concept.lessonId, concept: weakest.concept.name }
+  if (weakest) return { kind: 'practice', lessonId: weakest.concept.lessonId, conceptId: weakest.concept.id, concept: weakest.concept.name }
   const next = nextLesson(course, progress)
   if (next) return { kind: 'lesson', lessonId: next.lesson.id, title: next.lesson.title }
   return { kind: 'done', unitId: course.units?.at(-1)?.id ?? null }

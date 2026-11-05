@@ -293,11 +293,13 @@ export function createLearner({ store, llm, now = () => new Date(), logger, mist
         const lesson = findLesson(course, concept.lessonId)?.lesson
         const set = await store.readJson(store.paths.practice(course.id, concept.lessonId), null)
         const board = await store.readJson(store.paths.board(course.id, concept.lessonId), null)
+        const drill = await store.readJson(store.paths.drill(course.id, conceptId), null)
         // Each with where it is kept, so a question the learner challenges
         // is fixed there.
         const candidates = [
           ...(set?.items ?? []).map(item => ({ item, source: { kind: 'practice', courseId: course.id, lessonId: concept.lessonId, itemId: item.id } })),
           ...(board?.steps ?? []).filter(step => step.check).map(step => ({ item: step.check, source: { kind: 'check', courseId: course.id, lessonId: concept.lessonId, stepId: step.id } })),
+          ...(drill?.items ?? []).map(item => ({ item, source: { kind: 'drill', courseId: course.id, conceptId, itemId: item.id } })),
         ].filter(({ item, source }) => item.conceptIds?.includes(conceptId) && item.kind !== 'short' && item.kind !== 'work' && !open.has(`${itemKey(source)}~${itemSig(item)}`))
         const pick = longestAgo(candidates, answered)
         if (pick) items.push({ courseId: course.id, courseTitle: course.title, lessonId: concept.lessonId, lessonTitle: lesson?.title ?? '', conceptId, conceptName: concept.name, item: pick.item, source: pick.source })

@@ -2,6 +2,18 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## Unreleased
+
+### Added
+
+- **Practise one concept**: every concept on a course's **Progress** tab has **Practise this concept**, and so does each concept in a round's results; when the course's next step is a weak concept, it opens that concept instead of its lesson's old practice. It writes five questions on that concept alone, pitched at the learner's mastery of it (two basic ones first when it is weak, edge cases and links when it is mastered), aimed at the misconceptions their answers showed, and asking none of the questions on it they have met (its lesson's practice and class checks, its unit's quiz, earlier sets). Answers count toward mastery and missed ones go to the mistake notebook like any practice; the questions can be checked with **Something wrong with this question?**, and reviews draw on them. A set is offered again until one of its questions is answered; after that the next one is new, and **Another set** writes one at once.
+- **Explain this question**: once a question is graded (lesson practice, unit quizzes, reviews, mistake rounds, concept practice, library quizzes), and on every row of the mistake notebook, **Explain this** opens the teacher's board over the page. It starts from the learner's answer (what they probably thought and where it breaks, or why a right answer works), solves the question step by step, writes the idea to remember and ends with a similar question to try. In a course that question counts toward mastery like a class check and never enters the notebook. Closing the board goes back to the same question, with the round as it was; the explanation is also kept under **Ask anything**, where the learner can ask on. The button is more prominent when the answer was not right.
+
+### Fixed
+
+- **The chat teacher sees the answers**: after a quiz in a conversation, the learner sent back only ✔ or ✘ and the first 60 characters of each question, so the teacher could not tell what went wrong. The report now gives each answer, the right answer when it was missed (a short answer's model answer) and the grading, and a skipped question says so instead of shifting the numbers. The teacher is told to correct each mistake.
+- **Answer keys show their formulas**: the right answer shown under a wrong one was plain text, so an option written in math read `$P(A\mid B)$`. It is now set like the options.
+
 ## 1.12.0 - 2026-11-05
 
 ### Added

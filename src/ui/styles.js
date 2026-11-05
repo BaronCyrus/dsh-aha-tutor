@@ -364,6 +364,21 @@ a.aha-btn{text-decoration:none}
 /* "Something wrong with this question?", the teacher's check of it, and a question it fixed. */
 .aha-itemFlag{display:block;margin:6px 0 0 auto;padding:0 10px;border:1px solid var(--aha-border);border-radius:999px;background:var(--aha-surface);color:var(--aha-muted);font:inherit;font-size:${px(13.5)};line-height:${px(25.5)};white-space:nowrap;cursor:pointer}
 .aha-itemFlag:hover{color:var(--aha-text);border-color:var(--aha-muted)}
+/* 「讲这题」 beside it: stronger when the answer was not right. */
+.aha-feedbackActions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin-top:6px}
+.aha-feedbackActions .aha-itemFlag{margin:0}
+.aha-explainFlag[data-strong=true]{border-color:var(--aha-primary-bg);background:var(--aha-primary-bg);color:var(--aha-primary-fg)}
+.aha-explainFlag[data-strong=true]:hover{color:var(--aha-primary-fg);border-color:var(--aha-primary-bg);opacity:.88}
+.aha-mistakeMeta .aha-mistakeExplain{margin:0 0 0 auto;line-height:${px(22)}}
+/* The board of 「讲这题」, over the page it was opened from. */
+.aha-explainBack{position:fixed;inset:0;z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.35)}
+.aha-explain{display:flex;flex-direction:column;gap:10px;width:min(1240px,100%);height:min(900px,100%);padding:12px 14px 14px;border-radius:16px;border:1px solid var(--aha-border);background:var(--aha-bg);box-shadow:0 18px 50px rgba(0,0,0,.25);outline:none}
+.aha-explainBar{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px}
+.aha-explainName{font-size:${px(15)}}
+.aha-explainSaved{flex:1 1 200px;min-width:0}
+.aha-explainBar .aha-btn{margin-left:auto}
+.aha-explainBody{flex:1 1 auto;min-height:0;display:flex;flex-direction:column}
+@container aha (max-width:640px){.aha-explainBack{padding:0}.aha-explain{height:100%;border-radius:0;border:0;padding:10px 12px}}
 .aha-challengeBox.aha-itemChallenge{align-self:stretch;width:auto}
 .aha-itemCheck{display:flex;flex-direction:column;gap:4px;padding:8px 12px;border:1px solid var(--aha-border);border-left:3px solid var(--aha-brand);border-radius:0 10px 10px 0;background:var(--aha-surface);font-size:${px(14.5)}}
 .aha-itemCheck[data-verdict=wrong],.aha-itemCheck[data-verdict=unclear],.aha-itemCheck[data-verdict=misgraded]{border-left-color:var(--aha-ok)}

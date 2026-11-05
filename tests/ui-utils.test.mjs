@@ -37,7 +37,7 @@ test('a course page suggests due reviews, then the weakest concept, then the nex
   const now = Date.parse('2026-10-20T00:00:00Z')
   assert.deepEqual(courseNextStep(course, { lessons: {}, concepts: {} }, { now }), { kind: 'lesson', lessonId: 'les_a', title: '配方' })
   const weak = { lessons: { les_a: { status: 'done' } }, concepts: { cpt_a: seen(0.3), cpt_b: seen(0.2) } }
-  assert.deepEqual(courseNextStep(course, weak, { now }), { kind: 'practice', lessonId: 'les_a', concept: '开方' })
+  assert.deepEqual(courseNextStep(course, weak, { now }), { kind: 'practice', lessonId: 'les_a', conceptId: 'cpt_b', concept: '开方' }, 'the weakest concept is practised on its own')
   const due = { ...weak, reviews: { cpt_a: { dueAt: '2026-10-19T00:00:00Z' }, cpt_z: { dueAt: '2026-10-19T00:00:00Z' } } }
   assert.deepEqual(courseNextStep(course, due, { now }), { kind: 'review', count: 1 }, 'only this course\'s concepts count')
   const finished = { lessons: { les_a: { status: 'done' }, les_b: { status: 'done' } }, concepts: {} }

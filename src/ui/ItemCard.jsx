@@ -17,13 +17,14 @@ const CONFIDENCE = [['sure', 'confSure'], ['unsure', 'confUnsure'], ['guess', 'c
 // "work" item (a written-out working) adds wrongStep, why and fix.
 // keyboard: 1–9 pick an option, Enter submits or continues, H shows a hint
 // (for the one card on screen).
-// onChallenge(note), when given, offers "Something wrong with this
-// question?" once the answer is graded; check is that question's check as
+// onExplain(), when given, offers 「讲这题」 once the answer is graded (more
+// prominent when it was not right). onChallenge(note), when given, offers
+// "Something wrong with this question?" once the answer is graded; check is that question's check as
 // the screen follows it ({ status: 'checking' | 'done' | 'failed', verdict,
 // summary, explanation, item, result, error, note }). A check that fixed the
 // question or graded the answer again shows the fixed question and the new
 // grade.
-export function ItemCard({ item: asked, language, onResult, onContinue, continueLabel, askConfidence = true, compact = false, keyboard = false, onChallenge, check = null }) {
+export function ItemCard({ item: asked, language, onResult, onContinue, continueLabel, askConfidence = true, compact = false, keyboard = false, onExplain, onChallenge, check = null }) {
   const { api, t } = useApp()
   const item = check?.item ?? asked
   const [response, setResponse] = useState(item.kind === 'multi' || item.kind === 'order' ? [] : '')
@@ -208,8 +209,11 @@ export function ItemCard({ item: asked, language, onResult, onContinue, continue
         <RichText text={result.wrongStep} compact />
         {result.fix ? <><span className="aha-hint">{t('fixedStep')}</span><RichText text={result.fix} compact /></> : null}
       </div> : null}
-      {item.kind !== 'short' && item.kind !== 'work' && !result.correct ? <div className="aha-hint">{answerLabel(item)}</div> : null}
-      {onChallenge && doubt === null && check?.status !== 'checking' ? <button type="button" className="aha-itemFlag" onClick={() => setDoubt('')}>🧐 {t('itemChallenge')}</button> : null}
+      {item.kind !== 'short' && item.kind !== 'work' && !result.correct ? <RichText text={answerLabel(item)} compact className="aha-hint" /> : null}
+      {onExplain || (onChallenge && doubt === null && check?.status !== 'checking') ? <div className="aha-feedbackActions">
+        {onExplain ? <button type="button" className="aha-itemFlag aha-explainFlag" data-strong={result.correct ? undefined : 'true'} onClick={() => onExplain()}>👩‍🏫 {t('explainThis')}</button> : null}
+        {onChallenge && doubt === null && check?.status !== 'checking' ? <button type="button" className="aha-itemFlag" onClick={() => setDoubt('')}>🧐 {t('itemChallenge')}</button> : null}
+      </div> : null}
     </div> : null}
 
     {result && doubt !== null ? <form className="aha-challengeBox aha-itemChallenge" onSubmit={sendDoubt}>

@@ -33,12 +33,14 @@ export function logEvidence(progress, entry) {
   progress.evidenceLog = [...(Array.isArray(progress.evidenceLog) ? progress.evidenceLog : []), entry].slice(-EVIDENCE_KEPT)
 }
 
-// A question by where its course keeps it: a lesson's practice, a unit quiz
-// or the check of a lesson step. Null for one kept outside a course.
+// A question by where its course keeps it: a lesson's practice, a unit
+// quiz, the check of a lesson step or a set on one concept. Null for one
+// kept outside a course.
 export function itemKey(source) {
   if (source?.kind === 'practice') return `practice:${source.lessonId}:${source.itemId}`
   if (source?.kind === 'quiz') return `quiz:${source.unitId}:${source.itemId}`
   if (source?.kind === 'check') return `check:${source.lessonId}:${source.stepId}`
+  if (source?.kind === 'drill') return `drill:${source.conceptId}:${source.itemId}`
   return null
 }
 

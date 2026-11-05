@@ -3,7 +3,7 @@
 // recorded, a check that fixes a question fixes its mistakes too, and the
 // book is read for the course page and for review sessions.
 
-import { findLesson } from '../core/course-model.js'
+import { conceptIndex, findLesson } from '../core/course-model.js'
 import { answeredRight, fixMistakes, itemSig, listMistakes, noteAnswer } from '../core/mistakes.js'
 import { TutorError } from './generate.js'
 
@@ -77,12 +77,15 @@ export function createMistakes({ store }) {
     return { item: entry.item, save }
   }
 
-  // The mistakes whose question is still part of the course: its lesson, or
-  // its unit for a unit quiz question.
+  // The mistakes whose question is still part of the course: its lesson,
+  // its unit for a unit quiz question, its concept for a set on one.
   async function entries(course) {
+    const concepts = conceptIndex(course)
     const inCourse = entry => (entry.source?.kind === 'quiz'
       ? Boolean(course.units?.some(unit => unit.id === entry.unitId))
-      : Boolean(entry.lessonId && findLesson(course, entry.lessonId)))
+      : entry.source?.kind === 'drill'
+        ? concepts.has(entry.source.conceptId)
+        : Boolean(entry.lessonId && findLesson(course, entry.lessonId)))
     return (await read(course.id)).filter(inCourse)
   }
 

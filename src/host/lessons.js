@@ -11,16 +11,16 @@ import { checkSheet, mentionedPages, readPages, scrubCard, scrubDeep, scrubItem,
 import { conceptIndex, courseSpan, findLesson, inferConcepts, insertLesson, lessonAfter, LIMITS, normalizeCards, normalizeCheatsheet, normalizeHandout, normalizePractice, outlineForPrompt, text, thinEvenly, unitCardRange, unitConcepts, unitQuizRange } from '../core/course-model.js'
 import { answersTo, correctEvidence, itemKey, logEvidence, stateBefore, takeEvidence } from '../core/evidence-log.js'
 import { OBJECTIVE_KINDS } from '../core/grading.js'
-import { assertId, newId } from '../core/ids.js'
+import { assertId, isId, newId } from '../core/ids.js'
 import { cleanResponse, earlierGrade, fixItem, itemForCheck, normalizeItemVerdict, regrade, responseText } from '../core/item-fix.js'
 import { lessonQuery, sourcesOf } from '../core/lesson-sources.js'
-import { createConceptState, masteryPercent, recommendNext } from '../core/mastery.js'
-import { itemSig } from '../core/mistakes.js'
+import { createConceptState, masteryPercent, masteryStage, recommendNext } from '../core/mastery.js'
+import { itemSig, mistakeState } from '../core/mistakes.js'
 import { createCard, isDue, review } from '../core/srs.js'
 import { allChunks, masteryFor, materialPassages, readMaterials, readProfile, readProgress } from './context.js'
 import { fieldCounter, generateJson, generateSteps, TutorError } from './generate.js'
 import { createMistakes } from './mistakes.js'
-import { askPrompt, challengePrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, flashcardsPrompt, gradePrompt, handoutPrompt, lessonPrompt, quizPrompt, reexplainPrompt, verifyItemPrompt, verifyStepPrompt } from './prompts.js'
+import { askPrompt, challengePrompt, cheatsheetPrompt, correctionPrompt, detectLanguage, drillPrompt, explainItemPrompt, flashcardsPrompt, gradePrompt, handoutPrompt, lessonPrompt, quizPrompt, reexplainPrompt, verifyItemPrompt, verifyStepPrompt } from './prompts.js'
 
 const EVENTS_KEPT = 200
 // Questions and re-explanations kept per lesson, replayed where they were asked.
@@ -28,10 +28,20 @@ const ASIDES_KEPT = 30
 const STEP_ID = /^s\d{1,4}$/u
 // Jobs that write a lesson's board: opened by the learner, or prefetched.
 const BOARD_JOBS = ['lesson/board', 'lesson/prefetch']
+// Jobs that write an instant-help thread's board: a question, or 「讲这题」.
+const THREAD_JOBS = ['assist/turn', 'item/explain']
 // Earlier open answers to a fixed question the grader looks at again.
 const EARLIER_OPEN = 3
 // The material a raised hand is answered from, in characters.
 const ASK_PASSAGE_CHARS = 3500
+// Questions in a set on one concept (「练这个知识点」), and the fewest a
+// written set may keep.
+export const DRILL_SIZE = 5
+const DRILL_MIN = 3
+// Questions of earlier sets on a concept a new set must not ask again.
+const DRILL_EARLIER = 40
+// Turns an instant-help thread keeps (as studio.js does).
+const THREAD_TURNS = 20
 
 export function createLessons({ store, llm, jobs, courses, learner, mistakes = createMistakes({ store }), now = () => new Date() }) {
   const stamp = () => now().toISOString()
@@ -187,7 +197,7 @@ export function createLessons({ store, llm, jobs, courses, learner, mistakes = c
     }
     if (scope?.kind === 'thread' || scope?.kind === 'short') {
       const thread = scope.kind === 'thread'
-      const writing = thread ? followedJob(scope, ['assist/turn'], { threadId: scope.id }) : followedJob(scope, ['short/make'], { id: scope.id })
+      const writing = thread ? followedJob(scope, THREAD_JOBS, { threadId: scope.id }) : followedJob(scope, ['short/make'], { id: scope.id })
       const item = await store.readJson(store.paths.item(thread ? 'assist' : 'shorts', scope.id), null)
       if (!item && !writing) throw new TutorError('not-found', 'Not found')
       const board = shownBoard(writing ? { steps: writing.partial, pagesChecked: true } : thread ? item.turns?.[Math.max(0, Math.min(item.turns.length - 1, Number(scope.turn) || 0))]?.board : item.board)
@@ -439,7 +449,11 @@ export function createLessons({ store, llm, jobs, courses, learner, mistakes = c
       pushEvent(value, { type: 'evidence', lessonId: lessonId ?? null, conceptIds: ids, kind: evidence.kind ?? 'practice', score: evidence.score ?? null, confidence: evidence.confidence ?? null, at: new Date(at).toISOString() })
       return value
     })
-    const noted = key ? await noteMistake(courseId, { source: item.source, key, sig, conceptIds: ids, id: evidenceId, at, evidence, response: item.response }) : false
+    // A set on a concept sits in its concept's lesson; once answered, the next
+    // 「练这个知识点」 writes a new one.
+    const placeLesson = key && item.source.kind === 'drill' ? index.get(item.source.conceptId)?.lessonId ?? null : undefined
+    if (key && item.source.kind === 'drill') await markDrillStarted(courseId, item.source).catch(() => undefined)
+    const noted = key ? await noteMistake(courseId, { source: item.source, key, sig, conceptIds: ids, id: evidenceId, at, evidence, response: item.response, lessonId: placeLesson }) : false
     const states = ids.map(id => next.concepts[id]).filter(Boolean)
     return {
       mastery: Object.fromEntries(states.map(state => [state.id, masteryPercent(state)])),
@@ -451,9 +465,9 @@ export function createLessons({ store, llm, jobs, courses, learner, mistakes = c
 
   // An answer to a question the course keeps, for its mistake book. The
   // answer is recorded whatever happens to the book.
-  function noteMistake(courseId, { source, key, sig, conceptIds, id, at, evidence, response }) {
+  function noteMistake(courseId, { source, key, sig, conceptIds, id, at, evidence, response, lessonId }) {
     const { courseId: _course, ...where } = source
-    const answer = { key, sig, source: where, lessonId: source.lessonId ?? null, unitId: source.unitId ?? null, conceptIds, id, at: new Date(at).toISOString(), score: evidence.score, correct: evidence.correct, response: response ?? '' }
+    const answer = { key, sig, source: where, lessonId: lessonId ?? source.lessonId ?? null, unitId: source.unitId ?? null, conceptIds, id, at: new Date(at).toISOString(), score: evidence.score, correct: evidence.correct, response: response ?? '' }
     return mistakes.note(courseId, answer, () => keptPlace(source).then(place => place.item)).catch(() => false)
   }
 
@@ -461,10 +475,10 @@ export function createLessons({ store, llm, jobs, courses, learner, mistakes = c
   // check graded again (see core/mistakes.js fixMistakes). The answers
   // logged to the question as it was are answers to the fixed one from now
   // on, so a later fix of it grades them again too.
-  async function bookFix(courseId, source, change) {
+  async function bookFix(courseId, source, change, lessonId = null) {
     const key = itemKey(source)
     const { courseId: _course, ...where } = source
-    const place = { source: where, lessonId: source.lessonId ?? null, unitId: source.unitId ?? null, conceptIds: change.item.conceptIds ?? [] }
+    const place = { source: where, lessonId: lessonId ?? source.lessonId ?? null, unitId: source.unitId ?? null, conceptIds: change.item.conceptIds ?? [] }
     await mistakes.fixed(courseId, { ...change, key, place }).catch(() => false)
     const [was, sig] = [itemSig(change.before), itemSig(change.item)]
     const logged = entry => entry.item?.key === key && entry.item.sig === was
@@ -508,13 +522,14 @@ export function createLessons({ store, llm, jobs, courses, learner, mistakes = c
       if (kept) return kept
       throw new TutorError('not-found', 'Not found')
     }
-    const part = source.kind === 'quiz' ? course.units?.find(unit => unit.id === source.unitId)?.title : findLesson(course, source.lessonId)?.lesson.title
-    return { item: book.item, course, lessonId: source.lessonId ?? null, language: course.language, scope: part ? `${course.title} — ${part}` : course.title, save: book.save, book: true }
+    const concept = source.kind === 'drill' ? conceptIndex(course).get(source.conceptId) : null
+    const part = source.kind === 'quiz' ? course.units?.find(unit => unit.id === source.unitId)?.title : source.kind === 'drill' ? concept?.name : findLesson(course, source.lessonId)?.lesson.title
+    return { item: book.item, course, lessonId: source.lessonId ?? concept?.lessonId ?? null, language: course.language, scope: part ? `${course.title} — ${part}` : course.title, save: book.save, book: true }
   }
 
   // Where a course or the library keeps a question: a lesson's practice, a
-  // unit quiz, a quiz from the library, or the check of a lesson step (a
-  // review session draws on practice and checks). save(change) rewrites it
+  // unit quiz, a quiz from the library, the check of a lesson step, or a set
+  // on one concept (a review session draws on practice, checks and sets). save(change) rewrites it
   // there and returns it as saved.
   async function keptPlace(source) {
     const missing = () => new TutorError('not-found', 'Not found')
@@ -544,6 +559,13 @@ export function createLessons({ store, llm, jobs, courses, learner, mistakes = c
       const item = path ? (await store.readJson(path, null))?.items?.find(entry => entry.id === source.itemId) : null
       if (!item) throw missing()
       return { item, course, lessonId: null, language: course.language, scope: `${course.title} — ${unit.title}`, save: rewrite(path, value => value?.items) }
+    }
+    if (source.kind === 'drill') {
+      const concept = conceptIndex(course).get(source.conceptId)
+      const path = concept ? store.paths.drill(course.id, concept.id) : null
+      const item = path ? (await store.readJson(path, null))?.items?.find(entry => entry.id === source.itemId) : null
+      if (!item) throw missing()
+      return { item, course, lessonId: concept.lessonId, language: course.language, scope: `${course.title} — ${concept.name}`, save: rewrite(path, value => value?.items) }
     }
     const row = findLesson(course, source.lessonId)
     if (!row) throw missing()
@@ -639,7 +661,7 @@ export function createLessons({ store, llm, jobs, courses, learner, mistakes = c
         : null
       if (place.course && (checked.item || changed)) {
         const answers = [...(changed && evidenceId ? [{ id: evidenceId, at: stamp(), response: answer, score: result.score, correct: result.correct }] : []), ...(earlier?.answers ?? [])]
-        await bookFix(place.course.id, source, { before: place.item, item, fixed: Boolean(checked.item), verdict: checked.verdict, answers })
+        await bookFix(place.course.id, source, { before: place.item, item, fixed: Boolean(checked.item), verdict: checked.verdict, answers }, place.lessonId)
       }
       if (place.course) await logEvent(place.course.id, { type: 'item-challenge', lessonId: place.lessonId, verdict: checked.verdict, changed, earlier: earlier?.count ?? 0 })
       const mastery = corrected?.mastery || earlier?.mastery ? { ...corrected?.mastery, ...earlier?.mastery } : null
@@ -654,6 +676,83 @@ export function createLessons({ store, llm, jobs, courses, learner, mistakes = c
         recommendation: earlier?.recommendation ?? corrected?.recommendation ?? null,
       }
     })
+  }
+
+  // 「讲这题」: the teacher explains one question at the board from the
+  // learner's answer (what they probably thought, where it breaks, the
+  // right way) and ends with a similar question to try. source and sig name
+  // the question as for a check; response and shown are the answer and the
+  // grade the learner saw, or, for a mistake from the book (book), its last
+  // wrong answer. The board is kept as an instant-help thread (newThreadId),
+  // where the learner can ask on and find it again. In a course, the closing
+  // question counts toward the question's concepts (the classroom records
+  // it, never for the mistake book).
+  function explainItem({ source, response, shown = {}, book = false, sig = null, newThreadId }) {
+    const id = isId(newThreadId, 'thd') ? newThreadId : newId('thd')
+    return jobs.start('item/explain', async api => {
+      const place = await itemPlace(source, sig)
+      const { course, item } = place
+      let answer = cleanResponse(item, response)
+      let graded = shown
+      if (book && course) {
+        const entry = (await mistakes.read(course.id)).find(row => row.key === itemKey(source) && row.sig === (sig ?? itemSig(item)))
+        const state = entry ? mistakeState(entry) : null
+        if (state) {
+          answer = cleanResponse(item, state.response)
+          graded = { score: state.score, correct: false, partial: Number(state.score) > 0 }
+        }
+      }
+      const index = course ? conceptIndex(course) : new Map()
+      const concepts = (item.conceptIds ?? []).map(conceptId => index.get(conceptId)).filter(Boolean)
+      const progress = course ? await readProgress(store, course.id) : null
+      const misconceptions = [...new Set(concepts.flatMap(concept => progress?.concepts?.[concept.id]?.misconceptions ?? []))].slice(0, 6)
+      // What the question comes from: its course's lessons, or the materials
+      // of the library quiz it is in.
+      const lessons = course ? [...new Set([place.lessonId, ...concepts.map(concept => concept.lessonId)].filter(Boolean))].map(lessonId => findLesson(course, lessonId)?.lesson).filter(Boolean) : []
+      const materialIds = course ? course.materialIds ?? [] : source.kind === 'deck' ? (await store.readJson(store.paths.item('decks', source.deckId), null))?.materialIds ?? [] : []
+      const found = materialPassages(await readMaterials(store, materialIds), {
+        query: [item.prompt, ...concepts.map(concept => concept.name), lessons.length ? lessonQuery(lessons) : ''].filter(Boolean).join('\n'),
+        maxChars: 5000,
+        ...(lessons.length ? { around: courseSpan(course, lessons.map(lesson => lesson.id)), sources: sourcesOf(lessons) } : {}),
+      })
+      const allowed = pagesFor(readPages(found.passages), JSON.stringify(item))
+      const open = item.kind === 'short' || item.kind === 'work'
+      const told = open ? [graded.feedback ? `Feedback shown: ${graded.feedback}` : '', graded.wrongStep ? `First wrong line found: ${graded.wrongStep}` : '', graded.fix ? `Fix shown: ${graded.fix}` : ''].filter(Boolean).join('\n') : ''
+      const written = await generateSteps(llm, {
+        purpose: 'teach',
+        effort: 'lowest',
+        prompt: explainItemPrompt({
+          scope: place.scope,
+          item: itemForCheck(item),
+          response: responseText(item, answer),
+          verdict: graded.correct ? 'correct' : graded.partial ? 'partial' : 'incorrect',
+          grading: told,
+          concepts: concepts.map(concept => `${concept.id}=${concept.name}`).join(', '),
+          misconceptions,
+          passages: found.text,
+          language: place.language,
+          learner: { profile: await readProfile(store) },
+        }),
+        maxTokens: 10000,
+        signal: api.signal,
+        conceptIds: concepts.map(concept => concept.id),
+        onStep: step => api.push(step),
+        minSteps: 2,
+        clean: step => scrubStep(step, allowed),
+      })
+      const board = { ...written, pagesChecked: true }
+      const turn = { mode: 'item', request: text(item.prompt, 600), board, at: stamp() }
+      const saved = await store.updateJson(store.paths.item('assist', id), null, current => {
+        // Named by the board's own title, else by the question.
+        const named = board.title || board.steps.flatMap(step => step.ops ?? []).find(op => op.t === 'title')?.text
+        const next = current ?? { id, title: text(named || item.prompt, 60), language: place.language, materialIds: [], turns: [], createdAt: stamp() }
+        next.turns = [...(next.turns ?? []), turn].slice(-THREAD_TURNS)
+        next.materialIds = [...new Set([...(next.materialIds ?? []), ...materialIds])].slice(0, 8)
+        next.updatedAt = stamp()
+        return next
+      })
+      return { threadId: saved.id, turn: saved.turns.length - 1, board }
+    }, { meta: { threadId: id } })
   }
 
   // Open answers. A "work" item (a written-out working) also gets the first
@@ -919,6 +1018,90 @@ export function createLessons({ store, llm, jobs, courses, learner, mistakes = c
     return { job }
   }
 
+  // 「练这个知识点」: DRILL_SIZE questions on one concept, written when asked,
+  // pitched at the learner's mastery of it and aimed at the misconceptions
+  // their answers showed, asking none of the questions on it they have met.
+  // A set is kept (its questions can be checked, its mistakes go to the
+  // book) and offered again until one of its questions is answered; after
+  // that, or with fresh (「再来一组」), a new set is written. Its questions
+  // get ids by round (r<round>i<n>): answers are logged by question id and
+  // must never pass for answers to another set.
+  async function conceptDrill({ courseId, conceptId, fresh = false }) {
+    const course = await courses.readCourse(courseId)
+    const concept = conceptIndex(course).get(assertId(conceptId, 'cpt'))
+    const row = concept ? findLesson(course, concept.lessonId) : null
+    if (!row) throw new TutorError('not-found', 'Concept not found')
+    const path = store.paths.drill(course.id, concept.id)
+    const key = `drill:${course.id}:${concept.id}`
+    const running = jobs.running(key)
+    if (running) return { job: running }
+    const previous = await store.readJson(path, null)
+    if (!fresh && previous?.items?.length && !previous.startedAt) return { drill: shownDrill(previous, concept) }
+    const job = jobs.start('concept/drill', async api => {
+      const progress = await readProgress(store, course.id)
+      const state = progress.concepts?.[concept.id]
+      const materials = await readMaterials(store, course.materialIds ?? [])
+      const found = materialPassages(materials, { query: `${concept.name}\n${lessonQuery([row.lesson])}`, maxChars: 5000, around: courseSpan(course, [row.lesson.id]), sources: sourcesOf([row.lesson]) })
+      const read = readPages(found.passages)
+      const met = await metQuestions(course, row, concept, previous)
+      const items = await generateJson(llm, {
+        purpose: 'teach',
+        prompt: drillPrompt({
+          scopeTitle: `${course.title} — ${row.unit.title}`,
+          lesson: [row.lesson.title, row.lesson.summary, ...(row.lesson.objectives ?? [])].filter(Boolean).join('\n'),
+          concept,
+          stage: masteryStage(state),
+          misconceptions: state?.misconceptions ?? [],
+          passages: found.text,
+          earlier: earlierQuestions({ items: met.map(prompt => ({ prompt })) }),
+          language: course.language,
+          count: DRILL_SIZE,
+        }),
+        // Room for the model's thinking as well as the questions.
+        maxTokens: 9000,
+        signal: api.signal,
+        onText: countWritten(api, '"prompt"', DRILL_SIZE),
+        normalize: raw => {
+          const written = normalizePractice(raw, [concept], DRILL_SIZE * 2).items
+          if (written.length < DRILL_MIN) throw new Error(`Write ${DRILL_SIZE} questions on this concept.`)
+          return thinEvenly(written, DRILL_SIZE).map(item => orderOptions(scrubItem({ ...item, conceptIds: [concept.id] }, read)))
+        },
+      })
+      const round = (Number(previous?.round) || 0) + 1
+      const saved = { conceptId: concept.id, lessonId: row.lesson.id, round, language: course.language, items: items.map((item, index) => ({ ...item, id: `r${round}i${index + 1}` })), earlier: drillHistory(previous), createdAt: stamp() }
+      await store.writeJson(path, saved)
+      return { drill: shownDrill(saved, concept) }
+    }, { key, meta: { courseId: course.id, conceptId: concept.id } })
+    return { job }
+  }
+
+  // The questions on a concept the learner has met, the latest first: the
+  // set on it they last had, its lesson's practice and board checks, its
+  // unit's quiz, then the sets before.
+  async function metQuestions(course, row, concept, previous) {
+    const on = item => Boolean(item?.prompt) && Array.isArray(item.conceptIds) && item.conceptIds.includes(concept.id)
+    const practice = (await store.readJson(store.paths.practice(course.id, row.lesson.id), null))?.items ?? []
+    const board = (await store.readJson(store.paths.board(course.id, row.lesson.id), null))?.steps ?? []
+    const quiz = (await store.readJson(store.paths.unitQuiz(course.id, row.unit.id), null))?.items ?? []
+    return [...new Set([
+      ...(previous?.items ?? []).map(item => item.prompt),
+      // A practice question that names no concept is on its lesson's.
+      ...practice.filter(item => on(item) || !item.conceptIds?.length).map(item => item.prompt),
+      ...board.map(step => step.check).filter(on).map(item => item.prompt),
+      ...quiz.filter(on).map(item => item.prompt),
+      ...(previous?.earlier ?? []),
+    ].filter(Boolean))]
+  }
+
+  // Once one of its questions is answered, a set on a concept is used: the
+  // next 「练这个知识点」 writes a new one.
+  async function markDrillStarted(courseId, source) {
+    const path = store.paths.drill(courseId, source.conceptId)
+    const set = await store.readJson(path, null)
+    if (!set || set.startedAt || !set.items?.some(entry => entry.id === source.itemId)) return
+    await store.updateJson(path, null, value => (value && !value.startedAt ? { ...value, startedAt: stamp() } : value))
+  }
+
   // A unit's flashcards: written the first time they are opened, as many as
   // the unit needs (unitCardRange), and kept with their review state.
   async function unitCards({ courseId, unitId }) {
@@ -989,7 +1172,7 @@ export function createLessons({ store, llm, jobs, courses, learner, mistakes = c
     }).catch(() => undefined)
   }
 
-  return Object.freeze({ get, prepare, ask, reexplain, challenge, challengeItem, handout, record, grade, correct, savePosition, complete, practice, unitSheet, saveSheetLayout, unitQuiz, unitCards, cardSession, reviewCard })
+  return Object.freeze({ get, prepare, ask, reexplain, challenge, challengeItem, explainItem, handout, record, grade, correct, savePosition, complete, practice, conceptDrill, unitSheet, saveSheetLayout, unitQuiz, unitCards, cardSession, reviewCard })
 }
 
 // The unit's concepts the learner is weakest on: tried, and below 70% or with
@@ -1014,6 +1197,19 @@ function earlierQuestions(set) {
     lines.push(line)
   }
   return lines.join('\n')
+}
+
+// A set on a concept as the practice page gets it: with the concept's name
+// as the course calls it now, without the questions of the sets before it.
+function shownDrill(set, concept) {
+  const { earlier: _earlier, ...shown } = set
+  return { ...shown, conceptName: concept.name }
+}
+
+// The questions of the sets on a concept so far, the latest first, for the
+// next set to keep clear of.
+function drillHistory(previous) {
+  return [...new Set([...(previous?.items ?? []).map(item => text(item.prompt, 200)), ...(previous?.earlier ?? [])].filter(Boolean))].slice(0, DRILL_EARLIER)
 }
 
 // The job's progress while a JSON answer streams in: how many questions or

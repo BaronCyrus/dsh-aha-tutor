@@ -5,6 +5,7 @@ import { Classroom } from './Classroom.jsx'
 import { openMainScreen, useAppValue } from './context.js'
 import { AppContext, useApp } from './hooks.js'
 import { ItemCard } from './ItemCard.jsx'
+import { quizReport } from './item-check.js'
 import { errorText, Spinner } from './components.jsx'
 
 // ── side-panel whiteboard (conversation sessions) ───────────────────────────
@@ -119,23 +120,26 @@ function ToolBody({ toolName, phase, block, dsh, inputActions, t, callId }) {
   return <span className="aha-hint">{running ? <span className="aha-spinner" /> : '🧠'} {t('navProfile')}</span>
 }
 
+// The teacher's quiz in the chat. When it is done, the learner sends back
+// each answer with the key and the grading (see quizReport), so the teacher
+// can correct the mistakes in the next turn.
 function QuizCard({ items, topic, inputActions }) {
   const { t, language } = useApp()
   const [index, setIndex] = useState(0)
   const [results, setResults] = useState([])
   const item = items[index]
-  const summary = useMemo(() => results.map((result, position) => `${position + 1}. ${result.correct ? '✔' : result.partial ? '◐' : '✘'} ${result.answer}`).join('\n'), [results])
+  const report = useMemo(() => quizReport(t, { topic, items, results }), [t, topic, items, results])
   if (!item) {
     const correct = results.filter(result => result.correct).length
     return <div className="aha-col">
       <b>{t('practiceDone', { correct, total: items.length })}</b>
-      {inputActions?.setDraft ? <div><button type="button" className="aha-btn" data-kind="primary" data-size="sm" onClick={() => inputActions.setDraft(`${topic ?? ''} ${t('practiceDone', { correct, total: items.length })}\n${summary}`)}>{t('submit')}</button></div> : null}
+      {inputActions?.setDraft ? <div><button type="button" className="aha-btn" data-kind="primary" data-size="sm" onClick={() => inputActions.setDraft(report)}>{t('submit')}</button></div> : null}
     </div>
   }
   return <div className="aha-col">
     <span className="aha-hint">{t('checkTitle')} · {index + 1}/{items.length}</span>
     <ItemCard key={index} item={item} language={language === 'zh' ? 'zh-CN' : 'en'} compact
-      onResult={result => setResults(current => [...current, { ...result, answer: item.prompt.slice(0, 60) }])}
+      onResult={result => setResults(current => [...current, { ...result, index }])}
       onContinue={() => setIndex(value => value + 1)} />
   </div>
 }

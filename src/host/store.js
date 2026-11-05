@@ -83,6 +83,8 @@ export function createStore({ root }) {
     sheet: (id, unitId) => join(paths.courseDir(id), 'sheets', `${assertId(unitId, 'unt')}.json`),
     handout: (id, lessonId) => join(paths.courseDir(id), 'handouts', `${assertId(lessonId, 'les')}.json`),
     unitQuiz: (id, unitId) => join(paths.courseDir(id), 'quizzes', `${assertId(unitId, 'unt')}.json`),
+    // The latest set of questions on one concept (「练这个知识点」).
+    drill: (id, conceptId) => join(paths.courseDir(id), 'drills', `${assertId(conceptId, 'cpt')}.json`),
     materials: () => join(root, 'materials'),
     materialDir: id => join(root, 'materials', assertId(id, 'mat')),
     material: id => join(paths.materialDir(id), 'meta.json'),

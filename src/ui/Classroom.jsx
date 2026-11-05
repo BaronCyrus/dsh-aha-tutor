@@ -44,9 +44,11 @@ const opening = say => {
 // objectives: the lesson's goals, shown with progress in the side panel.
 // startIndex and onPosition count the board's own steps, not asides.
 // reveal: a new value brings the classroom into view again, as opening it does.
+// checkRecord: for a board outside a lesson, the course its checks count
+// toward ({ courseId, lessonId, conceptIds }), as with 「讲这题」.
 // tour: offer the first-run tour (not in the narrow conversation board).
 // talkKey: V asks by voice (not on the conversation board, where V is typing).
-export function Classroom({ scope, title, crumb, steps: initialSteps = [], stream = null, asides: savedAsides = [], objectives = [], language, startIndex = 0, autoplay = true, onPosition, onEnded, onStreamDone, header, stageClass, recordChecks = true, reveal, tour = true, talkKey = true }) {
+export function Classroom({ scope, title, crumb, steps: initialSteps = [], stream = null, asides: savedAsides = [], objectives = [], language, startIndex = 0, autoplay = true, onPosition, onEnded, onStreamDone, header, stageClass, recordChecks = true, checkRecord = null, reveal, tour = true, talkKey = true }) {
   const { api, t, speech, settings, dsh } = useApp()
   const dark = useDarkMode()
   const boardTheme = settings.boardTheme === 'dark' || (settings.boardTheme !== 'light' && dark) ? 'dark' : 'light'
@@ -473,17 +475,22 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
   const captionLines = useMemo(() => captionSentences(current?.say), [current?.say])
   const caption = captionLines[Math.min(snapshot?.sentence ?? 0, captionLines.length - 1)] ?? ''
 
+  // A lesson's checks count toward its course; another board's only when it
+  // names a course to count toward (checkRecord: { courseId, lessonId,
+  // conceptIds }), and never for the mistake book.
   function onCheckResult(result) {
     setCheckResult({ checkId: check?.id, result })
-    if (!recordChecks || scope.kind !== 'lesson') return
+    const lesson = scope.kind === 'lesson'
+    const target = lesson ? { courseId: scope.courseId, lessonId: scope.lessonId } : checkRecord
+    if (!recordChecks || !target?.courseId) return
     api.call('lesson/record', {
-      courseId: scope.courseId,
-      lessonId: scope.lessonId,
-      conceptIds: check?.conceptIds ?? [],
+      courseId: target.courseId,
+      ...(target.lessonId ? { lessonId: target.lessonId } : {}),
+      conceptIds: check?.conceptIds?.length ? check.conceptIds : target.conceptIds ?? [],
       evidence: { kind: 'check', score: result.score, correct: result.correct === true, confidence: result.confidence, hintsUsed: result.hintsUsed, timeMs: result.timeMs, expectedMs: 40_000, errorTag: result.errorTag },
       // A check on the board itself is kept there, so a later fix of it grades
       // this answer again, and a wrong answer goes to the mistake book.
-      ...(current?.id && !current.aside ? { source: { kind: 'check', courseId: scope.courseId, lessonId: scope.lessonId, stepId: current.id }, response: result.given ?? result.response ?? '', sig: itemSig(check) } : {}),
+      ...(lesson && current?.id && !current.aside ? { source: { kind: 'check', courseId: scope.courseId, lessonId: scope.lessonId, stepId: current.id }, response: result.given ?? result.response ?? '', sig: itemSig(check) } : {}),
     }).catch(() => undefined)
   }
 

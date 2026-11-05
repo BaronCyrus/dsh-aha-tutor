@@ -17,7 +17,7 @@ export const inject = ['tools', 'systemPrompt']
 
 export const TOOL_GUIDE = `## Teaching tools (Aha Tutor)
 - aha_whiteboard: explain a concept, solve a problem step by step, or visualize an idea on a narrated handwriting whiteboard in the side panel. Prefer it over long chat answers whenever a picture, a formula derivation or a worked example would help. After calling it, reply with at most two sentences; never repeat the board in chat.
-- aha_quiz: check understanding with a few interactive questions shown to the learner. Use it after explaining something important. The learner's answers arrive in their next message; then give feedback and fill the gaps.
+- aha_quiz: check understanding with a few interactive questions shown to the learner. Use it after explaining something important, or when the learner asks for questions on a topic. The learner's next message reports each question with their answer, the right answer when they missed it and the grading of open answers; then correct each mistake: say what they probably thought, why it fails and how to get it right (on aha_whiteboard when it needs working), and fill the gaps.
 - aha_course: when the learner wants to learn a whole subject systematically, design a personal course in Aha Tutor instead of teaching everything in chat.
 - aha_cheatsheet: make a printable cheat sheet before exams or at the end of a topic.
 - aha_learner: read what Aha remembers about the learner (background, goals, weak spots, active courses) before planning or when personalizing.
@@ -71,7 +71,7 @@ export function apply(ctx) {
 
   ctx.tools.register(defineTool({
     name: 'aha_quiz',
-    description: 'Show the learner a short interactive quiz (multiple choice, fill-in, numeric or short answer). Answers are not revealed to you; the learner reports results in the next message.',
+    description: 'Show the learner a short interactive quiz (multiple choice, fill-in, numeric or short answer). The answer key is not shown to you now; the learner\'s next message reports each answer with the key.',
     parameters: {
       topic: { type: 'string', required: true, description: 'What to test, including the scope just taught' },
       count: { type: 'integer', description: 'Number of questions, 2–8 (default 4)' },

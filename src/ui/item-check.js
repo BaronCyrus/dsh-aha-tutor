@@ -3,17 +3,20 @@
 // a fixed one first said, and how a check's outcome changes the round.
 // Framework-free so it can be tested without a browser.
 
+import { itemSig } from '../core/mistakes.js'
+
 // The i18n key of each verdict a check of a question can reach.
 export const ITEM_VERDICT_KEYS = Object.freeze({ wrong: 'itemCheck_wrong', unclear: 'itemCheck_unclear', misgraded: 'itemCheck_misgraded', right: 'itemCheck_right' })
 
 // Where the practice screen's question is kept: a review question names
-// its own place; otherwise the deck, unit quiz or lesson the screen shows.
-// Null when the host keeps it nowhere it could fix.
-export function itemSource({ courseId, lessonId, unitId, deckId } = {}, item) {
+// its own place; otherwise the deck, unit quiz, set on a concept or lesson
+// the screen shows. Null when the host keeps it nowhere it could fix.
+export function itemSource({ courseId, lessonId, unitId, deckId, conceptId } = {}, item) {
   if (!item?.id) return null
   if (item.context) return item.context.source ?? null
   if (deckId) return { kind: 'deck', deckId, itemId: item.id }
   if (courseId && unitId) return { kind: 'quiz', courseId, unitId, itemId: item.id }
+  if (courseId && conceptId) return { kind: 'drill', courseId, conceptId, itemId: item.id }
   if (courseId && lessonId) return { kind: 'practice', courseId, lessonId, itemId: item.id }
   return null
 }
@@ -38,6 +41,50 @@ export function answerText(item, answer = item?.answer) {
   return clip(answer)
 }
 
+// An answer in words, options with their text: the key, or the learner's
+// answer (given: an option id, a list of them, or text, a number as typed).
+export function spelledAnswer(item, answer = item?.answer, given = false) {
+  const option = id => {
+    const found = item.options?.find(entry => entry.id === id)
+    return found ? `${String(id).toUpperCase()}. ${clip(found.text, 120)}` : String(id).toUpperCase()
+  }
+  const ids = (Array.isArray(answer) ? answer : [answer]).filter(id => id !== undefined && id !== null && id !== '')
+  if (item.kind === 'choice' || item.kind === 'multi') return ids.map(option).join(' / ')
+  if (item.kind === 'order') return ids.map(id => clip(item.options?.find(entry => entry.id === id)?.text ?? id, 80)).join(' → ')
+  const value = ids.map(entry => String(entry).trim()).filter(Boolean).join(' / ')
+  if (!value) return ''
+  if (item.kind === 'number') return given || !item.unit ? clip(value, 60) : `${value} ${item.unit}`
+  return clip(value, item.kind === 'blank' ? 160 : 300)
+}
+
+const OPEN_KINDS = ['short', 'work']
+
+// What the learner sends the chat teacher when a quiz card is done: how
+// many were right, then each question with their answer, the key when they
+// missed it and the grading of an open answer, so the teacher can correct
+// each mistake. results: the answers, each with the index of its question;
+// a question without one was skipped.
+export function quizReport(t, { topic = '', items = [], results = [] } = {}) {
+  const byIndex = new Map(results.map(result => [result.index, result]))
+  const correct = results.filter(result => result.correct).length
+  // The topic is the teacher's own wording of the quiz, often a long brief.
+  const lines = [`${topic ? `${clip(topic, 40)} ` : ''}${t('practiceDone', { correct, total: items.length })}`]
+  items.forEach((item, index) => {
+    lines.push(`${index + 1}. ${clip(item.prompt, 120)}`)
+    const result = byIndex.get(index)
+    if (!result) {
+      lines.push(`   ${t('quizReportSkipped')}`)
+      return
+    }
+    const mark = result.correct ? '✔' : result.partial ? '◐' : '✘'
+    lines.push(`   ${mark} ${t('quizReportGiven', { answer: spelledAnswer(item, result.given ?? result.response, true) || '—' })}`)
+    const key = result.correct ? '' : spelledAnswer(item)
+    if (key) lines.push(`   ${t(OPEN_KINDS.includes(item.kind) ? 'quizReportModel' : 'quizReportKey', { answer: key })}`)
+    if (result.feedback) lines.push(`   ${t('quizReportFeedback', { text: clip(result.feedback, 240) })}`)
+  })
+  return lines.join('\n')
+}
+
 // What a fixed question first said, a line for each part that changed,
 // for the 「✎ 已更正」 badge.
 export function fixedLines(t, item) {
@@ -58,6 +105,21 @@ export function fixedLines(t, item) {
   if (was.rubric !== undefined) lines.push(t('fixedPart_rubric', { text: clip((was.rubric ?? []).join(' / ')) || '—' }))
   if (was.figure) lines.push(t('fixedPart_figure'))
   return lines
+}
+
+// What 「讲这题」 needs about a graded question (see ExplainLayer): where it
+// is kept and which version was answered, with the answer and the grade
+// shown (request), and the course its board's closing question counts
+// toward (record: null outside a course). Null when the host keeps the
+// question nowhere it could read it.
+export function explainRequest(place, item, result, { lessonId } = {}) {
+  const source = itemSource(place, item)
+  if (!source || !result) return null
+  const courseId = source.courseId ?? null
+  return {
+    request: { source, response: result.given ?? result.response ?? '', shown: shownGrade(result), sig: itemSig(item) },
+    record: courseId ? { courseId, lessonId: item.context?.lessonId ?? source.lessonId ?? lessonId ?? null, conceptIds: item.conceptIds ?? [] } : null,
+  }
 }
 
 // The grade a learner saw, as the host needs it to check a question again.

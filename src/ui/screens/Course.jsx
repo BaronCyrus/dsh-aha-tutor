@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import { downloadText } from '../api.js'
 import { Confirm, Empty, ErrorLine, errorText, LessonSources, MasteryMeter, Modal, Progress, SourceList, Spinner } from '../components.jsx'
 import { useApp, useLoad } from '../hooks.js'
+import { ExplainLayer } from '../ExplainLayer.jsx'
 import { Icon } from '../icons.jsx'
-import { courseProgress, findLesson, flattenLessons, nextLesson } from '../../core/course-model.js'
+import { conceptIndex, courseProgress, findLesson, flattenLessons, nextLesson } from '../../core/course-model.js'
 import { masteryPercent, masteryStage } from '../../core/mastery.js'
 import { RichText } from '../markdown.jsx'
 import { courseNextStep, dayName, lessonStage, mistakesDue, mistakeWhen, STAGE_LABELS } from '../practice.js'
@@ -146,6 +147,7 @@ export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
               <span className="aha-level" data-level={stage}>{t(STAGE_LABELS[stage])}</span>
               <MasteryMeter value={conceptMastery(concept.id)} stage={stage} label={t(STAGE_LABELS[stage])} />
               <span className="aha-hint" style={{ width: 36, textAlign: 'right' }}>{stage === 'none' ? '—' : `${conceptMastery(concept.id)}%`}</span>
+              <button type="button" className="aha-btn" data-size="sm" data-kind="ghost" onClick={() => navigate('practice', { courseId, conceptId: concept.id })}>{t('drillThis')}</button>
             </span>
           </div>
         })}
@@ -164,12 +166,12 @@ export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
 }
 
 // One suggested action at the top of the course: reviews that are due, then
-// the weakest concept, then the next lesson.
+// a set on the weakest concept, then the next lesson.
 function NextStep({ step, courseId }) {
   const { t, navigate } = useApp()
   const view = {
     review: [step.mistakes ? (step.count ? t('nextStepReviewMistakes', { mistakes: step.mistakes, count: step.count }) : t('nextStepMistakes', { count: step.mistakes })) : t('nextStepReview', { count: step.count }), t('startReview'), () => navigate('practice', { courseId, review: true })],
-    practice: [t('nextStepWeak', { concept: step.concept }), t('practiceThis'), () => navigate('practice', { courseId, lessonId: step.lessonId })],
+    practice: [t('nextStepWeak', { concept: step.concept }), t('drillThis'), () => navigate('practice', step.conceptId ? { courseId, conceptId: step.conceptId } : { courseId, lessonId: step.lessonId })],
     lesson: [t('nextStepLesson', { title: step.title }), t('continueLearning'), () => navigate('lesson', { courseId, lessonId: step.lessonId })],
     done: [t('nextStepDone'), t('unitQuiz'), step.unitId ? () => navigate('practice', { courseId, unitId: step.unitId }) : null],
   }[step.kind]
@@ -193,6 +195,10 @@ const MISTAKES_SHOWN = 5
 function MistakeBook({ courseId, course, rows }) {
   const { t, navigate } = useApp()
   const [all, setAll] = useState(false)
+  // 「讲这题」: the mistake whose board is open over the page, and each
+  // explanation started on the page, shown again when reopened.
+  const [explaining, setExplaining] = useState(null)
+  const explained = useRef(new Map())
   const now = Date.now()
   const open = rows.filter(row => !row.resolvedAt)
   const resolved = rows.filter(row => row.resolvedAt)
@@ -210,23 +216,29 @@ function MistakeBook({ courseId, course, rows }) {
         {due ? t('practiceMistakesDue', { count: due }) : t('mistakeDueOn', { day: dayName(t, later.dueAt, now) })}
       </button> : null}
     </div>
-    {open.length ? <ul className="aha-mistakeList">{(all ? open : open.slice(0, MISTAKES_SHOWN)).map(row => <MistakeRow key={`${row.key}~${row.sig}`} row={row} course={course} now={now} />)}</ul> : null}
+    {open.length ? <ul className="aha-mistakeList">{(all ? open : open.slice(0, MISTAKES_SHOWN)).map(row => <MistakeRow key={`${row.key}~${row.sig}`} row={row} course={course} now={now} onExplain={() => setExplaining(row)} />)}</ul> : null}
     {open.length > MISTAKES_SHOWN ? <div><button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => setAll(value => !value)}>{all ? t('mistakeShowFewer') : t('mistakeShowAll', { count: open.length })}</button></div> : null}
     {resolved.length ? <details className="aha-mistakeResolved">
       <summary>{t('mistakeResolvedList', { count: resolved.length })}</summary>
-      <ul className="aha-mistakeList">{resolved.map(row => <MistakeRow key={`${row.key}~${row.sig}`} row={row} course={course} now={now} />)}</ul>
+      <ul className="aha-mistakeList">{resolved.map(row => <MistakeRow key={`${row.key}~${row.sig}`} row={row} course={course} now={now} onExplain={() => setExplaining(row)} />)}</ul>
     </details> : null}
+    {explaining ? <ExplainLayer key={`${explaining.key}~${explaining.sig}`} request={{ source: { ...explaining.source, courseId }, sig: explaining.sig, book: true }}
+      record={{ courseId, lessonId: explaining.lessonId, conceptIds: [] }} title={explaining.prompt.slice(0, 80)} language={course.language}
+      explained={explained.current.get(`${explaining.key}~${explaining.sig}`) ?? null} onStarted={value => explained.current.set(`${explaining.key}~${explaining.sig}`, value)} onClose={() => setExplaining(null)} /> : null}
   </section>
 }
 
 // One mistake: the question, where it was asked, the last wrong answer, how
-// often it went wrong and when it comes back (or when it was resolved).
-function MistakeRow({ row, course, now }) {
+// often it went wrong and when it comes back (or when it was resolved), and
+// 「讲这题」 (onExplain).
+function MistakeRow({ row, course, now, onExplain }) {
   const { t } = useApp()
   const unitIndex = row.source?.kind === 'quiz' ? course.units.findIndex(unit => unit.id === row.unitId) : -1
   const where = row.source?.kind === 'quiz'
     ? `${t('mistakeFrom_quiz')} · ${unitIndex >= 0 ? `${t('unitN', { n: unitIndex + 1 })} ${course.units[unitIndex].title}` : ''}`
-    : `${t(row.source?.kind === 'check' ? 'mistakeFrom_check' : 'mistakeFrom_practice')} · ${findLesson(course, row.lessonId)?.lesson.title ?? ''}`
+    : row.source?.kind === 'drill'
+      ? `${t('mistakeFrom_drill')} · ${conceptIndex(course).get(row.source.conceptId)?.name ?? ''}`
+      : `${t(row.source?.kind === 'check' ? 'mistakeFrom_check' : 'mistakeFrom_practice')} · ${findLesson(course, row.lessonId)?.lesson.title ?? ''}`
   const due = !row.resolvedAt && Date.parse(row.dueAt) <= now
   return <li className="aha-mistakeRow" data-due={due ? 'true' : undefined}>
     <RichText text={row.prompt} compact className="aha-mistakePrompt" />
@@ -236,6 +248,7 @@ function MistakeRow({ row, course, now }) {
       {row.figure ? <span>{t('mistakeFigure')}</span> : null}
       <span>{t('mistakeWrongTimes', { count: row.wrong })}</span>
       <span className="aha-mistakeWhen" data-due={due ? 'true' : undefined}>{mistakeWhen(t, row, now)}</span>
+      {onExplain && row.source ? <button type="button" className="aha-itemFlag aha-explainFlag aha-mistakeExplain" onClick={onExplain}>👩‍🏫 {t('explainThis')}</button> : null}
     </div>
   </li>
 }

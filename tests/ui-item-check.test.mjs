@@ -9,7 +9,7 @@ import TestRenderer, { act } from 'react-test-renderer'
 import { build } from 'tsdown'
 
 import { en, format, zh } from '../src/ui/i18n.js'
-import { answerText, checkDone, checkNotice, fixedLines, itemSource, regradeResults, shownGrade } from '../src/ui/item-check.js'
+import { answerText, checkDone, checkNotice, fixedLines, itemSource, quizReport, regradeResults, shownGrade, spelledAnswer } from '../src/ui/item-check.js'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
@@ -51,6 +51,43 @@ test('a fixed question says what it first said, part by part', () => {
   assert.equal(answerText({ kind: 'order', options: [{ id: 'a', text: '一' }, { id: 'b', text: '二' }], answer: ['b', 'a'] }), '二 → 一')
   assert.equal(answerText({ kind: 'blank', answer: ['0.5', '1/2'] }), '0.5 / 1/2')
   assert.equal(answerText({ kind: 'short', answer: '长'.repeat(200) }).length, 161)
+})
+
+test('a chat quiz reports each answer with the key and the grading, so the teacher can correct it', () => {
+  const items = [
+    PRIME,
+    { id: 'i2', kind: 'multi', prompt: '哪些是偶数？', options: [{ id: 'a', text: '2' }, { id: 'b', text: '3' }, { id: 'c', text: '4' }], answer: ['a', 'c'] },
+    { id: 'i3', kind: 'number', prompt: '1 m 等于多少 cm？', answer: 100, unit: 'cm' },
+    { id: 'i4', kind: 'short', prompt: '为什么 1 不是质数？', answer: '质数要有恰好两个不同的因数，1 只有一个。' },
+    { id: 'i5', kind: 'blank', prompt: '最小的质数是 __', answer: ['2'] },
+  ]
+  // The learner skipped the fifth question and answered the others out of order.
+  const results = [
+    { index: 1, correct: true, given: ['a', 'c'] },
+    { index: 0, correct: false, given: 'b' },
+    { index: 2, correct: false, given: '10' },
+    { index: 3, correct: false, partial: true, given: '因为它太小', feedback: '没说到因数的个数。' },
+  ]
+  assert.equal(quizReport(t, { topic: '质数', items, results }), [
+    '质数 本组练习完成：答对 1/5',
+    '1. 下列哪个是质数？',
+    '   ✘ 我的答案：B. 23',
+    '   正确答案：A. 21',
+    '2. 哪些是偶数？',
+    '   ✔ 我的答案：A. 2 / C. 4',
+    '3. 1 m 等于多少 cm？',
+    '   ✘ 我的答案：10',
+    '   正确答案：100 cm',
+    '4. 为什么 1 不是质数？',
+    '   ◐ 我的答案：因为它太小',
+    '   参考答案：质数要有恰好两个不同的因数，1 只有一个。',
+    '   批改：没说到因数的个数。',
+    '5. 最小的质数是 __',
+    '   （跳过了）',
+  ].join('\n'))
+  assert.match(quizReport(tEn, { items: [PRIME], results: [{ index: 0, correct: false, given: '' }] }), /My answer: —\n {3}Correct answer: A\. 21$/u)
+  assert.match(quizReport(t, { topic: '条件概率：从定义与缩小样本空间出发，包含一个二步题和一个把条件搞反的陷阱题，数值便于手算', items: [PRIME], results: [] }), /^条件概率：从定义与缩小样本空间出发，包含一个二步题和一个把条件搞反的陷阱题，数值… 本组练习完成：答对 0\/1\n/u, 'a long brief is cut short')
+  assert.equal(spelledAnswer({ kind: 'order', options: [{ id: 'a', text: '一' }, { id: 'b', text: '二' }] }, ['b', 'a'], true), '二 → 一')
 })
 
 test('a check keeps what earlier checks found, and its outcome changes the round', () => {
@@ -176,6 +213,25 @@ test('a graded question offers a check, sends the note and shows what the teache
   assert.match(textOf(renderer.root), new RegExp(zh['err_llm-timeout'], 'u'))
   await press(renderer, zh.retry)
   assert.deepEqual(notes, ['23 才是质数吧？', '23 才是质数吧？'])
+})
+
+test('a graded question offers 「讲这题」, stronger when the answer was not right', async () => {
+  let asked = 0
+  const { renderer } = renderCard({ item: PRIME, language: 'zh-CN', onContinue: () => undefined, onExplain: () => { asked += 1 } })
+  assert.equal(buttons(renderer, zh.explainThis).length, 0, 'nothing to explain before the answer is graded')
+  await answerB(renderer)
+  const [wrong] = buttons(renderer, zh.explainThis)
+  assert.equal(wrong.props['data-strong'], 'true')
+  await press(renderer, zh.explainThis)
+  assert.equal(asked, 1)
+  // Answered right: still there, quieter.
+  const { renderer: right } = renderCard({ item: FIXED, language: 'zh-CN', onContinue: () => undefined, onExplain: () => undefined })
+  await answerB(right)
+  assert.equal(buttons(right, zh.explainThis)[0].props['data-strong'], undefined)
+  // Without onExplain (the classroom, the conversation quiz) there is none.
+  const { renderer: none } = renderCard({ item: PRIME, language: 'zh-CN', onContinue: () => undefined })
+  await answerB(none)
+  assert.equal(buttons(none, zh.explainThis).length, 0)
 })
 
 test('a card without checks offers none, and a question fixed earlier shows its badge', async () => {

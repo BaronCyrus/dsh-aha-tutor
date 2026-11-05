@@ -8,7 +8,7 @@ import { publicCode, publicMessage } from './jobs.js'
 import { MAX_SPEECH_BYTES } from './speech.js'
 
 const ID = prefix => new RegExp(`^${prefix}_[a-z0-9]{6,40}$`, 'u')
-const IDS = { crs: ID('crs'), les: ID('les'), unt: ID('unt'), prj: ID('prj'), mat: ID('mat'), job: ID('job'), thd: ID('thd'), sht: ID('sht'), chs: ID('chs'), dck: ID('dck'), exm: ID('exm'), nte: ID('nte'), asd: ID('asd'), evd: ID('evd') }
+const IDS = { crs: ID('crs'), les: ID('les'), unt: ID('unt'), prj: ID('prj'), mat: ID('mat'), job: ID('job'), thd: ID('thd'), sht: ID('sht'), chs: ID('chs'), dck: ID('dck'), exm: ID('exm'), nte: ID('nte'), asd: ID('asd'), evd: ID('evd'), cpt: ID('cpt') }
 
 function need(payload, key, prefix) {
   const value = payload?.[key]
@@ -47,8 +47,8 @@ function challengeTarget(payload) {
 }
 
 // A practice or quiz question the learner challenges, named by where it is
-// kept: a lesson's practice, a unit quiz, a quiz from the library, or the
-// check of a lesson step.
+// kept: a lesson's practice, a unit quiz, a quiz from the library, the
+// check of a lesson step, or a set on one concept.
 function itemSource(payload) {
   const source = payload?.source && typeof payload.source === 'object' ? payload.source : {}
   const itemId = () => {
@@ -58,6 +58,7 @@ function itemSource(payload) {
   if (source.kind === 'practice') return { kind: 'practice', courseId: need(source, 'courseId', 'crs'), lessonId: need(source, 'lessonId', 'les'), itemId: itemId() }
   if (source.kind === 'quiz') return { kind: 'quiz', courseId: need(source, 'courseId', 'crs'), unitId: need(source, 'unitId', 'unt'), itemId: itemId() }
   if (source.kind === 'deck') return { kind: 'deck', deckId: need(source, 'deckId', 'dck'), itemId: itemId() }
+  if (source.kind === 'drill') return { kind: 'drill', courseId: need(source, 'courseId', 'crs'), conceptId: need(source, 'conceptId', 'cpt'), itemId: itemId() }
   if (source.kind === 'check') {
     if (typeof source.stepId !== 'string' || !/^s\d{1,4}$/u.test(source.stepId)) throw new TutorError('invalid', 'Invalid step')
     return { kind: 'check', courseId: need(source, 'courseId', 'crs'), lessonId: need(source, 'lessonId', 'les'), stepId: source.stepId }
@@ -158,6 +159,7 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
     }),
     'lesson/grade': payload => lessons.grade({ item: payload.item, response: payload.response, language: typeof payload.language === 'string' ? payload.language.slice(0, 12) : undefined }),
     'item/challenge': payload => ({ job: lessons.challengeItem({ source: itemSource(payload), response: answerOf(payload.response), shown: shownGrade(payload.shown), evidenceId: optional(payload, 'evidenceId', 'evd'), note: typeof payload.note === 'string' ? payload.note : '', ...sigOf(payload) }) }),
+    'item/explain': payload => ({ job: lessons.explainItem({ source: itemSource(payload), response: answerOf(payload.response), shown: shownGrade(payload.shown), book: payload.book === true, newThreadId: optional(payload, 'newThreadId', 'thd'), ...sigOf(payload) }) }),
     'lesson/correct': payload => ({ job: lessons.correct({ scope: scopeOf(payload), stepIndex: payload.stepIndex, anchorStepId: payload.anchorStepId, item: payload.item, response: payload.response, grade: payload.grade }) }),
     'lesson/position': payload => lessons.savePosition({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les'), stepIndex: payload.stepIndex }),
     'lesson/complete': payload => lessons.complete({ courseId: need(payload, 'courseId', 'crs'), lessonId: need(payload, 'lessonId', 'les'), selfRating: Number(payload.selfRating) || undefined }),
@@ -167,6 +169,7 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
     'unit/sheet-layout': payload => lessons.saveSheetLayout({ courseId: need(payload, 'courseId', 'crs'), unitId: need(payload, 'unitId', 'unt'), layout: payload.layout }),
     'unit/quiz': payload => lessons.unitQuiz({ courseId: need(payload, 'courseId', 'crs'), unitId: need(payload, 'unitId', 'unt'), force: payload.force === true }),
     'unit/cards': payload => lessons.unitCards({ courseId: need(payload, 'courseId', 'crs'), unitId: need(payload, 'unitId', 'unt') }),
+    'concept/drill': payload => lessons.conceptDrill({ courseId: need(payload, 'courseId', 'crs'), conceptId: need(payload, 'conceptId', 'cpt'), fresh: payload.fresh === true }),
 
     'profile/get': () => learner.getProfile(),
     'profile/save': payload => learner.saveProfile({ name: payload.name, background: payload.background, goals: payload.goals, strengths: payload.strengths, weaknesses: payload.weaknesses, preferences: payload.preferences, notes: payload.notes }),

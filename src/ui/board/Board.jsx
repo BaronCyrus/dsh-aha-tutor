@@ -1,11 +1,12 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-import { defaultValues, formatPlotNumber } from '../../core/plot.js'
+import { defaultValues, formatPlotNumber, plotCurveLabels } from '../../core/plot.js'
 import { chartSvg } from '../charts.js'
 import { useApp } from '../hooks.js'
 import { TeX } from '../math.jsx'
 import { plotSvg, preparePlot } from '../plot.js'
-import { animationDocument, reportedAnimationHeight, sanitizeSvg } from '../sanitize.js'
+import { animationDocument, reportedAnimationError, reportedAnimationHeight, sanitizeSvg } from '../sanitize.js'
+import { fitSvgElement } from '../svg-fit.js'
 import { followShift, fitRect, keepInView, wheelPixels, wheelZoomFactor, zoomAt, ZOOM_STEP } from './camera.js'
 import { fitFormula, formulaLines, writtenPart } from './fit.js'
 import { inlineLength, parseInline, sliceInline } from './inline.js'
@@ -38,10 +39,41 @@ export function Inline({ text, reveal = 1 }) {
   })
 }
 
+// What a picture that could not be drawn says, unless the board is given
+// the words in the learner's language.
+export const FIGURE_LABELS = Object.freeze({ missing: 'This figure could not be drawn', redrawing: 'Redrawing this figure…', animation: 'This animation could not play' })
+
+// A picture that could not be drawn keeps its place. While the teacher
+// redraws it (redraw), a note says so; after that, what it was meant to
+// show (its caption, a plot's formulas) and that it could not be drawn.
+function MissingFigure({ op, labels = FIGURE_LABELS, reveal = 1, still = false }) {
+  const redrawing = op.redraw === true && !still
+  return <div className="aha-op-missing" data-redraw={redrawing ? 'true' : undefined} style={{ opacity: Math.min(1, reveal * 3) }}>
+    <div className="aha-op-missingHead">
+      {redrawing ? <span className="aha-spinner" aria-hidden="true" /> : <span aria-hidden="true">⚠</span>}
+      <span>{redrawing ? labels.redrawing : op.of === 'anim' ? labels.animation : labels.missing}</span>
+    </div>
+    {op.caption ? <div className="aha-figCaption">{op.caption}</div> : null}
+    {op.formula ? <code className="aha-op-missingFormula">{op.formula}</code> : null}
+  </div>
+}
+
 // Draw an SVG stroke by stroke, then fade fills and labels in.
-function DrawnSvg({ markup, reveal, caption }) {
+// fit: a diagram the model drew, whose viewBox grows to hold all it draws
+// (svg-fit.js); again once the board's font has arrived, since that changes
+// how wide the labels are. fallback: shown when the markup cannot be drawn.
+function DrawnSvg({ markup, reveal, caption, fit = false, fallback = null }) {
   const host = useRef(null)
   const safe = useMemo(() => sanitizeSvg(markup), [markup])
+  useLayoutEffect(() => {
+    const root = fit ? host.current?.querySelector('svg') : null
+    if (!root) return undefined
+    const layout = () => fitSvgElement(root)
+    layout()
+    const fonts = typeof document !== 'undefined' ? document.fonts : null
+    fonts?.addEventListener?.('loadingdone', layout)
+    return () => fonts?.removeEventListener?.('loadingdone', layout)
+  }, [safe, fit])
   useLayoutEffect(() => {
     const root = host.current?.querySelector('svg')
     if (!root) return
@@ -73,7 +105,7 @@ function DrawnSvg({ markup, reveal, caption }) {
     const labelProgress = labels.length ? Math.min(1, Math.max(0, (reveal - strokeShare) / (1 - strokeShare))) : 1
     labels.forEach(label => { label.style.opacity = String(reveal >= 1 ? 1 : labelProgress) })
   }, [reveal, safe])
-  if (!safe) return null
+  if (!safe) return fallback
   return <div className="aha-op-figure">
     <div ref={host} dangerouslySetInnerHTML={{ __html: safe }} />
     {caption ? <div className="aha-figCaption" style={{ opacity: reveal >= 1 ? 1 : 0.4 }}>{caption}</div> : null}
@@ -82,14 +114,15 @@ function DrawnSvg({ markup, reveal, caption }) {
 
 // A function plot, computed from its formulas. Its sliders, when it has any
 // and is not an export, move the curves; touching one pauses the lesson.
-function PlotFigure({ op, reveal, still, onInteract }) {
+function PlotFigure({ op, reveal, still, onInteract, labels }) {
   const prepared = useMemo(() => preparePlot(op), [op])
   const [values, setValues] = useState(() => defaultValues(op))
   // A plot that changes (a corrected one) starts again from its defaults.
   const shape = JSON.stringify([op.fns, op.params])
   useEffect(() => { setValues(defaultValues(op)) }, [shape])
   const markup = useMemo(() => (prepared ? plotSvg(op, values, { prepared }) : ''), [op, prepared, values])
-  if (!prepared) return null
+  if (!prepared) return <MissingFigure op={{ of: 'plot', caption: op.caption || op.title, formula: plotCurveLabels(op).join('; ') }} labels={labels} reveal={reveal} still />
+
   const slide = (index, value) => {
     onInteract?.()
     setValues(current => current.map((item, position) => (position === index ? value : item)))
@@ -113,11 +146,14 @@ function PlotFigure({ op, reveal, still, onInteract }) {
 // narrower columns scale it down so the frame keeps the content's proportions.
 // Controls under a canvas do not shrink with it: the frame grows to the
 // height the page reports (sanitize.js), so a slider is never cut off.
-function Animation({ op, reveal, theme }) {
+// When the page's code fails, its still frame takes its place.
+function Animation({ op, reveal, theme, labels }) {
   const srcDoc = useMemo(() => animationDocument(op.html, theme), [op.html, theme])
   const frame = useRef(null)
   const [height, setHeight] = useState(op.height)
   const [content, setContent] = useState(0)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => { setFailed(false) }, [op.html])
   useLayoutEffect(() => {
     const element = frame.current
     if (!element || typeof ResizeObserver !== 'function') return undefined
@@ -126,10 +162,14 @@ function Animation({ op, reveal, theme }) {
     const observer = new ResizeObserver(update)
     observer.observe(element)
     return () => observer.disconnect()
-  }, [op.height, reveal > 0])
+  }, [op.height, reveal > 0, failed])
   useEffect(() => {
     const onMessage = event => {
       if (!frame.current || event.source !== frame.current.contentWindow) return
+      if (reportedAnimationError(event.data)) {
+        setFailed(true)
+        return
+      }
       const reported = reportedAnimationHeight(event.data)
       if (reported) setContent(reported)
     }
@@ -137,6 +177,7 @@ function Animation({ op, reveal, theme }) {
     return () => window.removeEventListener('message', onMessage)
   }, [])
   if (reveal <= 0) return null
+  if (failed) return <AnimationStill op={op} labels={labels} failed />
   return <div className="aha-op-figure" style={{ opacity: Math.min(1, reveal * 3) }}>
     <iframe ref={frame} className="aha-op-anim" title={op.caption || 'animation'} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={srcDoc} style={{ height: Math.max(height, content), colorScheme: theme === 'dark' ? 'dark' : 'light' }} />
     {op.caption ? <div className="aha-figCaption">{op.caption}</div> : null}
@@ -184,15 +225,19 @@ function Formula({ tex, reveal }) {
   </div>
 }
 
-// Exports cannot run an animation: they show its poster, or a labelled frame.
-function AnimationStill({ op, label }) {
-  if (op.poster) return <DrawnSvg markup={op.poster} reveal={1} caption={op.caption} />
-  return <div className="aha-op-note" data-tone="tip">▶ {op.caption || label}</div>
+// Exports cannot run an animation: they show its poster, or a labelled
+// frame. An animation whose code failed shows its poster too, or says that
+// it could not play.
+function AnimationStill({ op, label = '', labels, failed = false }) {
+  const missing = <MissingFigure op={{ of: 'anim', caption: op.caption }} labels={labels} still />
+  if (op.poster) return <DrawnSvg markup={op.poster} reveal={1} caption={op.caption} fit fallback={failed ? missing : <div className="aha-op-note" data-tone="tip">▶ {op.caption || label}</div>} />
+  return failed ? missing : <div className="aha-op-note" data-tone="tip">▶ {op.caption || label}</div>
 }
 
 // fixedNote(op): the badge of an op corrected after the learner challenged
-// it ({ label, title }), when the view shows one.
-function OpView({ op, reveal, marks, aside, now, opRef, theme, still = false, animationLabel = '', onInteract, fixedNote }) {
+// it ({ label, title }), when the view shows one. figureLabels: what a
+// picture that could not be drawn says (FIGURE_LABELS).
+function OpView({ op, reveal, marks, aside, now, opRef, theme, still = false, animationLabel = '', onInteract, fixedNote, figureLabels = FIGURE_LABELS }) {
   const markDecor = marks.map(mark => <span key={mark.id} className={mark.style === 'circle' ? 'aha-markRing' : mark.style === 'box' ? 'aha-markBox' : 'aha-markLine'} style={{ opacity: mark.reveal, clipPath: `inset(0 ${100 - mark.reveal * 100}% 0 0)` }} />)
   let body
   switch (op.t) {
@@ -221,13 +266,16 @@ function OpView({ op, reveal, marks, aside, now, opRef, theme, still = false, an
       body = <div className="aha-op-note" data-tone={op.tone}><Inline text={op.text} reveal={reveal} /></div>
       break
     case 'svg':
-      body = <DrawnSvg markup={op.svg} reveal={reveal} caption={op.caption} />
+      body = <DrawnSvg markup={op.svg} reveal={reveal} caption={op.caption} fit fallback={<MissingFigure op={{ of: 'svg', caption: op.caption }} labels={figureLabels} reveal={reveal} still />} />
       break
     case 'chart':
       body = <DrawnSvg markup={chartSvg(op)} reveal={reveal} caption="" />
       break
     case 'plot':
-      body = <PlotFigure op={op} reveal={reveal} still={still} onInteract={onInteract} />
+      body = <PlotFigure op={op} reveal={reveal} still={still} onInteract={onInteract} labels={figureLabels} />
+      break
+    case 'missing':
+      body = <MissingFigure op={op} labels={figureLabels} reveal={reveal} still={still} />
       break
     case 'table': {
       const rows = reveal >= 1 ? op.rows.length : Math.floor(op.rows.length * reveal)
@@ -244,7 +292,7 @@ function OpView({ op, reveal, marks, aside, now, opRef, theme, still = false, an
       break
     }
     case 'anim':
-      body = still ? <AnimationStill op={op} label={animationLabel} /> : <Animation op={op} reveal={reveal} theme={theme} />
+      body = still ? <AnimationStill op={op} label={animationLabel} labels={figureLabels} /> : <Animation op={op} reveal={reveal} theme={theme} labels={figureLabels} />
       break
     default:
       body = null
@@ -306,7 +354,7 @@ const PENCIL_OPS = new Set(['p', 'h', 'list', 'note', 'math', 'title'])
 
 // One page as written so far: its title and two columns of ops.
 function PageContent({ page, title, board, activeRef }) {
-  const { reveal, marks, nowIds, opMeta, activeOp, theme, onInteract, fixedNote } = board
+  const { reveal, marks, nowIds, opMeta, activeOp, theme, onInteract, fixedNote, figureLabels } = board
   const titleReveal = title ? reveal(title.id) : 1
   return <>
     {page.title && titleReveal > 0 ? <h2 className="aha-boardTitle"><span><Inline text={page.title} reveal={titleReveal} /></span></h2> : null}
@@ -316,7 +364,7 @@ function PageContent({ page, title, board, activeRef }) {
           const amount = reveal(op.id)
           if (amount <= 0) return null
           const isActive = activeOp?.id === op.id && amount < 1
-          return <OpView key={op.id} op={op} reveal={amount} marks={marks.get(op.id) ?? []} aside={opMeta.get(op.id)?.aside} now={nowIds.has(op.id)} opRef={isActive ? activeRef : undefined} theme={theme} onInteract={onInteract} fixedNote={fixedNote} />
+          return <OpView key={op.id} op={op} reveal={amount} marks={marks.get(op.id) ?? []} aside={opMeta.get(op.id)?.aside} now={nowIds.has(op.id)} opRef={isActive ? activeRef : undefined} theme={theme} onInteract={onInteract} fixedNote={fixedNote} figureLabels={figureLabels} />
         })}
       </div>)}
     </div>
@@ -596,7 +644,8 @@ export function Board({ steps, position, theme = 'light', font = 'hand', bufferi
   // What the narration is talking about right now (synced steps only).
   const nowIds = new Set(position?.now ?? [])
   const fixedNote = op => ({ label: t('fixed'), title: t('fixedWas', { was: op.fixed.was }) })
-  const board = { reveal, marks, nowIds, opMeta, activeOp, theme, titles, onInteract, fixedNote }
+  const figureLabels = useMemo(() => ({ missing: t('figureMissing'), redrawing: t('figureRedrawing'), animation: t('animationFailed') }), [t])
+  const board = { reveal, marks, nowIds, opMeta, activeOp, theme, titles, onInteract, fixedNote, figureLabels }
   const pencil = activeOp && position && position.progress < 1 && PENCIL_OPS.has(activeOp.t) ? position : null
   const View = view === 'pages' ? PagedView : CanvasView
 
@@ -610,8 +659,8 @@ export function Board({ steps, position, theme = 'light', font = 'hand', bufferi
 // pages, columns and styles as the board, without the pager, the pencil or
 // scrolling. Pages with nothing on them are left out; the first page shows
 // `title` when the board names none. footer: { left, right } beside the
-// page number.
-export function BoardSheets({ steps, title = '', theme = 'light', font = 'hand', footer = {}, animationLabel = '', fixedLabel = '' }) {
+// page number. figureLabels: what a picture that could not be drawn says.
+export function BoardSheets({ steps, title = '', theme = 'light', font = 'hand', footer = {}, animationLabel = '', fixedLabel = '', figureLabels = FIGURE_LABELS }) {
   const layout = useMemo(() => layoutBoard(steps), [steps])
   const asides = useMemo(() => new Set(steps.flatMap(step => (step.aside ? step.ops.map(op => op.id) : []))), [steps])
   const marks = useMemo(() => {
@@ -626,7 +675,7 @@ export function BoardSheets({ steps, title = '', theme = 'light', font = 'hand',
       {heading ? <h2 className="aha-boardTitle"><span><Inline text={heading} /></span></h2> : null}
       <div className="aha-cols">
         {page.columns.map((column, columnIndex) => <div className="aha-colBody" key={columnIndex}>
-          {column.map(({ op }) => <OpView key={op.id} op={op} reveal={1} marks={marks.get(op.id) ?? []} aside={asides.has(op.id)} now={false} theme={theme} still animationLabel={animationLabel} fixedNote={fixedLabel ? () => ({ label: fixedLabel }) : undefined} />)}
+          {column.map(({ op }) => <OpView key={op.id} op={op} reveal={1} marks={marks.get(op.id) ?? []} aside={asides.has(op.id)} now={false} theme={theme} still animationLabel={animationLabel} fixedNote={fixedLabel ? () => ({ label: fixedLabel }) : undefined} figureLabels={figureLabels} />)}
         </div>)}
       </div>
       <div className="aha-exportFoot"><span>{footer.left ?? ''}</span><span>{[footer.right, `${index + 1} / ${pages.length}`].filter(Boolean).join(' · ')}</span></div>

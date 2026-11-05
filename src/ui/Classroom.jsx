@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { applyFixes, prefixFixes } from '../core/board-fix.js'
+import { settled } from '../core/figure-fix.js'
 import { boardScope } from './api.js'
 import { Board, Inline } from './board/Board.jsx'
 import { captionSentences } from './board/inline.js'
@@ -154,6 +155,8 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
 
   // Stream steps from a generating lesson. A lesson board's job also says
   // what the teacher is doing (prep), shown while the lesson waits for it.
+  // Once it is redrawing pictures, every step is written: the lesson can
+  // end, and the redrawn pictures arrive with the finished board.
   const [prep, setPrep] = useState(null)
   useEffect(() => {
     if (!stream) return undefined
@@ -166,7 +169,14 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
         const fresh = partial.filter(step => !known.has(step.id))
         return fresh.length ? [...current, ...fresh] : current
       }),
-      onPreview: (preview, job) => setPrep(preview?.phase ? { ...preview, elapsedMs: job?.elapsedMs ?? 0, receivedAt: performance.now() } : null),
+      onPreview: (preview, job) => {
+        if (preview?.phase === 'repairing') {
+          setPrep(null)
+          setComplete(true)
+          return
+        }
+        setPrep(preview?.phase ? { ...preview, elapsedMs: job?.elapsedMs ?? 0, receivedAt: performance.now() } : null)
+      },
     }).then(result => {
       const board = result?.board ?? result?.item?.board ?? result
       if (board?.steps?.length) setMain(boardFixes.current.length ? applyFixes(board.steps, boardFixes.current).steps : board.steps)
@@ -176,6 +186,8 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
     }).catch(failure => {
       if (controller.signal.aborted) return
       setPrep(null)
+      // Nothing more will be redrawn.
+      setMain(current => settled(current))
       setError(failure)
       setComplete(true)
     })
@@ -316,7 +328,7 @@ export function Classroom({ scope, title, crumb, steps: initialSteps = [], strea
       onResult?.(result, id)
     } catch (failure) {
       if (signal.aborted) return
-      setAsides(current => current.flatMap(aside => (aside.id !== id ? [aside] : aside.steps.length ? [{ ...aside, streaming: false }] : [])))
+      setAsides(current => current.flatMap(aside => (aside.id !== id ? [aside] : aside.steps.length ? [{ ...aside, steps: settled(aside.steps), streaming: false }] : [])))
       setAsking(false)
       // Nothing was answered: give the question back for another try.
       if (kind === 'question' && !shown) setQuestion(current => current || label)

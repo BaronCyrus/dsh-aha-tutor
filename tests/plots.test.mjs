@@ -202,7 +202,8 @@ test('the board takes plots under any name, and charts stay charts', () => {
     { t: 'plot', series: [{ name: '测量', points: [[0, 1], [1, 2]] }] },
     { t: 'plot', fns: ['bad('] },
   ] }])
-  assert.deepEqual(board.steps[0].ops.map(op => op.t), ['plot', 'plot', 'plot', 'chart'], 'formulas make plots, data makes a chart, a broken plot goes')
+  assert.deepEqual(board.steps[0].ops.map(op => op.t), ['plot', 'plot', 'plot', 'chart', 'missing'], 'formulas make plots, data makes a chart, a broken plot says it could not be drawn')
+  assert.deepEqual(board.steps[0].ops[4], { id: 'o5', t: 'missing', of: 'plot', caption: '', formula: 'y = bad(' })
   assert.equal(estimateHeight(board.steps[0].ops[0]), 9)
   assert.equal(estimateHeight({ ...board.steps[0].ops[0], params: [{}, {}] }), 9 + 2.2)
   assert.match(boardToPlainText(board), /\(plot: \{"fns":\[\{"kind":"fx","y":"x\^2"\}\]/u, 'prompts see the formulas')

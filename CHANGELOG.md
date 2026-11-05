@@ -2,6 +2,18 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## Unreleased
+
+### Added
+
+- **Functions in pieces**: plot formulas can compare and choose: `if(x < 0, -x, x)`, `piecewise(x < 0, 0, x < 1, x, 1)` (the last value covers the rest) and `x < 0 ? -x : x`, with `<`, `<=`, `>`, `>=`, `=`, `!=` (also `≤`, `≥`, `≠` and their LaTeX), `and`, `or` and chained comparisons such as `0 <= x < 2`. They are still read as calculator syntax and evaluated over numbers only. A curve breaks where it jumps, also for `floor`, `round`, `sign` and `mod`, instead of drawing a vertical line, and a continuous joint such as |x| still meets. The formula beside it reads like a textbook: "−x (x < 0); x (x ≥ 0)". The board prompt says how to write one.
+
+### Fixed
+
+- **A figure that cannot be drawn no longer vanishes**: a diagram, function plot, chart or animation the model got wrong was left off the board without a word while the teacher went on talking about it. What can be fixed without asking anyone is now fixed where the board is written: in a diagram, a stray `&`, an HTML entity such as `&nbsp;`, a `<` in a label, an undeclared `xlink:` prefix, a name in the wrong case (`viewbox`), an unquoted or repeated attribute, quotes escaped twice, scripts and HTML the board removes anyway, and anything after the closing `</svg>`; in a plot, a letter a formula uses without declaring it becomes a slider from 0 to 2 starting at 1, and values given as `constants` keep their value. Whatever is still wrong once a board is written goes back to the model in one call (at most six figures, the teach model thinking as little as it can), with what is wrong with each and what the teacher says while it is shown. A figure that comes back is checked like any other before it takes the broken one's place, which is shown as being redrawn meanwhile. One that still cannot be drawn says so on the board, with its caption and, for a plot, its formulas, and so do the PDF, PNG, Markdown and video exports. A board with nothing wrong costs no extra call. This covers lessons, prefetched lessons, answers to raised hands, re-explanations, corrections, checked steps, instant answers and shorts.
+- **An animation whose code fails shows its still frame**: an error in an animation's script (a syntax error, a name it never defined) left a blank or frozen frame. The board now shows the animation's still frame instead, or says that it could not play.
+- **Diagrams keep their labels in view**: a label or shape drawn past a diagram's viewBox ran into what came next on the board and was cut off in videos. The viewBox now grows to hold all the diagram draws, on the board and in every export. A lower-case `viewbox` no longer squashes a diagram in videos.
+
 ## 1.11.1 - 2026-11-04
 
 ### Fixed

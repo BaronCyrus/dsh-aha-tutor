@@ -41,6 +41,10 @@ export function estimateHeight(op) {
       return (op.equal ? 10 : 9) + op.params.length * 1.1
     case 'anim':
       return Math.round(op.height / 34)
+    case 'missing':
+      // The room the picture would have taken: one redrawn while the lesson
+      // plays does not move what follows it.
+      return op.of === 'plot' ? 9 : 8.5
     default:
       return 0
   }

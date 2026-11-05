@@ -12,7 +12,9 @@
 
 import { normalizeBoard } from '../core/board-script.js'
 import { orderBoardOptions } from '../core/choice-order.js'
+import { applyRepairs, MAX_REPAIRS, redrawing, repairBudget, repairItems, settled } from '../core/figure-fix.js'
 import { extractJson, JsonExtractError, parseJsonLines } from '../core/json-extract.js'
+import { figureRepairPrompt } from './prompts.js'
 
 export class TutorError extends Error {
   constructor(code, message) {
@@ -87,12 +89,35 @@ export function writingHint(partial) {
 
 const PROGRESS_EVERY_MS = 250
 
+// Pictures on a written board that still cannot be drawn go back to the
+// model once, all in one call: the teach model, thinking as little as it
+// can. Returns the steps with every picture that came back right in place;
+// a call that fails leaves them as they were, since the board itself is
+// written (only cancelling stops it).
+export async function repairFigures(llm, { steps, problems, signal, logger }) {
+  const items = repairItems(problems)
+  if (!items.length) return { steps, fixed: [] }
+  const prompt = figureRepairPrompt({ items })
+  try {
+    const reply = await llm.complete({ purpose: 'teach', effort: 'lowest', system: prompt.system, user: prompt.user, maxTokens: repairBudget(items), signal })
+    return applyRepairs(steps, problems.slice(0, items.length), extractJson(reply))
+  } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? error
+    logger?.debug?.('aha-tutor could not redraw figures: %s', error?.message)
+    return { steps, fixed: [] }
+  }
+}
+
 // Streams a board. onStep(step, index) fires for each finished step, with the
 // same ids the final board will have. onProgress({ phase, thinking, chars,
 // steps, current }) reports what the model is doing: 'starting' before
 // anything arrives, 'thinking' while it reasons, 'writing' with the step
-// being written and its hint. Returns the normalized board.
-export async function generateSteps(llm, { purpose = 'teach', effort, prompt, maxTokens = 12000, signal, conceptIds = [], onStep, onProgress, progressEveryMs = PROGRESS_EVERY_MS, minSteps = 1, images }) {
+// being written and its hint, then 'repairing' (with `figures`) while
+// pictures that could not be drawn are redrawn: every step is written by
+// then. Returns the normalized board.
+// repair: redraw such pictures (repairFigures); while that is still to come,
+// a step shows them as being redrawn.
+export async function generateSteps(llm, { purpose = 'teach', effort, prompt, maxTokens = 12000, signal, conceptIds = [], onStep, onProgress, progressEveryMs = PROGRESS_EVERY_MS, minSteps = 1, images, repair = true, logger }) {
   const raw = []
   let buffer = ''
   let emitted = 0
@@ -106,6 +131,7 @@ export async function generateSteps(llm, { purpose = 'teach', effort, prompt, ma
     onProgress({ ...status, steps: emitted, current: status.phase === 'writing' ? writingHint(buffer) : '' })
   }
   report(true)
+  const send = (step, index) => onStep?.(repair ? redrawing(step) : step, index)
   const emit = () => {
     if (!raw.length) return
     let board
@@ -116,7 +142,7 @@ export async function generateSteps(llm, { purpose = 'teach', effort, prompt, ma
     }
     const before = emitted
     while (emitted < board.steps.length) {
-      onStep?.(board.steps[emitted], emitted)
+      send(board.steps[emitted], emitted)
       emitted += 1
     }
     if (emitted > before) report(true)
@@ -164,17 +190,24 @@ export async function generateSteps(llm, { purpose = 'teach', effort, prompt, ma
     }
   }
   let board
+  const problems = []
   try {
-    board = orderBoardOptions(normalizeBoard(raw, { conceptIds }))
+    board = orderBoardOptions(normalizeBoard(raw, { conceptIds, problems }))
   } catch {
     throw new TutorError('bad-output', 'The model did not return a usable lesson. Try again or pick a stronger model in settings.')
   }
   if (board.steps.length < minSteps) throw new TutorError('bad-output', 'The lesson came back too short. Try again.')
   while (emitted < board.steps.length) {
-    onStep?.(board.steps[emitted], emitted)
+    send(board.steps[emitted], emitted)
     emitted += 1
   }
-  return board
+  if (repair && problems.length) {
+    status.phase = 'repairing'
+    status.figures = Math.min(problems.length, MAX_REPAIRS)
+    report(true)
+    board = { ...board, steps: (await repairFigures(llm, { steps: board.steps, problems, signal, logger })).steps }
+  }
+  return { ...board, steps: settled(board.steps) }
 }
 
 // Counts a marker in streamed text, even when a delta splits it, and reports

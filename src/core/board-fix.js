@@ -36,6 +36,8 @@ export function opPlain(op) {
     case 'svg':
     case 'anim':
       return op.caption ?? ''
+    case 'missing':
+      return op.caption || op.formula || ''
     default:
       return ''
   }

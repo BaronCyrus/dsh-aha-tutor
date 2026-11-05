@@ -72,6 +72,15 @@ function learnerBlock({ profile, mastery } = {}) {
 // so a letter in its text would name the wrong option.
 const OPTION_ORDER = 'Options are not shown in the order you write them: refer to an option by what it says, never by its letter or position, in the prompt, the explanation and the hints, and do not list the options in the prompt.'
 
+// The pictures a board can hold, as the board prompt and the repair prompt
+// describe them.
+const FIGURE_FORMATS = Object.freeze({
+  svg: `{"t":"svg","svg":"<svg viewBox=\\"0 0 480 300\\" xmlns=\\"http://www.w3.org/2000/svg\\">…</svg>","caption":"…"}  a clean hand-drawn-style diagram: viewBox at most 640×420, strokes and simple shapes, <text> labels (font-size 14–18), colors only from ink #2b2b2b, blue #2f6fde, red #d64545, green #2f9e6e, orange #e08a1e, purple #7a4fd6; no scripts, no images, no foreignObject, no external links`,
+  chart: `{"t":"chart","kind":"line|bar|scatter|pie|area","title":"…","xLabel":"…","yLabel":"…","series":[{"name":"…","points":[[x,y],…]}]}  or "data":[{"label":"…","value":n}] for bar/pie; for data that was measured or counted, with real numbers (a curve given by a formula is a plot; to compare cases a formula gives, such as two interest rates or saving early and late, draw them as curves of one plot)`,
+  plot: `{"t":"plot","fns":[{"y":"A*sin(w*x)","name":"…"}],"x":[-6.28,6.28],"y":[-2,2],"params":[{"name":"A","value":1,"min":0.5,"max":2,"label":"振幅 A"}],"points":[{"x":"pi/2","label":"…"}],"lines":[{"x":0,"label":"…"}],"shade":[{"fn":0,"from":0,"to":"pi"}],"tangents":[{"fn":0,"x":0}],"xLabel":"…","yLabel":"…","caption":"…"}  an exact graph the app computes from formulas: use it for every curve given by a formula. A curve in "fns" is {"y":"f(x)"}, parametric {"x":"…","y":"…","t":[a,b]} or polar {"r":"f(θ)","t":[a,b]}, written in calculator syntax: x (t, θ), numbers, + - * / ^ ( ), pi, e, sin cos tan asin acos atan sinh cosh tanh exp ln log10 sqrt abs min max floor, always with parentheses as in sin(2*x). A function in pieces is one formula: if(x<0, -x, x), or piecewise(x<0, 0, x<1, x, 1) whose last value covers the rest; conditions use < <= > >= = != and "and"/"or". "params" (at most 4) become sliders the learner can drag: each is {"name","value","min","max"} with numbers min < max, named by the symbol the formulas use (A, k, r, θ, v0; never x, y or pi); mention them in "say" and suggest what to try. Optional: "points" (only an "x" puts the point on curve "fn"), "lines" (dashed guides such as asymptotes), "shade" (the area under curve "fn" from "from" to "to", or between "fn" and "fn2"), "tangents", "equal":true (the same scale on both axes, so circles stay round). Ranges and coordinates may be formulas such as "2*pi".`,
+  anim: `{"t":"anim","html":"<!doctype html>…","height":300,"caption":"…","poster":"<svg …>…</svg>"}  only when motion is the point (orbits, waves, sorting); a self-contained page under 8 KB using canvas or SVG and plain JavaScript, no network access, starts automatically and loops; "poster" is one representative still frame as an SVG with the same rules as svg ops, shown where the animation cannot play (exported videos)`,
+})
+
 export const BOARD_SPEC = `THE WHITEBOARD
 The board has two columns and is written by hand while you speak. Put on it only what deserves to stay visible: headings, key phrases, formulas, diagrams, worked steps. Say the rest aloud.
 
@@ -81,18 +90,44 @@ Board operations (each is a JSON object with field "t"; give an op an "id" only 
 - {"t":"p","text":"…"}  one to three short lines; inline math $…$, **bold**, ==highlight==
 - {"t":"math","tex":"…","text":"…"}  one display formula in KaTeX-compatible LaTeX; "text" is a plain-Unicode reading of it (e.g. "θ(t) = θ₀·cos(ωt + φ)")
 - {"t":"list","items":["…","…"],"ordered":false}
-- {"t":"svg","svg":"<svg viewBox=\\"0 0 480 300\\" xmlns=\\"http://www.w3.org/2000/svg\\">…</svg>","caption":"…"}  a clean hand-drawn-style diagram: viewBox at most 640×420, strokes and simple shapes, <text> labels (font-size 14–18), colors only from ink #2b2b2b, blue #2f6fde, red #d64545, green #2f9e6e, orange #e08a1e, purple #7a4fd6; no scripts, no images, no foreignObject, no external links
-- {"t":"chart","kind":"line|bar|scatter|pie|area","title":"…","xLabel":"…","yLabel":"…","series":[{"name":"…","points":[[x,y],…]}]}  or "data":[{"label":"…","value":n}] for bar/pie; for data that was measured or counted, with real numbers (a curve given by a formula is a plot; to compare cases a formula gives, such as two interest rates or saving early and late, draw them as curves of one plot)
-- {"t":"plot","fns":[{"y":"A*sin(w*x)","name":"…"}],"x":[-6.28,6.28],"y":[-2,2],"params":[{"name":"A","value":1,"min":0.5,"max":2,"label":"振幅 A"}],"points":[{"x":"pi/2","label":"…"}],"lines":[{"x":0,"label":"…"}],"shade":[{"fn":0,"from":0,"to":"pi"}],"tangents":[{"fn":0,"x":0}],"xLabel":"…","yLabel":"…","caption":"…"}  an exact graph the app computes from formulas: use it for every curve given by a formula. A curve in "fns" is {"y":"f(x)"}, parametric {"x":"…","y":"…","t":[a,b]} or polar {"r":"f(θ)","t":[a,b]}, written in calculator syntax: x (t, θ), numbers, + - * / ^ ( ), pi, e, sin cos tan asin acos atan sinh cosh tanh exp ln log10 sqrt abs min max, always with parentheses as in sin(2*x). "params" (at most 4) become sliders the learner can drag: each is {"name","value","min","max"} with numbers min < max, named by the symbol the formulas use (A, k, r, θ, v0; never x, y or pi); mention them in "say" and suggest what to try. Optional: "points" (only an "x" puts the point on curve "fn"), "lines" (dashed guides such as asymptotes), "shade" (the area under curve "fn" from "from" to "to", or between "fn" and "fn2"), "tangents", "equal":true (the same scale on both axes, so circles stay round). Ranges and coordinates may be formulas such as "2*pi".
+- ${FIGURE_FORMATS.svg}
+- ${FIGURE_FORMATS.chart}
+- ${FIGURE_FORMATS.plot}
 - {"t":"table","head":["…"],"rows":[["…","…"]]}
 - {"t":"code","lang":"python","code":"…"}
 - {"t":"note","tone":"key|tip|warn|example","text":"…"}  boxed takeaway or warning
 - {"t":"mark","ref":"<id of an earlier op>","style":"underline|circle|box"}  point back at something already written
-- {"t":"anim","html":"<!doctype html>…","height":300,"caption":"…","poster":"<svg …>…</svg>"}  only when motion is the point (orbits, waves, sorting); a self-contained page under 8 KB using canvas or SVG and plain JavaScript, no network access, starts automatically and loops; "poster" is one representative still frame as an SVG with the same rules as svg ops, shown where the animation cannot play (exported videos)
+- ${FIGURE_FORMATS.anim}
 - {"t":"col"}  continue in the right column;  {"t":"page","title":"…"}  wipe the board and start a new page
 
 Fill the left column, then {"t":"col"}, then the right column; start a new page when both are full (roughly 8–12 ops per page).
 Only a plot with "params" has sliders: ask the learner to drag one only while such a plot is on the board. A chart, table or diagram has nothing to drag.`
+
+// What each kind of picture must be for the app to draw it, beyond its
+// format: the mistakes that keep pictures off the board.
+const FIGURE_RULES = Object.freeze({
+  svg: 'An svg must be well-formed XML: every tag closed and nested in order, every attribute quoted and given once, "&" written &amp; and "<" in text written &lt;, no HTML entities such as &nbsp; or &deg; (write the character itself), attribute names in their SVG case (viewBox), one root <svg> with xmlns="http://www.w3.org/2000/svg".',
+  chart: 'A chart needs at least one series with numeric [x, y] points, or "data" with a label and a numeric value each.',
+  plot: 'Every letter in a plot formula other than the curve\'s variable (x; t or θ for a parametric or polar curve) is a slider in "params" or is replaced by its number; only the listed functions exist, always written with parentheses; a function in pieces is one formula with if(...) or piecewise(...), or separate curves each with a "domain":[a,b].',
+  anim: 'An animation is one self-contained page under 8 KB in "html", with its scripts inline.',
+})
+
+// Pictures the app could not draw, back to the model in one call: each with
+// its id, kind, what is wrong, what the teacher says while it is shown and
+// the op as written. The answer names the ops it fixes by id.
+export function figureRepairPrompt({ items }) {
+  const kinds = [...new Set(items.flatMap(item => (item.kind === 'plot' || item.kind === 'chart' ? ['plot', 'chart'] : [item.kind])))]
+  return {
+    system: join(
+      'You fix pictures for a teaching whiteboard. Each picture below was written for a lesson, but the app could not draw it, for the reasons listed with it. Write each one again so that it can be drawn and shows what the teacher says about it.',
+      `Picture formats:\n${kinds.map(kind => `- ${FIGURE_FORMATS[kind]}`).join('\n')}`,
+      kinds.map(kind => FIGURE_RULES[kind]).join('\n'),
+      'Change only what the problems call for; keep the caption, the labels and their language. Keep the kind of picture unless another kind shows the same thing correctly (a curve given by a formula is a plot, measured data a chart). Leave out a picture you cannot fix.',
+      `Reply {"figures":[{"id":"<the picture's id>","op":{…the whole fixed op…}}]}. ${JSON_ONLY}`,
+    ),
+    user: block('pictures', JSON.stringify(items, null, 1)),
+  }
+}
 
 export const STEP_SPEC = `Each output line is ONE teaching step:
 {"say":"what you say while writing — natural spoken sentences, 1–4 sentences, no markdown","ops":[ …board ops written during this step… ],"check":{ …optional quick question… }}

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { BoardExport } from '../BoardExport.jsx'
 import { Classroom } from '../Classroom.jsx'
-import { ErrorLine, Modal, Spinner } from '../components.jsx'
+import { ErrorLine, LessonSources, Modal, Spinner } from '../components.jsx'
 import { useApp, useLoad } from '../hooks.js'
 import { useVideoExport } from '../useVideoExport.js'
 
@@ -50,7 +50,7 @@ export function LessonScreen({ courseId, lessonId }) {
       key={`${version}`}
       scope={{ kind: 'lesson', courseId, lessonId }}
       title={lesson.title}
-      crumb={`${unit.title} · ${lecture.title}`}
+      crumb={<>{unit.title} · {lecture.title}{detail.value.sources?.length ? <> <LessonSources sources={detail.value.sources} /></> : null}</>}
       steps={source.steps}
       stream={source.stream}
       asides={version === 0 ? detail.value.asides ?? [] : []}

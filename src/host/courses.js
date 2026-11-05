@@ -7,6 +7,7 @@ import {
   blueprintOutline,
   COURSE_SCHEMA_VERSION,
   courseProgress,
+  courseSpan,
   flattenLessons,
   intakeSummary,
   nextLesson,
@@ -20,9 +21,11 @@ import {
 } from '../core/course-model.js'
 import { assertId, newId } from '../core/ids.js'
 import { extractJson } from '../core/json-extract.js'
+import { bindBlueprint, keepSources, lessonQuery, sourceIndex, sourcesOf, stripSources } from '../core/lesson-sources.js'
 import { deckStatus } from '../core/srs.js'
 import { formatPassages, spreadPassages } from '../core/retrieval.js'
-import { COURSE_MATERIALS, emptyProgress, materialImages, materialsSummary, passagesFor, readMaterials, readProfile, readProgress } from './context.js'
+import { mentionedPages, readPages, scrubBlueprint, scrubDeep, scrubItem } from '../core/citations.js'
+import { COURSE_MATERIALS, emptyProgress, materialImages, materialPassages, materialsSummary, readMaterials, readProfile, readProgress, sourcing } from './context.js'
 import { generateJson, streamCounter, TutorError } from './generate.js'
 import { createMistakes } from './mistakes.js'
 import { blueprintPrompt, detectLanguage, materialsRevisePrompt, practicePrompt, projectsPrompt, questionnairePrompt, revisePrompt, reworkPrompt } from './prompts.js'
@@ -201,24 +204,31 @@ export function createCourses({ store, llm, jobs, research, mistakes = createMis
         deadline: /^\d{4}-\d{2}-\d{2}$/u.test(String(deadline ?? '')) ? deadline : null,
       }
       api.progress(0, 0, 'blueprint')
+      // Lessons name the contents entries of the materials they teach from.
+      const plan = sourcing(materials, course.language)
+      const index = sourceIndex(materials)
+      const summaryText = materialsSummary(materials, { refs: plan.refs })
+      // The outline names only pages the materials' contents list.
+      const listed = new Set(mentionedPages(summaryText))
       const blueprint = await generateJson(llm, {
         purpose: 'teach',
         prompt: blueprintPrompt({
           goal: course.goal,
           language: course.language,
           intake: intakeSummary(intake.questionnaire, cleanAnswers),
-          materialsSummary: materialsSummary(materials),
+          materialsSummary: summaryText,
           profile,
           timeline: settings.timeline,
           size: settings.size,
           weeklyMinutes: settings.weeklyMinutes,
           sources: intake.research?.sources,
+          sourcing: plan,
         }),
         images: llm.supportsImages?.('teach') ? await materialImages(store, materials) : undefined,
         maxTokens: 16000,
         signal: api.signal,
         onText: outlineStream(api),
-        normalize: raw => attachProjectUnits(raw, normalizeBlueprint(raw, { language: course.language })),
+        normalize: raw => scrubBlueprint(attachProjectUnits(raw, normalizeBlueprint(bindBlueprint(raw, index), { language: course.language })), listed),
       })
       // The sources the design leaned on stay with the course, for the course page.
       const sources = intake.research?.sources ?? []
@@ -234,16 +244,21 @@ export function createCourses({ store, llm, jobs, research, mistakes = createMis
     return jobs.start('craft/revise', async api => {
       const course = await readCourse(courseId)
       if (!course.units) throw new TutorError('no-blueprint', 'There is no blueprint to revise yet')
-      const current = { title: course.title, subtitle: course.subtitle, emoji: course.emoji, summary: course.summary, level: course.level, units: course.units, projects: course.projects }
+      const current = { title: course.title, subtitle: course.subtitle, emoji: course.emoji, summary: course.summary, level: course.level, units: stripSources(course.units), projects: course.projects }
+      const materials = await readMaterials(store, course.materialIds ?? [])
+      const plan = sourcing(materials, course.language)
+      const index = sourceIndex(materials)
       api.progress(0, 0, 'blueprint')
-      const revised = await generateJson(llm, {
+      const summaryText = materialsSummary(materials, { refs: plan.refs })
+      const listed = new Set([...mentionedPages(summaryText), ...mentionedPages(JSON.stringify(current))])
+      const revised = keepSources(course, await generateJson(llm, {
         purpose: 'teach',
-        prompt: revisePrompt({ blueprint: current, instruction: request, language: course.language }),
+        prompt: revisePrompt({ blueprint: current, instruction: request, language: course.language, materials: summaryText, sourcing: plan }),
         maxTokens: 16000,
         signal: api.signal,
         onText: streamCounter('"estMinutes"', count => api.progress(count, 0, 'blueprint')),
-        normalize: raw => attachProjectUnits(raw, normalizeBlueprint(raw, { language: course.language })),
-      })
+        normalize: raw => scrubBlueprint(attachProjectUnits(raw, normalizeBlueprint(bindBlueprint(raw, index), { language: course.language })), listed),
+      }))
       // A revision is only proposed: the learner sees what changes first.
       const proposal = { instruction: request, at: stamp(), blueprint: revised }
       await store.writeJson(store.paths.proposal(courseId), proposal)
@@ -264,19 +279,26 @@ export function createCourses({ store, llm, jobs, research, mistakes = createMis
       const known = course.materialIds ?? []
       const added = (await readMaterials(store, wanted.filter(id => !known.includes(id)))).slice(0, Math.max(0, COURSE_MATERIALS - known.length))
       if (!added.length) throw new TutorError(wanted.every(id => known.includes(id)) ? 'materials-known' : known.length >= COURSE_MATERIALS ? 'materials-full' : 'not-found', 'These materials cannot be added')
-      const current = { title: course.title, subtitle: course.subtitle, emoji: course.emoji, summary: course.summary, level: course.level, units: course.units, projects: course.projects }
+      const current = { title: course.title, subtitle: course.subtitle, emoji: course.emoji, summary: course.summary, level: course.level, units: stripSources(course.units), projects: course.projects }
+      // The new materials are numbered after the course's own, as they will
+      // be once the proposal is applied.
+      const before = await readMaterials(store, known)
+      const index = sourceIndex([...before, ...added])
+      const plan = sourcing(added, course.language)
       const share = Math.floor(9000 / added.length)
       const passages = added.filter(item => item.chunks.length).map(item => formatPassages(spreadPassages(item.chunks, { maxChars: share, samples: 8 }), item.meta.title)).join('\n\n')
       api.progress(0, 0, 'blueprint')
-      const revised = await generateJson(llm, {
+      const summaryText = materialsSummary(added, { refs: plan.refs, offset: before.length })
+      const listed = new Set([...mentionedPages(summaryText), ...mentionedPages(passages), ...mentionedPages(JSON.stringify(current))])
+      const revised = keepSources(course, await generateJson(llm, {
         purpose: 'teach',
-        prompt: materialsRevisePrompt({ blueprint: current, materials: materialsSummary(added), passages, instruction: request, language: course.language }),
+        prompt: materialsRevisePrompt({ blueprint: current, materials: summaryText, passages, instruction: request, language: course.language, sourcing: plan }),
         images: llm.supportsImages?.('teach') ? await materialImages(store, added) : undefined,
         maxTokens: 16000,
         signal: api.signal,
         onText: streamCounter('"estMinutes"', count => api.progress(count, 0, 'blueprint')),
-        normalize: raw => attachProjectUnits(raw, normalizeBlueprint(raw, { language: course.language })),
-      })
+        normalize: raw => scrubBlueprint(attachProjectUnits(raw, normalizeBlueprint(bindBlueprint(raw, index), { language: course.language })), listed),
+      }))
       const proposal = { instruction: request, materials: added.map(item => ({ id: item.meta.id, title: item.meta.title })), at: stamp(), blueprint: revised }
       await store.writeJson(store.paths.proposal(courseId), proposal)
       return { course, proposal }
@@ -322,8 +344,9 @@ export function createCourses({ store, llm, jobs, research, mistakes = createMis
         }),
         maxTokens: 3000,
         signal: api.signal,
+        // The new lessons teach from the pages the old one did.
         normalize: value => {
-          const list = (Array.isArray(value?.lessons) ? value.lessons : [value]).map(entry => normalizeLesson({ ...entry, id: undefined })).filter(Boolean).slice(0, split ? 3 : 1)
+          const list = (Array.isArray(value?.lessons) ? value.lessons : [value]).map(entry => normalizeLesson({ ...entry, id: undefined, sources: lesson.sources, terms: lesson.terms })).filter(Boolean).slice(0, split ? 3 : 1)
           if (split ? list.length < 2 : !list.length) throw new Error('no usable lessons')
           return list
         },
@@ -345,11 +368,13 @@ export function createCourses({ store, llm, jobs, research, mistakes = createMis
   // Practice sets for some lessons of one lecture in one model call, each
   // saved as soon as it is checked. Returns { [lessonId]: saved set }.
   async function writeLecturePractice({ course, lecture, lessons = lecture.lessons, materials, signal }) {
-    const query = lessons.map(lesson => `${lesson.title} ${lesson.objectives.join(' ')}`).join(' ')
+    const query = lessonQuery(lessons)
     const sources = materials ?? await readMaterials(store, course.materialIds ?? [])
+    const found = materialPassages(sources, { query, maxChars: 5000, around: courseSpan(course, lessons.map(lesson => lesson.id)), sources: sourcesOf(lessons) })
+    const read = readPages(found.passages)
     const sets = await generateJson(llm, {
       purpose: 'teach',
-      prompt: practicePrompt({ course, lecture, lessons, language: course.language, passages: passagesFor(sources, query, 5000) }),
+      prompt: practicePrompt({ course, lecture, lessons, language: course.language, passages: found.text }),
       // 4–6 items per lesson with hints and explanations: room for all of them,
       // so the last lessons of a long lecture are not cut off.
       maxTokens: Math.min(16000, 3000 + lessons.length * 2600),
@@ -360,6 +385,7 @@ export function createCourses({ store, llm, jobs, research, mistakes = createMis
     for (const lesson of lessons) {
       const raw = sets?.[lesson.id] ?? sets?.[lesson.title] ?? (lessons.length === 1 ? Object.values(sets ?? {})[0] : undefined)
       const set = normalizePractice(raw ?? { items: [] }, lesson.concepts)
+      set.items = set.items.map(item => scrubItem(item, read))
       if (!set.items.length) continue
       written[lesson.id] = { lessonId: lesson.id, items: set.items.map(orderOptions), createdAt: stamp() }
       await store.writeJson(store.paths.practice(course.id, lesson.id), written[lesson.id])
@@ -390,9 +416,11 @@ export function createCourses({ store, llm, jobs, research, mistakes = createMis
             signal: api.signal,
             normalize: raw => (Array.isArray(raw?.projects) ? raw.projects : []),
           })
+          // The briefs were written from no material: they name no pages.
           course.projects = course.projects.map(project => {
             const detail = expanded.find(item => item?.id === project.id) ?? expanded.find(item => text(item?.title, 120) === project.title)
-            return detail ? normalizeProject({ ...project, ...detail, id: project.id, unitId: project.unitId }) ?? project : project
+            const written = detail ? normalizeProject({ ...project, ...detail, id: project.id, unitId: project.unitId }) ?? project : project
+            return scrubDeep(written, new Set(), new Set(['id', 'kind', 'unitId', 'starterFiles']))
           })
         } catch (error) {
           if (api.signal.aborted) throw error

@@ -108,6 +108,15 @@ export async function repairFigures(llm, { steps, problems, signal, logger }) {
   }
 }
 
+// A board with each step passed through clean(step) (see scrubStep), and
+// marks pointing at ops that cleaning left out dropped.
+function cleanBoard(board, clean) {
+  if (!clean) return board
+  const steps = board.steps.map(step => clean(step))
+  const known = new Set(steps.flatMap(step => step.ops.map(op => op.id)))
+  return { ...board, steps: steps.map(step => ({ ...step, ops: step.ops.filter(op => op.t !== 'mark' || known.has(op.ref)) })) }
+}
+
 // Streams a board. onStep(step, index) fires for each finished step, with the
 // same ids the final board will have. onProgress({ phase, thinking, chars,
 // steps, current }) reports what the model is doing: 'starting' before
@@ -116,8 +125,10 @@ export async function repairFigures(llm, { steps, problems, signal, logger }) {
 // pictures that could not be drawn are redrawn: every step is written by
 // then. Returns the normalized board.
 // repair: redraw such pictures (repairFigures); while that is still to come,
-// a step shows them as being redrawn.
-export async function generateSteps(llm, { purpose = 'teach', effort, prompt, maxTokens = 12000, signal, conceptIds = [], onStep, onProgress, progressEveryMs = PROGRESS_EVERY_MS, minSteps = 1, images, repair = true, logger }) {
+// a step shows them as being redrawn. clean(step), when given, changes every
+// step before it is shown or kept (pages not read are left out), redrawn
+// pictures too.
+export async function generateSteps(llm, { purpose = 'teach', effort, prompt, maxTokens = 12000, signal, conceptIds = [], onStep, onProgress, progressEveryMs = PROGRESS_EVERY_MS, minSteps = 1, images, repair = true, logger, clean }) {
   const raw = []
   let buffer = ''
   let emitted = 0
@@ -136,7 +147,7 @@ export async function generateSteps(llm, { purpose = 'teach', effort, prompt, ma
     if (!raw.length) return
     let board
     try {
-      board = orderBoardOptions(normalizeBoard(raw, { conceptIds }))
+      board = orderBoardOptions(cleanBoard(normalizeBoard(raw, { conceptIds }), clean))
     } catch {
       return
     }
@@ -192,7 +203,7 @@ export async function generateSteps(llm, { purpose = 'teach', effort, prompt, ma
   let board
   const problems = []
   try {
-    board = orderBoardOptions(normalizeBoard(raw, { conceptIds, problems }))
+    board = orderBoardOptions(cleanBoard(normalizeBoard(raw, { conceptIds, problems }), clean))
   } catch {
     throw new TutorError('bad-output', 'The model did not return a usable lesson. Try again or pick a stronger model in settings.')
   }
@@ -205,7 +216,8 @@ export async function generateSteps(llm, { purpose = 'teach', effort, prompt, ma
     status.phase = 'repairing'
     status.figures = Math.min(problems.length, MAX_REPAIRS)
     report(true)
-    board = { ...board, steps: (await repairFigures(llm, { steps: board.steps, problems, signal, logger })).steps }
+    // A redrawn picture's caption names only pages that were read, too.
+    board = cleanBoard({ ...board, steps: (await repairFigures(llm, { steps: board.steps, problems, signal, logger })).steps }, clean)
   }
   return { ...board, steps: settled(board.steps) }
 }

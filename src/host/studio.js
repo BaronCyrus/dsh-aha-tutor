@@ -6,8 +6,9 @@ import { orderOptions } from '../core/choice-order.js'
 import { LIMITS, materialQuizRange, normalizeCards, normalizeCheatsheet, normalizePractice, partCardRange, shareRange, takeEvenly, text, thinEvenly, uniqueCards } from '../core/course-model.js'
 import { assertId, newId } from '../core/ids.js'
 import { createCard, review } from '../core/srs.js'
+import { checkRange, checkSheet, readPages, scrubCard, scrubDeep, scrubItem, scrubPages, scrubStep, shownBoard, shownSheet } from '../core/citations.js'
 import { buildIndex, documentParts, formatPassages, materialParts, passageRange, search, snippetOf, spreadPassages } from '../core/retrieval.js'
-import { materialImages, passagesFor, readMaterials, readProfile } from './context.js'
+import { allChunks, materialImages, materialPassages, materialTopics, outlineText, readMaterials, readProfile } from './context.js'
 import { fieldCounter, generateJson, generateSteps, generateText, TutorError } from './generate.js'
 import { ingestFile, ingestUrl, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from './materials.js'
 import { assistPrompt, cheatsheetPrompt, detectLanguage, digestPartPrompt, digestPrompt, flashcardsPrompt, materialBriefPrompt, quizPrompt, shortPrompt, summaryPrompt } from './prompts.js'
@@ -46,6 +47,10 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
       mime: result.mime ?? null,
       url: result.url ?? null,
       ocr: result.ocr ?? null,
+      // The outline (bookmarks or headings) and where printed page numbers
+      // came from ('pdf' labels or the 'pages' themselves), when found.
+      outline: result.outline ?? null,
+      printed: result.printed ?? null,
       createdAt: stamp(),
       brief: null,
       ...extra,
@@ -54,17 +59,19 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
     if (result.chunks?.length) await store.writeJson(store.paths.materialChunks(id), result.chunks)
     if (result.chunks?.length) {
       try {
+        const excerpts = spreadPassages(result.chunks, { maxChars: 12000 })
+        const read = readPages(excerpts)
         meta.brief = await generateJson(llm, {
           purpose: 'quick',
-          prompt: materialBriefPrompt({ title: meta.title, passages: formatPassages(spreadPassages(result.chunks, { maxChars: 12000 }), ''), language: detectLanguage(result.chunks[0].text, uiLanguage()) }),
+          prompt: materialBriefPrompt({ title: meta.title, contents: meta.outline ? outlineText(meta.outline, { maxChars: 3000 }) : '', passages: formatPassages(excerpts, ''), language: detectLanguage(result.chunks[0].text, uiLanguage()) }),
           maxTokens: 1500,
           signal,
-          normalize: raw => ({
+          normalize: raw => scrubDeep({
             summary: text(raw?.summary, 800),
             topics: (Array.isArray(raw?.topics) ? raw.topics : []).map(topic => text(topic, 80)).filter(Boolean).slice(0, 30),
             level: text(raw?.level, 20),
             suggestedGoal: text(raw?.suggestedGoal, 300),
-          }),
+          }, read),
         })
       } catch (error) {
         if (signal?.aborted) throw error
@@ -136,6 +143,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
         materialId: chunk.materialId,
         title: chunk.materialTitle,
         page: chunk.page ?? null,
+        label: chunk.label ?? null,
         slide: chunk.slide ?? null,
         snippet: snippetOf(chunk.text, wanted),
       })),
@@ -143,10 +151,10 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
   }
 
   async function getMaterial({ id }) {
-    const meta = await store.readJson(store.paths.material(assertId(id, 'mat')), null)
+    const meta = shownDigest(await store.readJson(store.paths.material(assertId(id, 'mat')), null))
     if (!meta) throw new TutorError('not-found', 'Material not found')
     const chunks = (await store.readJson(store.paths.materialChunks(id), [])) ?? []
-    return { material: meta, preview: chunks.slice(0, 3).map(chunk => ({ page: chunk.page ?? null, slide: chunk.slide ?? null, text: chunk.text.slice(0, 600) })), chunkCount: chunks.length }
+    return { material: meta, preview: chunks.slice(0, 3).map(chunk => ({ page: chunk.page ?? null, label: chunk.label ?? null, slide: chunk.slide ?? null, text: chunk.text.slice(0, 600) })), chunkCount: chunks.length }
   }
 
   async function renameMaterial({ id, title }) {
@@ -173,6 +181,8 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
       const size = material.chunks.reduce((sum, chunk) => sum + chunk.text.length, 0)
       let prompt
       let missing = []
+      // The pages a digest may give: those of the parts that were read.
+      let pagesRead = readPages(material.chunks)
       if (size <= DIGEST_SINGLE_CHARS) {
         api.progress(0, 1, 'writing')
         prompt = digestPrompt({ title, passages: formatPassages(material.chunks, ''), language })
@@ -186,7 +196,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
               prompt: digestPartPrompt({ title, part: index + 1, parts: parts.length, range: passageRange(parts[index]), passages: formatPassages(parts[index], ''), language }),
               maxTokens: 6000,
               signal: api.signal,
-              normalize: normalizeDigestPart,
+              normalize: raw => checkDigestPart(normalizeDigestPart(raw), readPages(parts[index])),
             })
           } catch (error) {
             if (api.signal.aborted) throw error
@@ -210,13 +220,14 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
         // Notes on a fraction of the book would pass for a digest of all of it.
         if (read.length < Math.ceil(parts.length / 2)) throw new TutorError('bad-output', 'The model could not read enough of this document. Try again or pick a stronger model in settings.')
         missing = parts.map((part, index) => (notes[index] ? null : passageRange(part) || `${index + 1}/${parts.length}`)).filter(Boolean)
+        pagesRead = readPages(parts.filter((part, index) => notes[index]).flat())
         api.progress(parts.length, parts.length + 1, 'writing')
         prompt = digestPrompt({ title, notes: digestNotesText(read, DIGEST_NOTES_CHARS), language })
       }
-      const result = await generateJson(llm, { purpose: 'teach', prompt, maxTokens: 9000, signal: api.signal, normalize: normalizeDigest })
+      const result = await generateJson(llm, { purpose: 'teach', prompt, maxTokens: 9000, signal: api.signal, normalize: raw => checkDigest(normalizeDigest(raw), pagesRead, material.chunks) })
       // Parts that could not be read are named in the digest, not hidden.
       if (missing.length) result.missing = missing
-      const meta = await store.updateJson(store.paths.material(id), null, value => ({ ...value, digest: { ...result, createdAt: stamp() } }))
+      const meta = await store.updateJson(store.paths.material(id), null, value => ({ ...value, digest: { ...result, pagesChecked: true, createdAt: stamp() } }))
       return { material: meta }
     }, { key: `digest:${id}` })
   }
@@ -230,19 +241,20 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
     if (!materials.some(item => item.chunks.length)) throw new TutorError('material-no-text', 'These materials have no text')
     const title = materials.map(item => item.meta.title).join(' + ')
     const language = detectLanguage(materials.find(item => item.chunks.length)?.chunks[0]?.text ?? title, uiLanguage())
-    const outline = materials.map(item => item.meta.brief?.topics?.join('; ') ?? '').filter(Boolean).join('\n')
+    const outline = materials.map(item => materialTopics(item.meta)).filter(Boolean).join('\n')
     return { ids, materials, title, language, outline }
   }
 
   function makeSheet({ materialIds, focus }) {
     return jobs.start('studio/sheet', async api => {
       const scope = await scopeOf(materialIds)
+      const found = materialPassages(scope.materials, { query: text(focus, 300) || scope.outline, maxChars: 22000, whole: !text(focus, 300) })
       const sheet = await generateJson(llm, {
         purpose: 'teach',
-        prompt: cheatsheetPrompt({ scopeTitle: scope.title, outline: scope.outline, passages: passagesFor(scope.materials, text(focus, 300) || scope.outline, 22000), language: scope.language, focus: text(focus, 300) }),
+        prompt: cheatsheetPrompt({ scopeTitle: scope.title, outline: scope.outline, passages: found.text, language: scope.language, focus: text(focus, 300) }),
         maxTokens: 10000,
         signal: api.signal,
-        normalize: normalizeCheatsheet,
+        normalize: raw => checkSheet(normalizeCheatsheet(raw), { read: found.passages, all: allChunks(scope.materials) }),
       })
       const item = { id: newId('chs'), kind: 'cheatsheet', title: sheet.title || scope.title, language: scope.language, materialIds: scope.ids, sheet, createdAt: stamp() }
       await store.writeJson(store.paths.item('sheets', item.id), item)
@@ -261,7 +273,8 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
         prompt: cheatsheetPrompt({ scopeTitle: subject, outline: '', passages: '', language, focus: text(focus, 300) }),
         maxTokens: 9000,
         signal,
-        normalize: normalizeCheatsheet,
+        // Made from no material, it cites none.
+        normalize: raw => checkSheet(normalizeCheatsheet(raw)),
       })
       const item = { id: newId('chs'), kind: 'cheatsheet', title: sheet.title || subject, language, materialIds: [], sheet, createdAt: stamp() }
       await store.writeJson(store.paths.item('sheets', item.id), item)
@@ -273,13 +286,15 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
     return jobs.start('studio/notes', async api => {
       const scope = await scopeOf(materialIds)
       const wanted = text(focus, 300)
+      const found = materialPassages(scope.materials, { query: wanted || scope.outline, maxChars: 22000, whole: !wanted })
       const markdown = await generateText(llm, {
         purpose: 'teach',
-        prompt: summaryPrompt({ scopeTitle: scope.title, outline: scope.outline, passages: passagesFor(scope.materials, wanted || scope.outline, 22000), language: scope.language, focus: wanted }),
+        prompt: summaryPrompt({ scopeTitle: scope.title, outline: scope.outline, passages: found.text, language: scope.language, focus: wanted }),
         maxTokens: 8000,
         signal: api.signal,
       })
-      const item = { id: newId('chs'), kind: 'notes', title: titleOf(scope, wanted), language: scope.language, materialIds: scope.ids, markdown: markdown.slice(0, 60000), createdAt: stamp() }
+      // The notes cite only pages they were given.
+      const item = { id: newId('chs'), kind: 'notes', title: titleOf(scope, wanted), language: scope.language, materialIds: scope.ids, markdown: scrubPages(markdown, readPages(found.passages)).slice(0, 60000), pagesChecked: true, createdAt: stamp() }
       await store.writeJson(store.paths.item('sheets', item.id), item)
       return { item }
     })
@@ -353,7 +368,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
           signal: api.signal,
           onText,
           normalize: raw => {
-            const cards = thinEvenly(normalizeCards(raw, LIMITS.cards * 2), range.max)
+            const cards = thinEvenly(normalizeCards(raw, LIMITS.cards * 2), range.max).map(card => scrubCard(card, readPages(part.passages)))
             if (!cards.length && !wanted) throw new Error(`No cards came back: write at least ${range.min}.`)
             return cards
           },
@@ -387,7 +402,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
           signal: api.signal,
           onText,
           normalize: raw => {
-            const items = thinEvenly(normalizePractice(raw, [], LIMITS.quizItems).items, range.max).map(orderOptions)
+            const items = thinEvenly(normalizePractice(raw, [], LIMITS.quizItems).items, range.max).map(entry => orderOptions(scrubItem(entry, readPages(part.passages))))
             if (!wanted && items.length < Math.min(3, range.min)) throw new Error(`The quiz is too short: write at least ${range.min} questions.`)
             return items
           },
@@ -413,7 +428,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
   async function getItem({ kind, id }) {
     const item = await store.readJson(store.paths.item(kind, id), null)
     if (!item) throw new TutorError('not-found', 'Not found')
-    return { item }
+    return { item: shownItem(item) }
   }
 
   async function removeItem({ kind, id }) {
@@ -457,18 +472,22 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
       const materials = await readMaterials(store, ids)
       const language = thread?.language ?? detectLanguage(ask, uiLanguage())
       const profile = await readProfile(store)
-      const history = (thread?.turns ?? []).slice(-4).map(turn => `Learner (${turn.mode}): ${turn.request}\nTutor board: ${(turn.board?.steps ?? []).slice(0, 6).map(step => step.say).join(' ')}`).join('\n\n')
+      const history = (thread?.turns ?? []).slice(-4).map(turn => `Learner (${turn.mode}): ${turn.request}\nTutor board: ${(shownBoard(turn.board)?.steps ?? []).slice(0, 6).map(step => step.say).join(' ')}`).join('\n\n')
       const images = await assistImages(ids)
-      const board = await generateSteps(llm, {
+      const found = materialPassages(materials, { query: ask, maxChars: 8000 })
+      const allowed = readPages(found.passages)
+      const written = await generateSteps(llm, {
         purpose: 'teach',
         effort: 'lowest',
-        prompt: assistPrompt({ mode: chosen, request: ask, language, passages: passagesFor(materials, ask, 8000), history, learner: { profile } }),
+        prompt: assistPrompt({ mode: chosen, request: ask, language, passages: found.text, history, learner: { profile } }),
         images: images.length ? images : undefined,
         maxTokens: 10000,
         signal: api.signal,
         onStep: step => api.push(step),
         minSteps: 1,
+        clean: step => scrubStep(step, allowed),
       })
+      const board = { ...written, pagesChecked: true }
       const turn = { mode: chosen, request: ask, board, at: stamp() }
       const id = thread?.id ?? fresh ?? newId('thd')
       // Append under the store's lock: an earlier answer may finish in the
@@ -514,8 +533,10 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
         signal: api.signal,
         onStep: step => api.push(step),
         minSteps: 3,
+        // Its source text carries no page numbers, so it names none.
+        clean: step => scrubStep(step, new Set()),
       })
-      const item = { id, title: board.title || subject || sourceTitle, topic: subject, sourceUrl: url ? String(url) : null, language, board, createdAt: stamp() }
+      const item = { id, title: board.title || subject || sourceTitle, topic: subject, sourceUrl: url ? String(url) : null, language, board: { ...board, pagesChecked: true }, createdAt: stamp() }
       await store.writeJson(store.paths.item('shorts', item.id), item)
       return { item }
     }, { meta: { id, title: subject } })
@@ -526,6 +547,56 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
     makeSheet, makeTopicSheet, makeNotes, makeCards, makeQuiz, listItems, getItem, removeItem, saveStandaloneLayout, reviewDeckCard,
     assist, assistImages, makeShort,
   })
+}
+
+// An item as it is shown: a board written before pages were checked shows
+// no page numbers, nor do notes; a cheat sheet shows checked citations only.
+function shownItem(item) {
+  if (item.board) return { ...item, board: shownBoard(item.board) }
+  if (Array.isArray(item.turns)) return { ...item, turns: item.turns.map(turn => ({ ...turn, board: shownBoard(turn.board) })) }
+  if (item.kind === 'notes' && !item.pagesChecked && typeof item.markdown === 'string') return { ...item, markdown: scrubPages(item.markdown, new Set()) }
+  if (item.sheet) return { ...item, sheet: shownSheet(item.sheet) }
+  return item
+}
+
+// A material whose digest was written before its pages were checked shows
+// that digest without pages.
+function shownDigest(meta) {
+  if (!meta?.digest || meta.digest.pagesChecked) return meta
+  return { ...meta, digest: checkDigest(meta.digest, new Set(), []) }
+}
+
+// Notes on one part of a document give only that part's pages.
+function checkDigestPart(note, read) {
+  return {
+    ...scrubDeep(note, read, new Set(['pages', 'page'])),
+    sections: note.sections.map(section => ({ ...scrubDeep(section, read, new Set(['pages'])), pages: checkRange(section.pages, read) })),
+    arguments: note.arguments.map(argument => ({ ...scrubDeep(argument, read, new Set(['page'])), page: checkRange(argument.page, read) })),
+  }
+}
+
+// A digest gives only pages that were read, each with where it is in the
+// file (`pdf`, for the reader to find it). chunks: the material's.
+function checkDigest(digest, read, chunks) {
+  const inFile = range => {
+    const [from, to] = range.split('–')
+    const first = chunks.find(chunk => (chunk.label ?? String(chunk.page)) === from)?.page
+    const last = [...chunks].reverse().find(chunk => (chunk.label ?? String(chunk.page)) === (to ?? from))?.page
+    return first && last ? { pdf: [first, last] } : {}
+  }
+  const keep = new Set(['pages', 'page', 'pdf', 'missing', 'createdAt', 'pagesChecked'])
+  const clean = scrubDeep(digest, read, keep)
+  return {
+    ...clean,
+    structure: (clean.structure ?? []).map(part => {
+      const pages = checkRange(part.pages, read)
+      return { ...part, pages, ...(pages ? inFile(pages) : {}) }
+    }),
+    arguments: (clean.arguments ?? []).map(argument => {
+      const page = checkRange(argument.page, read)
+      return { ...argument, page, ...(page ? inFile(page) : {}) }
+    }),
+  }
 }
 
 function normalizeDigest(raw) {

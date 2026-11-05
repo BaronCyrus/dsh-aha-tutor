@@ -191,7 +191,7 @@ test('a board keeps one written-working check and asks later ones for the answer
 test('cheatsheet normalization requires sections with items', () => {
   const sheet = normalizeCheatsheet({ title: 'T', sections: [{ title: 'A', items: [{ kind: 'formula', tex: 'a^2+b^2=c^2', page: 12 }, ''] }, { title: 'empty', items: [] }] })
   assert.equal(sheet.sections.length, 1)
-  assert.equal(sheet.sections[0].items[0].cite.page, 12)
+  assert.deepEqual(sheet.sections[0].items[0].cite, { page: '12', source: '', quote: '' }, 'kept as written, to be checked')
   assert.deepEqual(sheet.layout.order, ['sec1'])
   assert.throws(() => normalizeCheatsheet({ sections: [] }), /no sections/)
 })

@@ -5,6 +5,11 @@
 const CJK_RUN = /[぀-ヿ㐀-䶿一-鿿가-힯]+/gu
 const WORD = /[\p{L}\p{N}][\p{L}\p{N}'_-]*/gu
 const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'to', 'in', 'on', 'for', 'is', 'are', 'was', 'be', 'with', 'as', 'by', 'at', 'it', 'this', 'that', 'from'])
+// Numbered things a learner points at ("例2", "图3", "12页", "Example 4"):
+// the word and its number are one token as well, so 例2 finds 例2, not 例1.
+const CJK_NUMBER_AFTER = /([一-鿿])\s?(\d{1,4})/gu
+const CJK_NUMBER_BEFORE = /(\d{1,4})\s?([一-鿿])/gu
+const LATIN_NUMBERED = /\b(example|exercise|problem|question|figure|fig|table|section|chapter|unit|lesson|page)\.?\s?(\d{1,4})\b/gu
 
 export function tokenize(value) {
   const textValue = String(value ?? '').toLowerCase()
@@ -16,6 +21,9 @@ export function tokenize(value) {
   for (const word of textValue.replace(CJK_RUN, ' ').match(WORD) ?? []) {
     if (word.length > 1 && !STOP.has(word)) tokens.push(word)
   }
+  for (const match of textValue.matchAll(CJK_NUMBER_AFTER)) tokens.push(`${match[1]}${match[2]}`)
+  for (const match of textValue.matchAll(CJK_NUMBER_BEFORE)) tokens.push(`${match[1]}${match[2]}`)
+  for (const match of textValue.matchAll(LATIN_NUMBERED)) tokens.push(`${match[1]}${match[2]}`)
   return tokens
 }
 
@@ -50,14 +58,12 @@ export function search(index, query, { limit = 6, k1 = 1.4, b = 0.75 } = {}) {
   return scored.filter(entry => entry.score > 0).sort((a, b) => b.score - a.score).slice(0, limit)
 }
 
-// Pick passages for a prompt within a character budget. Without a query the
-// first chunks (the material's beginning) are used.
-export function selectPassages(chunks, query, { maxChars = 12000, limit = 12 } = {}) {
-  if (!chunks?.length) return []
-  const picked = query ? search(buildIndex(chunks), query, { limit }).map(entry => entry.chunk) : chunks.slice(0, limit)
+// Passages in the order given, as many as fit in maxChars; the first one that
+// does not fit is cut when there is still room for a useful part of it.
+export function fitPassages(passages, maxChars) {
   const result = []
   let used = 0
-  for (const chunk of picked) {
+  for (const chunk of passages) {
     if (used + chunk.text.length > maxChars) {
       const room = maxChars - used
       if (room > 400) result.push({ ...chunk, text: `${chunk.text.slice(0, room)}…` })
@@ -67,6 +73,42 @@ export function selectPassages(chunks, query, { maxChars = 12000, limit = 12 } =
     used += chunk.text.length
   }
   return result
+}
+
+// Pick passages for a prompt within a character budget. Without a query the
+// first chunks (the material's beginning) are used. A query that matches
+// nothing (a lesson in another language than the material, or in other
+// words) gets excerpts from `around` instead (see samplePassages), each
+// marked `sampled`; fallback 'none' leaves it empty.
+export function selectPassages(chunks, query, { maxChars = 12000, limit = 12, fallback = 'sample', around } = {}) {
+  if (!chunks?.length) return []
+  if (!query) return fitPassages(chunks.slice(0, limit), maxChars)
+  const hits = search(buildIndex(chunks), query, { limit }).map(entry => entry.chunk)
+  if (hits.length || fallback === 'none') return fitPassages(hits, maxChars)
+  return samplePassages(chunks, { maxChars, around }).map(chunk => ({ ...chunk, sampled: true }))
+}
+
+// Excerpts from one stretch of a document, within maxChars: `around` is that
+// stretch as fractions of the document ([0.2, 0.3] starts a fifth of the way
+// in), the whole of it by default. A stretch shorter than the budget grows
+// on both sides until the budget is filled; a longer one is sampled evenly.
+// A course made from a book mostly follows it, so a lesson's place in the
+// course is where its pages most likely are.
+export function samplePassages(chunks, { maxChars = 12000, samples = 16, around } = {}) {
+  if (!chunks?.length) return []
+  const size = chunk => chunk.text.length
+  if (chunks.reduce((sum, chunk) => sum + size(chunk), 0) <= maxChars) return chunks.slice()
+  const [start, end] = Array.isArray(around) ? around.map(value => Math.min(1, Math.max(0, Number(value) || 0))) : [0, 1]
+  let from = Math.min(chunks.length - 1, Math.floor(Math.min(start, end) * chunks.length))
+  let to = Math.max(from + 1, Math.ceil(Math.max(start, end) * chunks.length))
+  let used = chunks.slice(from, to).reduce((sum, chunk) => sum + size(chunk), 0)
+  // Excerpts of at least 400 characters, to be of use.
+  if (used > maxChars) return fitPassages(spreadPassages(chunks.slice(from, to), { maxChars, samples: Math.max(2, Math.min(samples, Math.floor(maxChars / 400))) }), maxChars)
+  while (used < maxChars && (from > 0 || to < chunks.length)) {
+    if (to < chunks.length) used += size(chunks[to++])
+    if (used < maxChars && from > 0) used += size(chunks[--from])
+  }
+  return fitPassages(chunks.slice(from, to), maxChars)
 }
 
 // Excerpts spread evenly over a whole document within a character budget:
@@ -120,8 +162,13 @@ export function materialParts(documents, { partChars = 20000, maxParts = 24 } = 
     .map(passages => ({ title: document.title, passages, chars: passages.reduce((sum, chunk) => sum + chunk.text.length, 0) })))
 }
 
+// Where a passage is, as the reader of the material would name it: the
+// page number printed on it (its label) when there is one.
 function locationOf(passage) {
-  return passage?.page ? `p.${passage.page}` : passage?.slide ? `slide ${passage.slide}` : passage?.section ?? ''
+  if (passage?.page) return `p.${passage.label ?? passage.page}`
+  if (passage?.slide) return `slide ${passage.slide}`
+  if (passage?.picture && !passage.section) return `picture ${passage.picture}`
+  return passage?.section ?? ''
 }
 
 // "p.12–p.40": where a run of passages starts and ends.

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { blueprintDiff, diffIsEmpty, LESSON_DEPTHS } from '../../core/course-model.js'
 import { BlueprintMap } from '../BlueprintMap.jsx'
-import { Confirm, ErrorLine, JobProgress, MaterialPicker, SourceList, Spinner } from '../components.jsx'
+import { Confirm, ErrorLine, JobProgress, LessonSources, MaterialPicker, SourceList, Spinner } from '../components.jsx'
 import { useApp, useJob, useLoad } from '../hooks.js'
 import { outlineTree } from '../mindmap.js'
 
@@ -450,7 +450,10 @@ function Blueprint({ course, proposal, progress, boards, job, onChange, adding: 
             const remove = () => edit(next => { next[unitIndex].lectures[lectureIndex].lessons.splice(lessonIndex, 1) })
             return <div key={lesson.id ?? lessonIndex} className="aha-lesson" data-path={`u${key}`} data-flash={flash === `u${key}` ? 'true' : undefined}>
               <span className="aha-dot" />
-              <input value={lesson.title} title={lesson.summary} onChange={event => { const value = event.currentTarget.value; edit(next => { next[unitIndex].lectures[lectureIndex].lessons[lessonIndex].title = value }) }} />
+              <span className="aha-lessonName">
+                <input value={lesson.title} title={lesson.summary} onChange={event => { const value = event.currentTarget.value; edit(next => { next[unitIndex].lectures[lectureIndex].lessons[lessonIndex].title = value }) }} />
+                <LessonSources sources={(lesson.sources ?? []).filter(source => course.materialIds?.includes(source.materialId))} />
+              </span>
               <select className="aha-depthSelect" data-depth={lesson.depth || undefined} value={lesson.depth ?? ''} title={t('depthTitle')} aria-label={t('depthTitle')}
                 onChange={event => { const value = event.currentTarget.value; edit(next => { const target = next[unitIndex].lectures[lectureIndex].lessons[lessonIndex]; if (value) target.depth = value; else delete target.depth }) }}>
                 <option value="">{t('depthNone')}</option>

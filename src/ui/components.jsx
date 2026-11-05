@@ -256,6 +256,49 @@ export function readingNotes(item, t) {
   return notes
 }
 
+// A page, or a run of pages, as the book prints them; their place in the
+// PDF shows on hover when the two differ. page/end: places in the file;
+// label/endLabel: the numbers printed on them.
+export function pageWords(t, { page, end, label, endLabel }) {
+  const from = label ?? page
+  const to = end && end !== page ? endLabel ?? end : null
+  const text = to && String(to) !== String(from) ? t('pagesN', { from, to }) : t('pageN', { page: from })
+  const moved = (label && label !== String(page)) || (endLabel && endLabel !== String(end))
+  const pdf = !moved ? undefined : to ? t('pdfPagesN', { from: page, to: end }) : t('pdfPageN', { page })
+  return { text, pdf }
+}
+
+export function PageRef(props) {
+  const { t } = useApp()
+  const { text, pdf } = pageWords(t, props)
+  return <span className="aha-pageRef" title={pdf} data-pdf={pdf ? 'true' : undefined}>{text}</span>
+}
+
+// The pages of the course materials a lesson teaches from: "📖 第 12–15 页",
+// with the material, the contents entry and the PDF pages on hover.
+export function LessonSources({ sources }) {
+  const { t } = useApp()
+  const shown = (sources ?? []).map(source => ({ source, words: source.page ? pageWords(t, source) : null })).filter(({ source, words }) => words || source.title)
+  if (!shown.length) return null
+  const text = shown.map(({ source, words }) => words?.text ?? source.title).join(t('listJoin'))
+  const detail = shown.map(({ source, words }) => [source.materialTitle, source.title, words?.text, words?.pdf].filter(Boolean).join(' · ')).join('\n')
+  return <span className="aha-lessonSource" title={`${t('lessonSourcesTitle')}\n${detail}`}>📖 {text}</span>
+}
+
+// A material's contents: its bookmarks or headings, each with its pages.
+export function OutlineList({ material }) {
+  const { t } = useApp()
+  const entries = material.outline?.entries ?? []
+  if (!entries.length) return null
+  return <details className="aha-outline">
+    <summary>{t('outlineTitle', { count: entries.length })}<span className="aha-hint"> · {t(material.outline.source === 'bookmarks' ? 'outlineBookmarks' : 'outlineHeadings')}{material.printed ? ` · ${t('outlinePrinted')}` : ''}</span></summary>
+    <ol>{entries.map((entry, index) => <li key={index} data-level={entry.level}>
+      <span className="aha-outlineTitle">{entry.title}</span>
+      {entry.page ? <PageRef page={entry.page} end={entry.end} label={entry.label} endLabel={entry.endLabel} /> : null}
+    </li>)}</ol>
+  </details>
+}
+
 // Web sources: untrusted links, so http(s) only and opened outside the app.
 export function SourceList({ sources }) {
   const safe = (sources ?? []).filter(source => /^https?:\/\//iu.test(String(source?.url ?? '')))

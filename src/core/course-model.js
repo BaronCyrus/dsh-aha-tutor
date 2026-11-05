@@ -3,6 +3,7 @@
 // progress. Every limit here protects the UI and the token budget.
 
 import { newId } from './ids.js'
+import { normalizeSources, normalizeTerms } from './lesson-sources.js'
 import { normalizePlot } from './plot.js'
 
 export const COURSE_SCHEMA_VERSION = 1
@@ -115,9 +116,14 @@ function keepId(value, prefix) {
 // It shapes the board and shows beside the lesson.
 export const LESSON_DEPTHS = Object.freeze(['intuition', 'definition', 'derivation', 'application', 'extension'])
 
+// A lesson made from the course's materials keeps the pages it teaches
+// from (`sources`, see lesson-sources.js) and words to find them by in the
+// materials' language (`terms`).
 export function normalizeLesson(raw) {
   const title = text(raw?.title, 120)
   if (!title) return null
+  const sources = normalizeSources(raw?.sources)
+  const terms = normalizeTerms(raw?.terms)
   return {
     id: keepId(raw?.id, 'les'),
     title,
@@ -127,6 +133,8 @@ export function normalizeLesson(raw) {
     estMinutes: minutes(raw?.estMinutes ?? raw?.minutes),
     kind: ['lesson', 'remedial', 'review', 'challenge'].includes(raw?.kind) ? raw.kind : 'lesson',
     ...(LESSON_DEPTHS.includes(raw?.depth) ? { depth: raw.depth } : {}),
+    ...(sources.length ? { sources } : {}),
+    ...(terms.length ? { terms } : {}),
   }
 }
 
@@ -443,13 +451,17 @@ export function normalizeCheatsheet(raw) {
       const body = text(typeof item === 'string' ? item : item?.text ?? item?.body, 800)
       const tex = text(item?.tex ?? item?.latex, 400)
       if (!body && !tex) return null
-      const page = Math.round(Number(item?.cite?.page ?? item?.page))
+      // A citation as the model wrote it: the page, and the words it quotes
+      // so that it can be checked (see checkSheet in citations.js).
+      const cite = item?.cite && typeof item.cite === 'object' ? item.cite : {}
+      const page = text(cite.page ?? item?.page, 16)
+      const quote = text(cite.quote ?? item?.quote, 300)
       return {
         kind: SHEET_KINDS.includes(item?.kind) ? item.kind : 'fact',
         title: text(item?.title ?? item?.term, 120),
         text: body,
         tex,
-        cite: Number.isFinite(page) && page > 0 ? { page, source: text(item?.cite?.source ?? item?.source, 120) } : null,
+        cite: page || quote ? { page, source: text(cite.source ?? item?.source, 120), quote } : null,
       }
     })
     if (!items.length) return null
@@ -515,6 +527,17 @@ export function diffIsEmpty(diff) {
 
 export function findLesson(course, lessonId) {
   return flattenLessons(course).find(row => row.lesson.id === lessonId) ?? null
+}
+
+// Where some lessons sit in the course, as fractions of it ([0.25, 0.3] is a
+// stretch a quarter of the way in). A course made from a book mostly follows
+// the book, so the same stretch of the book is where its pages likely are.
+export function courseSpan(course, lessonIds) {
+  const rows = flattenLessons(course)
+  const wanted = new Set(lessonIds)
+  const positions = rows.flatMap((row, index) => (wanted.has(row.lesson.id) ? [index] : []))
+  if (!positions.length) return undefined
+  return [Math.min(...positions) / rows.length, (Math.max(...positions) + 1) / rows.length]
 }
 
 // The concepts a unit teaches, each once, in teaching order.

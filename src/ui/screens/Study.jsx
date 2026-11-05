@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { Empty, ErrorLine, errorText, JobProgress, Spinner } from '../components.jsx'
+import { Empty, ErrorLine, errorText, JobProgress, pageWords, Spinner } from '../components.jsx'
 import { ApiError } from '../api.js'
 import { useApp, useJob, useLoad } from '../hooks.js'
 import { checkDone, checkNotice, itemSource, regradeResults, shownGrade } from '../item-check.js'
@@ -448,13 +448,34 @@ export function SheetScreen({ courseId, unitId, sheetId }) {
             {item.title ? <b>{item.title}：</b> : null}
             {item.text ? <RichText text={item.text} compact /> : null}
             {item.tex ? <TeX tex={item.tex} /> : null}
-            {item.cite ? <span className="aha-cite">(p.{item.cite.page}{item.cite.source ? ` · ${item.cite.source}` : ''})</span> : null}
+            <SheetCite cite={item.cite} />
           </div>)}
           {section.related?.length ? <div className="aha-cite">↔ {section.related.join(' · ')}</div> : null}
         </div>)}
       </div>
     </div>
   </div>
+}
+
+// A cheat sheet's citation, shown only once checked: the page as printed
+// (or the section of a material without pages), with the words it quotes
+// and the PDF page on hover.
+function SheetCite({ cite }) {
+  const { t } = useApp()
+  if (cite?.verified !== true) return null
+  const words = cite.page ? pageWords(t, { page: cite.pdf, label: cite.page }) : null
+  const title = [cite.quote ? t('citeQuote', { quote: cite.quote }) : '', words?.pdf ?? ''].filter(Boolean).join('\n')
+  return <span className="aha-cite" title={title || undefined} data-quote={cite.quote ? 'true' : undefined}>({words?.text ?? `§ ${cite.section}`}{cite.source ? ` · ${cite.source}` : ''})</span>
+}
+
+// The pages a digest gives ("12–18", checked when it was written), with
+// their place in the PDF on hover.
+function DigestPages({ pages, pdf }) {
+  const { t } = useApp()
+  const [from, to] = String(pages ?? '').split('–')
+  if (!/\d/u.test(from ?? '')) return null
+  const words = pageWords(t, { page: pdf?.[0] ?? from, end: to ? pdf?.[1] ?? to : undefined, label: from, endLabel: to })
+  return <span className="aha-cite" title={words.pdf}>({words.text})</span>
 }
 
 // ── notes, quizzes from the library, digests ───────────────────────────────
@@ -512,11 +533,11 @@ export function ItemScreen({ kind, id, materialId }) {
     </div> : null}
     <section className="aha-card"><b>{t('overview')}</b><RichText text={digest.overview} /></section>
     {digest.structure?.length ? <section className="aha-card"><b>{t('structure')}</b>{digest.structure.map((part, index) => <div key={index} className="aha-col" style={{ gap: 2 }}>
-      <div><b>{part.heading}</b>{/\d/u.test(part.pages ?? '') ? <span className="aha-cite">(p.{part.pages})</span> : null}</div>
+      <div><b>{part.heading}</b><DigestPages pages={part.pages} pdf={part.pdf} /></div>
       <ul style={{ margin: 0 }}>{part.points.map((point, pointIndex) => <li key={pointIndex}><RichText text={point} compact /></li>)}</ul>
     </div>)}</section> : null}
     {digest.keyIdeas?.length ? <section className="aha-card"><b>{t('keyIdeas')}</b><ul style={{ margin: 0 }}>{digest.keyIdeas.map((idea, index) => <li key={index}><RichText text={idea} compact /></li>)}</ul></section> : null}
-    {digest.arguments?.length ? <section className="aha-card"><b>{t('arguments')}</b>{digest.arguments.map((argument, index) => <div key={index}><b>{argument.claim}</b>{/\d/u.test(argument.page ?? '') ? <span className="aha-cite">(p.{argument.page})</span> : null}<p className="aha-hint">{argument.support}</p></div>)}</section> : null}
+    {digest.arguments?.length ? <section className="aha-card"><b>{t('arguments')}</b>{digest.arguments.map((argument, index) => <div key={index}><b>{argument.claim}</b><DigestPages pages={argument.page} pdf={argument.pdf} /><p className="aha-hint">{argument.support}</p></div>)}</section> : null}
     {digest.glossary?.length ? <section className="aha-card"><b>{t('glossary')}</b>{digest.glossary.map((entry, index) => <div key={index}><b>{entry.term}</b>：{entry.meaning}</div>)}</section> : null}
     {digest.questions?.length ? <section className="aha-card"><b>{t('discussion')}</b><ol style={{ margin: 0 }}>{digest.questions.map((question, index) => <li key={index}>{question}</li>)}</ol></section> : null}
   </div>

@@ -59,7 +59,7 @@ function fakeLlm() {
     if (user.includes('raised a hand')) return step('这是你问题的答案')
     if (user.includes('did not get this step')) return [step('换个例子'), step('再试一次')].join('\n')
     if (user.includes('Describe this material')) return JSON.stringify({ summary: '一份讲义', topics: ['回复力', '单摆'], level: 'beginner', suggestedGoal: '学会简谐运动' })
-    if (user.includes('Write a cheat sheet')) return JSON.stringify({ title: '速查', sections: [{ title: '公式', items: [{ kind: 'formula', tex: 'T=2\\pi\\sqrt{L/g}', page: 2 }] }] })
+    if (user.includes('Write a cheat sheet')) return JSON.stringify({ title: '速查', sections: [{ title: '公式', items: [{ kind: 'formula', tex: 'T=2\\pi\\sqrt{L/g}', cite: { page: 2, quote: '周期与质量无关' } }, { kind: 'fact', text: '振幅', cite: { page: 9, quote: '书里没有这句话' } }] }] })
     if (user.includes('two-minute explainer')) return [step('一'), step('二'), step('三')].join('\n')
     if (user.includes('Explain the concept')) return [step('概念'), step('例子')].join('\n')
     if (user.includes('Score each rubric')) return JSON.stringify({ scores: [{ criterionId: 'r1', points: 45, comment: '好' }, { criterionId: 'r2', points: 80, comment: '超分' }], summary: '不错', strengths: ['认真'], nextSteps: ['加图'] })
@@ -295,7 +295,9 @@ test('end-to-end tutoring flow on the host', async () => {
 
     // studio
     const sheet = await finish(jobs, studio.makeSheet({ materialIds: [uploaded.material.id] }))
-    assert.equal(sheet.item.sheet.sections[0].items[0].cite.page, 2)
+    // A citation is kept where its words are found; one whose words are not
+    // in the material is left out.
+    assert.deepEqual(sheet.item.sheet.sections[0].items.map(item => item.cite), [{ section: '单摆', source: '简谐运动', materialId: uploaded.material.id, quote: '周期与质量无关', verified: true }, null])
     const help = await finish(jobs, studio.assist({ mode: 'explain', request: '什么是简谐运动？' }))
     assert.equal(help.board.steps.length, 2)
     const followUp = await finish(jobs, studio.assist({ mode: 'explain', request: '再举个例子', threadId: help.threadId }))

@@ -134,9 +134,11 @@ function stripIds(course) {
       lectures: (unit.lectures ?? []).map(lecture => ({
         ...lecture,
         id: undefined,
+        // Pages of the sender's materials mean nothing in another library.
         lessons: (lecture.lessons ?? []).map(lesson => ({
           ...lesson,
           id: undefined,
+          sources: undefined,
           concepts: (lesson.concepts ?? []).map(concept => ({ ...concept, id: undefined })),
         })),
       })),

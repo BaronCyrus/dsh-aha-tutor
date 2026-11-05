@@ -272,6 +272,17 @@ a.aha-btn{text-decoration:none}
 .aha-libraryHit:hover{background:var(--aha-hover)}
 .aha-libraryHitWhere{font-size:${px(14)};color:var(--aha-muted)}
 .aha-libraryHitWhere b{color:var(--aha-text);font-weight:600}
+.aha-pageRef[data-pdf]{text-decoration:underline dotted;text-underline-offset:3px;cursor:help}
+.aha-outline{font-size:${px(14)}}
+.aha-outline summary{cursor:pointer;color:var(--aha-text);font-weight:600}
+.aha-outline summary .aha-hint{font-weight:400}
+.aha-outline ol{list-style:none;margin:6px 0 0;padding:0;max-height:320px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+.aha-outline li{display:flex;gap:8px;justify-content:space-between;align-items:baseline;min-width:0}
+.aha-outline li[data-level="2"]{padding-left:16px}
+.aha-outline li[data-level="3"]{padding-left:32px}
+.aha-outline li[data-level="1"] .aha-outlineTitle{font-weight:600}
+.aha-outlineTitle{min-width:0;overflow-wrap:anywhere}
+.aha-outline .aha-pageRef{flex:none;color:var(--aha-muted);font-size:${px(13)}}
 .aha-libraryHitText{font-size:${px(14.5)};line-height:${px(21.5)};overflow-wrap:anywhere}
 .aha-libraryHitText mark{background:color-mix(in srgb,#f2c94c 55%,transparent);color:inherit;border-radius:3px;padding:0 1px}
 @keyframes aha-flash{0%,40%{background:color-mix(in srgb,var(--aha-brand) 16%,transparent)}100%{background:transparent}}

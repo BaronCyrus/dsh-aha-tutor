@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from 'react'
 
-import { Confirm, describeMaterial, Empty, ErrorLine, readingNotes, Spinner, StudyJobLine, UploadZone } from '../components.jsx'
+import { Confirm, describeMaterial, Empty, ErrorLine, OutlineList, PageRef, readingNotes, Spinner, StudyJobLine, UploadZone } from '../components.jsx'
 import { useApp, useJob, useLoad } from '../hooks.js'
 
 const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
@@ -96,7 +96,7 @@ export function MaterialsScreen() {
         <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => { setFound(null); setQuery('') }}>{t('close')}</button>
       </div>
       {found.results.map((hit, index) => <button key={index} type="button" className="aha-libraryHit" onClick={() => setFlash(hit.materialId)}>
-        <span className="aha-libraryHitWhere"><b>{hit.title}</b>{hit.page ? ` · ${t('pageN', { page: hit.page })}` : hit.slide ? ` · ${t('slideN', { slide: hit.slide })}` : ''}</span>
+        <span className="aha-libraryHitWhere"><b>{hit.title}</b>{hit.page ? <> · <PageRef page={hit.page} label={hit.label ?? undefined} /></> : hit.slide ? ` · ${t('slideN', { slide: hit.slide })}` : ''}</span>
         <span className="aha-libraryHitText"><Marked text={hit.snippet} query={found.query} /></span>
       </button>)}
     </section> : null}
@@ -113,6 +113,7 @@ export function MaterialsScreen() {
         {readingNotes(material, t).map(note => <p key={note} className="aha-hint aha-readingNote">{note}</p>)}
         {material.brief?.summary ? <p className="aha-hint">{material.brief.summary}</p> : null}
         {material.brief?.topics?.length ? <div className="aha-row" style={{ gap: 4 }}>{material.brief.topics.slice(0, 10).map(topic => <span key={topic} className="aha-tag" data-clip title={topic}>{topic}</span>)}</div> : null}
+        <OutlineList material={material} />
         {material.kind !== 'image' || material.chars > 0 ? <div className="aha-row" style={{ gap: 6 }}>
           {[['course', 'makeCourse'], ['sheet', 'makeSheet'], ['cards', 'makeCards'], ['notes', 'makeNotes'], ['quiz', 'makeQuiz']].map(([kind, label]) => <button key={kind} type="button" className="aha-btn" data-size="sm" data-kind={kind === 'course' ? 'primary' : undefined} disabled={Boolean(busy)} onClick={() => make(kind, material)}>{busy === `${kind}:${material.id}` ? <span className="aha-spinner" /> : null}{t(label)}</button>)}
           <button type="button" className="aha-btn" data-size="sm" onClick={() => navigate('item', { kind: 'digest', materialId: material.id })}>{t('digest')}</button>

@@ -51,12 +51,47 @@ export async function readMaterials(store, materialIds = []) {
   return items
 }
 
+// The pages of an outline entry as the book prints them: "p.12–15".
+export function entryPages(entry) {
+  if (!entry?.page) return ''
+  const from = entry.label ?? String(entry.page)
+  const to = entry.endLabel ?? String(entry.end ?? entry.page)
+  return from === to ? `p.${from}` : `p.${from}–${to}`
+}
+
+// A material's outline for a prompt, one entry a line, indented by level,
+// with its pages. A long outline loses its deepest levels first.
+export function outlineText(outline, { maxChars = 2500 } = {}) {
+  let entries = outline?.entries ?? []
+  const size = list => list.reduce((sum, entry) => sum + entry.title.length + entry.level * 2 + 16, 0)
+  while (size(entries) > maxChars && entries.some(entry => entry.level > 1)) {
+    const deepest = Math.max(...entries.map(entry => entry.level))
+    entries = entries.filter(entry => entry.level < deepest)
+  }
+  const value = entries.map(entry => `${'  '.repeat(entry.level - 1)}- ${entry.title}${entryPages(entry) ? ` (${entryPages(entry)})` : ''}`).join('\n')
+  return value.length > maxChars ? `${value.slice(0, value.lastIndexOf('\n', maxChars))}\n…` : value
+}
+
+// What a material covers, briefly: its outline's chapter titles, else the
+// topics its brief found.
+export function materialTopics(meta) {
+  const entries = meta?.outline?.entries ?? []
+  const top = entries.filter(entry => entry.level <= Math.min(2, Math.max(...entries.map(item => item.level))))
+  return top.length ? top.map(entry => entry.title).slice(0, 60).join('; ') : (meta?.brief?.topics ?? []).join('; ')
+}
+
 export function materialsSummary(materials) {
+  const share = Math.max(800, Math.floor(6000 / Math.max(1, materials.length)))
   return materials.map(({ meta }) => {
     const size = meta.pages ? `${meta.pages} pages` : meta.slides ? `${meta.slides} slides` : meta.kind
     const lines = [`- ${meta.title} (${size})`]
     if (meta.brief?.summary) lines.push(`  ${meta.brief.summary}`)
-    if (meta.brief?.topics?.length) lines.push(`  Topics: ${meta.brief.topics.slice(0, 24).join('; ')}`)
+    if (meta.outline?.entries?.length) {
+      lines.push(`  Contents${meta.printed ? ' (pages as printed in it)' : ''}:`)
+      lines.push(outlineText(meta.outline, { maxChars: share }).split('\n').map(line => `    ${line}`).join('\n'))
+    } else if (meta.brief?.topics?.length) {
+      lines.push(`  Topics: ${meta.brief.topics.slice(0, 24).join('; ')}`)
+    }
     return lines.join('\n')
   }).join('\n')
 }
@@ -64,8 +99,9 @@ export function materialsSummary(materials) {
 // Said before excerpts that were sampled because no passage matched.
 export const SAMPLED_NOTE = '(No passage of the materials matched these words. The excerpts below come from the part of each material where this most likely is, or are spread across it: use only what is relevant.)'
 
-// Where a passage is in its material, as the learner would name it.
-const pageOf = chunk => (chunk.page ? String(chunk.page) : null)
+// Where a passage is in its material, as the learner would name it: the
+// page number printed on it, else its place in the file.
+const pageOf = chunk => chunk.label ?? (chunk.page ? String(chunk.page) : null)
 
 // The passages of some materials a prompt needs, within maxChars, each
 // material its share: the pages the learner named first (`pages`, page

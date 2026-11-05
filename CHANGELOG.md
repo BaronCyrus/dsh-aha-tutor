@@ -4,6 +4,10 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 
 ## Unreleased
 
+### Added
+
+- **Contents and printed page numbers for materials**: a material now keeps its outline. A PDF's comes from its bookmarks; one without bookmarks gets its chapter and section titles from the pages (a title like 第三单元 or Chapter 2 at the top of a page or set larger than the text, or a line set much larger; contents pages and boxes such as 例1 or 练习 are not chapters). Word documents use their headings, Markdown its `#` headings, web pages their article's headings. Each PDF page also keeps the number printed on it, from the PDF's page labels or read off the pages themselves where they agree page after page, so a textbook's 第 12 页 is the page that says 12, not the twelfth page of the file; running heads and page numbers are left out of the text. **Library** shows a material's contents with their pages (the PDF page on hover), and search results give the printed page. Course design sees a material's contents with their pages instead of a list of topics. Materials added before this version keep working as they were; adding them again gives them contents.
+
 ### Changed
 
 - **A raised hand reads the book**: a question asked in a lesson was answered from the board alone, so "how do I do the example on page 12?" got an answer that had never seen the book. The course's materials now come with the question, about 3,500 characters of them: the pages it names first, then the passages matching the question and the lesson. They are reference material: the teacher works from what the book says, names its page, and says so when the excerpts do not hold what the learner means. Questions on an Instant help board use that thread's materials the same way.
@@ -11,6 +15,7 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 ### Fixed
 
 - **Lessons always see their materials**: when no passage of the materials matched a lesson's words (a Chinese course on an English textbook, or a lesson worded differently from the book), the lesson, its practice, unit quizzes, flashcards and cheat sheets were written without any passages. They now get the stretch of each material where the lesson most likely is, since a course made from a book follows its order, and the prompt says these are excerpts rather than matches. Numbered things match by their number too: 例2 finds 例2, not 例1.
+- **Word tables and Markdown code**: a Word document was read as plain text, so a table came out one cell per paragraph; each row is now one line with its cells in order. A `#` comment inside a Markdown code block no longer starts a new section.
 
 ## 1.11.1 - 2026-11-04
 

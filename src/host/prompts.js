@@ -619,11 +619,12 @@ export function shortPrompt({ topic, passages, language }) {
   }
 }
 
-export function materialBriefPrompt({ title, passages, language }) {
+export function materialBriefPrompt({ title, contents, passages, language }) {
   return {
     system: join(PERSONA, languageRule(language), JSON_ONLY),
     user: join(
       block('document', title),
+      block('contents', contents),
       block('passages', passages),
       'The passages are excerpts spread across the whole document, each labelled with where it comes from. Describe this material as a whole for a course designer, not just its opening. Return {"summary":"3–4 sentences","topics":["main topics in the order the document covers them"],"level":"beginner|intermediate|advanced","suggestedGoal":"one sentence learning goal a student might have for it"}',
     ),

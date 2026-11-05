@@ -9,6 +9,7 @@
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 
+import { declaredLabels, finishOutline, flattenBookmarks, headingOutline, placeOutline, readPageNumbers, sectionOutline } from '../core/outline.js'
 import { pageImage } from './page-image.js'
 import { assertPublicHostname, createGuardedFetch } from './web-fetch.js'
 
@@ -138,7 +139,10 @@ export function chunkText(value, where = {}) {
   return chunks.filter(chunk => chunk.text)
 }
 
-function finish(kind, title, chunks, extra = {}) {
+// outline: { source, entries } over pages (entries with page and end) or
+// over chunk positions (first and last); labels: the printed number of each
+// page. A material keeps an outline of two entries or more.
+function finish(kind, title, chunks, { outline, labels, ...extra } = {}) {
   let total = 0
   const kept = []
   for (const chunk of chunks) {
@@ -146,7 +150,124 @@ function finish(kind, title, chunks, extra = {}) {
     total += chunk.text.length
     kept.push({ id: `c${kept.length + 1}`, ...chunk })
   }
-  return { kind, title, chunks: kept, chars: total, truncated: kept.length < chunks.length, ...extra }
+  const placed = outlineOf(outline, kept, labels)
+  return { kind, title, chunks: kept, chars: total, truncated: kept.length < chunks.length, ...extra, ...(placed ? { outline: placed } : {}) }
+}
+
+function outlineOf(outline, chunks, labels) {
+  if (!outline?.entries?.length) return null
+  const paged = outline.entries.every(entry => entry.page)
+  const entries = (paged ? placeOutline(outline.entries, chunks, labels) : outline.entries)
+    .filter(entry => paged || entry.first <= chunks.length)
+    .map(entry => (entry.last > chunks.length ? { ...entry, last: chunks.length } : entry))
+  return entries.length >= 2 ? { source: outline.source, entries } : null
+}
+
+// ── documents made of headings and paragraphs (Word, Markdown, web pages) ──
+
+const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'SVG', 'IMG', 'PICTURE', 'VIDEO', 'AUDIO', 'IFRAME', 'OBJECT', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'NAV', 'FORM', 'HEAD'])
+const INLINE_TAGS = new Set(['A', 'ABBR', 'B', 'BDI', 'BDO', 'CITE', 'CODE', 'DATA', 'DFN', 'EM', 'I', 'KBD', 'MARK', 'Q', 'S', 'SAMP', 'SMALL', 'SPAN', 'STRONG', 'SUB', 'SUP', 'TIME', 'U', 'VAR', 'DEL', 'INS', 'FONT', 'LABEL'])
+const squash = value => String(value ?? '').replace(/[ \t\u00a0]+/gu, ' ').replace(/ *\n */gu, '\n').trim()
+
+// The blocks of an HTML document or fragment in reading order: headings
+// ({ heading, level }) and paragraphs ({ text }). A table row is one
+// paragraph with its cells joined by " | ", so a table stays readable.
+export function htmlBlocks(root) {
+  const blocks = []
+  let inline = ''
+  const flush = () => {
+    const value = squash(inline)
+    if (value) blocks.push({ text: value })
+    inline = ''
+  }
+  const walk = node => {
+    for (const child of node?.childNodes ?? []) {
+      if (child.nodeType === 3) {
+        inline += child.textContent
+        continue
+      }
+      if (child.nodeType !== 1) continue
+      const tag = String(child.tagName).toUpperCase()
+      if (SKIP_TAGS.has(tag)) continue
+      if (tag === 'BR') {
+        inline += '\n'
+      } else if (INLINE_TAGS.has(tag)) {
+        walk(child)
+      } else if (/^H[1-6]$/u.test(tag)) {
+        flush()
+        const heading = squash(child.textContent).replace(/\n/gu, ' ')
+        if (heading) blocks.push({ heading, level: Number(tag[1]) })
+      } else if (tag === 'TABLE') {
+        flush()
+        for (const row of child.querySelectorAll('tr')) {
+          const cells = [...row.children].filter(cell => /^T[DH]$/u.test(String(cell.tagName).toUpperCase())).map(cell => squash(cell.textContent).replace(/\n/gu, ' '))
+          if (cells.some(Boolean)) blocks.push({ text: cells.join(' | ') })
+        }
+      } else {
+        flush()
+        walk(child)
+        flush()
+      }
+    }
+  }
+  walk(root)
+  flush()
+  return blocks
+}
+
+// Blocks under their headings, levels 1 to 3 (deeper headings stay in the
+// text). Text before the first heading is a section without a title.
+function blockSections(blocks) {
+  const sections = []
+  let current = { title: '', level: 0, parts: [] }
+  for (const block of blocks) {
+    if (block.heading && block.level <= 3) {
+      if (current.title || current.parts.length) sections.push(current)
+      current = { title: block.heading, level: block.level, parts: [block.heading] }
+    } else {
+      current.parts.push(block.heading ?? block.text)
+    }
+  }
+  if (current.title || current.parts.length) sections.push(current)
+  return sections.map(section => ({ title: section.title, level: section.level, text: section.parts.join('\n\n') }))
+}
+
+// Sections as chunks labelled with their heading, and the headings as an
+// outline over the chunks. untitled: where text outside any section is.
+function sectionChunks(sections, untitled = {}) {
+  const chunks = []
+  const heads = []
+  for (const section of sections) {
+    const start = chunks.length
+    chunks.push(...chunkText(section.text, section.title ? { section: section.title.slice(0, 80) } : untitled))
+    if (section.title && chunks.length > start) heads.push({ title: section.title, level: section.level, start })
+  }
+  return { chunks, outline: { source: 'headings', entries: sectionOutline(heads, chunks.length) } }
+}
+
+// Markdown in sections under its headings (#, ## and ###), leaving headings
+// inside fenced code alone: a "# comment" in code is not a chapter.
+export function markdownSections(value) {
+  const sections = []
+  let current = { title: '', level: 0, lines: [] }
+  let fence = null
+  for (const line of String(value ?? '').split('\n')) {
+    const marker = /^\s{0,3}(`{3,}|~{3,})/u.exec(line)?.[1]
+    if (marker && (!fence || (marker[0] === fence[0] && marker.length >= fence.length))) {
+      fence = fence ? null : marker
+      current.lines.push(line)
+      continue
+    }
+    const heading = fence ? null : /^\s{0,3}(#{1,3})\s+(.+?)\s*#*\s*$/u.exec(line)
+    if (heading) {
+      if (current.title || current.lines.some(text => text.trim())) sections.push(current)
+      current = { title: heading[2].trim(), level: heading[1].length, lines: [line] }
+    } else {
+      current.lines.push(line)
+    }
+  }
+  if (current.title || current.lines.some(text => text.trim())) sections.push(current)
+  return sections.map(section => ({ title: section.title, level: section.level, text: section.lines.join('\n') }))
 }
 
 const visibleLength = value => String(value ?? '').replace(/\s+/gu, '').length
@@ -229,8 +350,70 @@ function pdfjsAssets() {
   return pdfjsAssetUrls(dirname(require.resolve('pdfjs-dist/package.json')))
 }
 
+// A page's text as lines, from pdf.js text items: { text, y, size }, y from
+// 0 at the bottom of the page to 1 at the top. A line ends where pdf.js marks
+// it or where the baseline moves by more than half a line.
+export function pageLines(items, view = [0, 0, 1, 1]) {
+  const bottom = Number(view?.[1]) || 0
+  const height = (Number(view?.[3]) || 1) - bottom || 1
+  const lines = []
+  let current = null
+  const close = () => {
+    if (current?.text.trim()) lines.push({ text: current.text.trim(), y: Math.min(1, Math.max(0, (current.baseline - bottom) / height)), size: Math.round(current.size * 10) / 10 })
+    current = null
+  }
+  for (const item of items ?? []) {
+    if (typeof item?.str !== 'string') continue
+    const baseline = Number(item.transform?.[5]) || 0
+    const size = Math.abs(Number(item.height)) || Math.hypot(Number(item.transform?.[2]) || 0, Number(item.transform?.[3]) || 0)
+    if (current && item.str.trim() && Math.abs(baseline - current.baseline) > Math.max(2, (current.size || size) * 0.6)) close()
+    if (item.str) {
+      current ??= { text: '', baseline, size: 0 }
+      current.text += item.str
+      if (item.str.trim()) current.size = Math.max(current.size, size)
+    }
+    if (item.hasEOL) close()
+  }
+  close()
+  return lines
+}
+
+// The page a bookmark points at (1-based), or null.
+async function bookmarkPage(doc, dest) {
+  try {
+    const explicit = typeof dest === 'string' ? await doc.getDestination(dest) : dest
+    const target = Array.isArray(explicit) ? explicit[0] : null
+    if (Number.isInteger(target)) return target + 1
+    if (target && typeof target === 'object') return (await doc.getPageIndex(target)) + 1
+  } catch {
+    // a broken bookmark is left out
+  }
+  return null
+}
+
+// The PDF's outline: its bookmarks, or else the chapter and section titles
+// found on its pages (see headingOutline). { source, entries } or null.
+async function pdfOutline(doc, pages, running) {
+  let bookmarks = []
+  try {
+    bookmarks = flattenBookmarks(await doc.getOutline())
+  } catch {
+    bookmarks = []
+  }
+  const marked = []
+  for (const entry of bookmarks) marked.push({ ...entry, page: await bookmarkPage(doc, entry.dest) })
+  const fromBookmarks = finishOutline(marked, doc.numPages)
+  if (fromBookmarks.length >= 2) return { source: 'bookmarks', entries: fromBookmarks }
+  const fromHeadings = finishOutline(headingOutline(pages, { running }), doc.numPages)
+  return fromHeadings.length >= 2 ? { source: 'headings', entries: fromHeadings } : null
+}
+
 // Pages without text of their own (scans, photos, full-page figures) are
-// read as pictures with recognize (see readPictures).
+// read as pictures with recognize (see readPictures). Each page keeps its
+// printed page number (`label`) when the PDF declares page labels or its
+// pages show their numbers, and running heads, feet and page numbers are
+// left out of the text. The outline comes from the bookmarks, or from the
+// headings on the pages.
 export async function extractPdf(bytes, { signal, recognize } = {}) {
   const pdfjs = await loadPdfjs()
   const { cMapUrl, standardFontDataUrl, wasmUrl } = pdfjsAssets()
@@ -263,20 +446,27 @@ export async function extractPdf(bytes, { signal, recognize } = {}) {
     } catch {
       // metadata is optional
     }
-    const texts = []
+    const pages = []
     for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber += 1) {
       signal?.throwIfAborted()
       const page = await doc.getPage(pageNumber)
       const content = await page.getTextContent()
-      let pageText = ''
-      for (const item of content.items) {
-        if (typeof item.str !== 'string') continue
-        pageText += item.str
-        pageText += item.hasEOL ? '\n' : ''
-      }
+      pages.push({ lines: pageLines(content.items, page.view) })
       page.cleanup()
-      texts.push(pageText)
     }
+    const numbers = readPageNumbers(pages)
+    let declared = null
+    try {
+      declared = declaredLabels(await doc.getPageLabels(), doc.numPages)
+    } catch {
+      declared = null
+    }
+    const labels = declared ?? (numbers.labels.some(Boolean) ? numbers.labels : null)
+    const texts = pages.map((page, index) => {
+      const drop = new Set(numbers.furniture[index])
+      return page.lines.filter((line, lineIndex) => !drop.has(lineIndex)).map(line => line.text).join('\n')
+    })
+    const outline = await pdfOutline(doc, pages, numbers.running)
     const pictured = texts.flatMap((pageText, index) => (visibleLength(pageText) < MIN_PAGE_TEXT ? [index + 1] : []))
     const read = await readPictures(recognize, pictured.map(pageNumber => ({
       where: { page: pageNumber },
@@ -297,9 +487,9 @@ export async function extractPdf(bytes, { signal, recognize } = {}) {
       throw read.error ?? new MaterialError('no-text', 'No text found in this PDF')
     }
     const recognized = new Map(pictured.slice(0, read.texts.length).map((pageNumber, index) => [pageNumber, read.texts[index]]))
-    const chunks = texts.flatMap((pageText, index) => chunkText([pageText, recognized.get(index + 1)].filter(Boolean).join('\n\n'), { page: index + 1 }))
+    const chunks = texts.flatMap((pageText, index) => chunkText([pageText, recognized.get(index + 1)].filter(Boolean).join('\n\n'), { page: index + 1, ...(labels?.[index] ? { label: labels[index] } : {}) }))
     if (!chunks.length) throw read.error ?? new MaterialError('no-text', 'No text found in this PDF')
-    return { title, pages: doc.numPages, chunks, ocr: read.note }
+    return { title, pages: doc.numPages, chunks, ocr: read.note, labels, printed: labels ? (declared ? 'pdf' : 'pages') : null, outline }
   } finally {
     await Promise.resolve(task.destroy?.()).catch(() => undefined)
   }
@@ -308,31 +498,47 @@ export async function extractPdf(bytes, { signal, recognize } = {}) {
 // A document that is mostly pictures (pasted scans, screenshots of
 // questions) also has its pictures read with recognize, after its own text;
 // the diagrams of a written document are left alone.
+// Word headings made with localized style names (WPS, older Office).
+const DOCX_STYLES = ["p[style-name='标题 1'] => h1:fresh", "p[style-name='标题 2'] => h2:fresh", "p[style-name='标题 3'] => h3:fresh"]
+
+// The text is read as HTML, so headings make sections and an outline, and
+// tables keep their rows; pictures are not converted (they are read below
+// when the document is mostly pictures). A document without headings is
+// cut into numbered sections (§1, §2…) of about a chunk each.
 export async function extractDocx(bytes, { recognize } = {}) {
   const mammoth = await import('mammoth')
-  const extract = mammoth.extractRawText ?? mammoth.default?.extractRawText
+  const convert = mammoth.convertToHtml ?? mammoth.default?.convertToHtml
+  const images = mammoth.images ?? mammoth.default?.images
   let result
   try {
-    result = await extract({ buffer: Buffer.from(bytes) })
+    result = await convert({ buffer: Buffer.from(bytes) }, { styleMap: DOCX_STYLES, convertImage: images.imgElement(() => ({ src: '' })) })
   } catch {
     throw new MaterialError('unreadable', 'This Word document could not be read')
   }
-  const own = String(result?.value ?? '')
-  const sections = own.split(/\n{2,}/u)
-  const chunks = []
-  let buffer = ''
+  const { parseHTML } = await import('linkedom')
+  const { document } = parseHTML(`<!doctype html><html><body>${String(result?.value ?? '')}</body></html>`)
+  const blocks = htmlBlocks(document.body)
+  const own = blocks.map(block => block.heading ?? block.text).join('\n\n')
+  const sections = blockSections(blocks)
+  let chunks = []
+  let outline = null
   let section = 1
-  for (const paragraph of sections) {
-    if ((buffer + paragraph).length > CHUNK_CHARS && buffer) {
+  if (sections.some(entry => entry.title)) {
+    ({ chunks, outline } = sectionChunks(sections))
+  } else {
+    let buffer = ''
+    for (const paragraph of own.split(/\n{2,}/u)) {
+      if ((buffer + paragraph).length > CHUNK_CHARS && buffer) {
+        chunks.push(...chunkText(buffer, { section: `§${section}` }))
+        section += 1
+        buffer = ''
+      }
+      buffer += `${paragraph}\n\n`
+    }
+    if (buffer.trim()) {
       chunks.push(...chunkText(buffer, { section: `§${section}` }))
       section += 1
-      buffer = ''
     }
-    buffer += `${paragraph}\n\n`
-  }
-  if (buffer.trim()) {
-    chunks.push(...chunkText(buffer, { section: `§${section}` }))
-    section += 1
   }
   const JSZip = (await import('jszip')).default
   const pictures = await partPictures(await JSZip.loadAsync(bytes), 'word/document.xml')
@@ -345,12 +551,12 @@ export async function extractDocx(bytes, { recognize } = {}) {
       if (!read.available) throw new MaterialError('pictures-need-vision', 'This document is pictures; reading them needs a model that can see images')
       throw read.error ?? new MaterialError('no-text', 'No text found in this document')
     }
-    for (const [index, pictureText] of read.texts.entries()) chunks.push(...chunkText(pictureText, { section: `§${section + index}` }))
+    for (const [index, pictureText] of read.texts.entries()) chunks.push(...chunkText(pictureText, outline ? { picture: index + 1 } : { section: `§${section + index}` }))
     if (!chunks.length) throw read.error ?? new MaterialError('no-text', 'No text found in this document')
     note = read.note
   }
   if (!chunks.length) throw new MaterialError('no-text', 'No text found in this document')
-  return { chunks, ocr: note }
+  return { chunks, ocr: note, outline }
 }
 
 const XML_ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
@@ -411,19 +617,15 @@ export async function extractPptx(bytes, { recognize } = {}) {
 
 export function extractPlain(bytes, kind) {
   const value = decodeText(bytes)
-  const chunks = []
-  if (kind === 'markdown') {
-    const parts = value.split(/\n(?=#{1,3}\s)/u)
-    for (const part of parts) {
-      const heading = /^#{1,3}\s+(.+)/u.exec(part)?.[1]?.trim()
-      chunks.push(...chunkText(part, heading ? { section: heading.slice(0, 80) } : {}))
-    }
-  } else {
-    chunks.push(...chunkText(value, {}))
+  if (kind !== 'markdown') {
+    const chunks = chunkText(value, {})
+    if (!chunks.length) throw new MaterialError('empty', 'This file is empty')
+    return { title: '', chunks }
   }
+  const sections = markdownSections(value)
+  const { chunks, outline } = sectionChunks(sections)
   if (!chunks.length) throw new MaterialError('empty', 'This file is empty')
-  const title = kind === 'markdown' ? /^#\s+(.+)$/mu.exec(value)?.[1]?.trim() ?? '' : ''
-  return { title, chunks }
+  return { title: sections.find(section => section.level === 1)?.title ?? '', chunks, outline }
 }
 
 // recognize(sources), when given, reads the text in pictures (see
@@ -444,18 +646,18 @@ export async function ingestFile({ name, bytes, signal, recognize }) {
   }
   if (kind === 'pdf') {
     const result = await extractPdf(bytes, { signal, recognize })
-    return finish(kind, result.title || baseTitle, result.chunks, { pages: result.pages, ocr: result.ocr })
+    return finish(kind, result.title || baseTitle, result.chunks, { pages: result.pages, ocr: result.ocr, outline: result.outline, labels: result.labels, printed: result.printed })
   }
   if (kind === 'docx') {
     const result = await extractDocx(bytes, { recognize })
-    return finish(kind, baseTitle, result.chunks, { ocr: result.ocr })
+    return finish(kind, baseTitle, result.chunks, { ocr: result.ocr, outline: result.outline })
   }
   if (kind === 'pptx') {
     const result = await extractPptx(bytes, { recognize })
     return finish(kind, baseTitle, result.chunks, { slides: result.slides, ocr: result.ocr })
   }
   const result = extractPlain(bytes, kind)
-  return finish(kind, result.title || baseTitle, result.chunks)
+  return finish(kind, result.title || baseTitle, result.chunks, { outline: result.outline })
 }
 
 // ── web pages ───────────────────────────────────────────────────────────────
@@ -526,8 +728,12 @@ export async function ingestUrl(address, { fetchImpl = pageFetch, signal, recogn
     article = null
   }
   const title = String(article?.title || document.querySelector('title')?.textContent || url.hostname).trim().slice(0, 160)
-  const body = article?.textContent || document.body?.textContent || ''
-  const chunks = chunkText(body, { section: url.hostname })
+  // The article's headings make sections; without any, the page is one.
+  const blocks = article?.content ? htmlBlocks(parseHTML(`<!doctype html><html><body>${article.content}</body></html>`).document.body) : []
+  const sections = blockSections(blocks)
+  const { chunks, outline } = sections.some(section => section.title)
+    ? sectionChunks(sections, { section: url.hostname })
+    : { chunks: chunkText(article?.textContent || document.body?.textContent || '', { section: url.hostname }), outline: null }
   if (!chunks.length) throw new MaterialError('page-no-text', 'No readable text on this page')
-  return finish('url', title, chunks, { url: url.href })
+  return finish('url', title, chunks, { url: url.href, outline })
 }

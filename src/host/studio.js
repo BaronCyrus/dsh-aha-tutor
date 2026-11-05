@@ -6,7 +6,7 @@ import { LIMITS, materialQuizRange, normalizeCards, normalizeCheatsheet, normali
 import { assertId, newId } from '../core/ids.js'
 import { createCard, review } from '../core/srs.js'
 import { buildIndex, documentParts, formatPassages, materialParts, passageRange, search, snippetOf, spreadPassages } from '../core/retrieval.js'
-import { materialImages, passagesFor, readMaterials, readProfile } from './context.js'
+import { materialImages, materialTopics, outlineText, passagesFor, readMaterials, readProfile } from './context.js'
 import { fieldCounter, generateJson, generateSteps, generateText, TutorError } from './generate.js'
 import { ingestFile, ingestUrl, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from './materials.js'
 import { assistPrompt, cheatsheetPrompt, detectLanguage, digestPartPrompt, digestPrompt, flashcardsPrompt, materialBriefPrompt, quizPrompt, shortPrompt, summaryPrompt } from './prompts.js'
@@ -45,6 +45,10 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
       mime: result.mime ?? null,
       url: result.url ?? null,
       ocr: result.ocr ?? null,
+      // The outline (bookmarks or headings) and where printed page numbers
+      // came from ('pdf' labels or the 'pages' themselves), when found.
+      outline: result.outline ?? null,
+      printed: result.printed ?? null,
       createdAt: stamp(),
       brief: null,
       ...extra,
@@ -55,7 +59,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
       try {
         meta.brief = await generateJson(llm, {
           purpose: 'quick',
-          prompt: materialBriefPrompt({ title: meta.title, passages: formatPassages(spreadPassages(result.chunks, { maxChars: 12000 }), ''), language: detectLanguage(result.chunks[0].text, uiLanguage()) }),
+          prompt: materialBriefPrompt({ title: meta.title, contents: meta.outline ? outlineText(meta.outline, { maxChars: 3000 }) : '', passages: formatPassages(spreadPassages(result.chunks, { maxChars: 12000 }), ''), language: detectLanguage(result.chunks[0].text, uiLanguage()) }),
           maxTokens: 1500,
           signal,
           normalize: raw => ({
@@ -135,6 +139,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
         materialId: chunk.materialId,
         title: chunk.materialTitle,
         page: chunk.page ?? null,
+        label: chunk.label ?? null,
         slide: chunk.slide ?? null,
         snippet: snippetOf(chunk.text, wanted),
       })),
@@ -145,7 +150,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
     const meta = await store.readJson(store.paths.material(assertId(id, 'mat')), null)
     if (!meta) throw new TutorError('not-found', 'Material not found')
     const chunks = (await store.readJson(store.paths.materialChunks(id), [])) ?? []
-    return { material: meta, preview: chunks.slice(0, 3).map(chunk => ({ page: chunk.page ?? null, slide: chunk.slide ?? null, text: chunk.text.slice(0, 600) })), chunkCount: chunks.length }
+    return { material: meta, preview: chunks.slice(0, 3).map(chunk => ({ page: chunk.page ?? null, label: chunk.label ?? null, slide: chunk.slide ?? null, text: chunk.text.slice(0, 600) })), chunkCount: chunks.length }
   }
 
   async function renameMaterial({ id, title }) {
@@ -229,7 +234,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
     if (!materials.some(item => item.chunks.length)) throw new TutorError('material-no-text', 'These materials have no text')
     const title = materials.map(item => item.meta.title).join(' + ')
     const language = detectLanguage(materials.find(item => item.chunks.length)?.chunks[0]?.text ?? title, uiLanguage())
-    const outline = materials.map(item => item.meta.brief?.topics?.join('; ') ?? '').filter(Boolean).join('\n')
+    const outline = materials.map(item => materialTopics(item.meta)).filter(Boolean).join('\n')
     return { ids, materials, title, language, outline }
   }
 

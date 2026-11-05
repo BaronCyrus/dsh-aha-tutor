@@ -162,8 +162,13 @@ export function materialParts(documents, { partChars = 20000, maxParts = 24 } = 
     .map(passages => ({ title: document.title, passages, chars: passages.reduce((sum, chunk) => sum + chunk.text.length, 0) })))
 }
 
+// Where a passage is, as the reader of the material would name it: the
+// page number printed on it (its label) when there is one.
 function locationOf(passage) {
-  return passage?.page ? `p.${passage.page}` : passage?.slide ? `slide ${passage.slide}` : passage?.section ?? ''
+  if (passage?.page) return `p.${passage.label ?? passage.page}`
+  if (passage?.slide) return `slide ${passage.slide}`
+  if (passage?.picture && !passage.section) return `picture ${passage.picture}`
+  return passage?.section ?? ''
 }
 
 // "p.12–p.40": where a run of passages starts and ends.

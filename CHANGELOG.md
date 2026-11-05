@@ -17,6 +17,7 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 ### Fixed
 
 - **Lessons always see their materials**: when no passage of the materials matched a lesson's words (a Chinese course on an English textbook, or a lesson worded differently from the book), the lesson, its practice, unit quizzes, flashcards and cheat sheets were written without any passages. They now get the stretch of each material where the lesson most likely is, since a course made from a book follows its order, and the prompt says these are excerpts rather than matches. Numbered things match by their number too: 例2 finds 例2, not 例1.
+- **Course outline at phone width**: next to its buttons, a lesson's name was squeezed to one character per line; the buttons now move under the name when there is no room for both.
 - **Word tables and Markdown code**: a Word document was read as plain text, so a table came out one cell per paragraph; each row is now one line with its cells in order. A `#` comment inside a Markdown code block no longer starts a new section.
 
 ## 1.11.1 - 2026-11-04

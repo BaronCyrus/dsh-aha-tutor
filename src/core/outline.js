@@ -223,7 +223,9 @@ export function finishOutline(entries, pageCount) {
 // set much larger than the text in the upper half of a page. Contents pages
 // are skipped (their titles are found again where the chapters begin), and
 // a title is kept once. pages: [{ lines }]; running: forms of the running
-// heads to skip (see readPageNumbers). Returns [{ title, level, page }].
+// heads to skip (see readPageNumbers); labels: the printed page numbers,
+// when known: a line found only by its size counts on a numbered page, not
+// on a cover or a preface. Returns [{ title, level, page }].
 const NUMBER = '[一二三四五六七八九十百零〇两\\d]+'
 const CHAPTER = new RegExp(`^(?:第\\s*${NUMBER}\\s*[章单元篇编部]|(?:chapter|unit|part|module)\\s+(?:\\d+|[ivxlc]+)\\b)`, 'iu')
 const SECTION = new RegExp(`^(?:第\\s*${NUMBER}\\s*[节课讲]|(?:section|lesson)\\s+\\d+|\\d{1,2}\\.\\d{1,2}(?:\\.\\d{1,2})?\\s+[^\\d\\s.]|§\\s*\\d+)`, 'iu')
@@ -232,10 +234,12 @@ const BOXES = /^(?:例\s*\d*|例题\s*\d*|练习\s*[一二三四五六七八九�
 const CONTENTS_TITLE = /^(?:目\s*录|contents|table of contents)$/iu
 const CONTENTS_LINE = /^.{1,60}?(?:[.…·．_]{3,}|\s{2,})\s*\d{1,4}$/u
 const SENTENCE_END = /[。，；：、.,;:!?！？]$/u
-// Headings are not sentences: no commas or full stops inside.
-const SENTENCE_INSIDE = /[，。；,;]|\.\s/u
+// Headings are not sentences: no commas or full stops inside ("1. 小数" is
+// a number, not a full stop).
+const SENTENCE_INSIDE = /[，。；,;]|(?<=\p{L})\.\s/u
 
-export function headingOutline(pages, { running = new Set() } = {}) {
+export function headingOutline(pages, { running = new Set(), labels = null } = {}) {
+  const numbered = labels?.some(Boolean) ? index => /^\d+$/u.test(labels[index] ?? '') : () => true
   const sizes = new Map()
   for (const page of pages) {
     for (const line of page.lines ?? []) {
@@ -263,7 +267,7 @@ export function headingOutline(pages, { running = new Set() } = {}) {
       let kind = ''
       if (CHAPTER.test(title) && (larger || top.includes(line))) kind = 'chapter'
       else if (SECTION.test(title) && (larger || top.includes(line))) kind = 'section'
-      else if (texted && body > 0 && sizeOf(line) >= body * 1.25 && line.y >= 0.5 && !BOXES.test(title)) kind = 'size'
+      else if (texted && numbered(pageIndex) && body > 0 && sizeOf(line) >= body * 1.25 && line.y >= 0.5 && !BOXES.test(title)) kind = 'size'
       if (kind) found.push({ title, kind, size: sizeOf(line), page: pageIndex + 1, contents })
     }
   })
@@ -273,13 +277,15 @@ export function headingOutline(pages, { running = new Set() } = {}) {
   for (const size of [...new Set(found.map(entry => entry.size))].sort((a, b) => b - a)) if (!merged.length || size < merged.at(-1) * 0.92) merged.push(size)
   const rankOf = size => Math.min(OUTLINE_LIMITS.levels, merged.findIndex(step => size >= step * 0.92) + 1 || OUTLINE_LIMITS.levels)
   const levelOf = entry => (entry.kind === 'chapter' ? 1 : entry.kind === 'section' ? Math.max(2, rankOf(entry.size)) : rankOf(entry.size))
-  const seen = new Set()
+  // A title found again before anything else at its level (a chapter's own
+  // running head) is kept once; "整理和复习" in two chapters is kept twice.
   const entries = []
   for (const entry of found.filter(item => !item.contents)) {
+    const level = levelOf(entry)
     const key = visible(entry.title).toLowerCase()
-    if (seen.has(key)) continue
-    seen.add(key)
-    entries.push({ title: entry.title, level: levelOf(entry), page: entry.page })
+    const last = entries.findLastIndex(kept => visible(kept.title).toLowerCase() === key)
+    if (last >= 0 && !entries.slice(last + 1).some(kept => kept.level <= level)) continue
+    entries.push({ title: entry.title, level, page: entry.page })
   }
   entries.sort((a, b) => a.page - b.page)
   // More headings than pages is noise; keep the chapters, or nothing.

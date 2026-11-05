@@ -72,6 +72,9 @@ test('bookmarks become an outline with each entry\'s pages', () => {
   assert.deepEqual(finishOutline([], 10), [])
 })
 
+// A line of ordinary text, long enough to set the text's size.
+const TEXT = '这是一行普通的正文，用来说明小数乘法的计算方法和道理'
+
 test('without bookmarks, chapter titles are found on the pages', () => {
   const pages = [
     { lines: [line('目 录', 0.9, 20), line('第一单元 小数乘法 ........ 1', 0.8), line('第二单元 位置 ........ 9', 0.75), line('第三单元 小数除法 ........ 15', 0.7), line('第四单元 可能性 ........ 20', 0.65)] },
@@ -80,6 +83,18 @@ test('without bookmarks, chapter titles are found on the pages', () => {
     { lines: [line('第二单元 位置', 0.9, 20), line('用数对确定位置。', 0.7)] },
     { lines: [line('2.1 数对', 0.5, 12), line('Chapter 9 is not here, this is a sentence.', 0.4)] },
   ]
+  // Numbered sections are titles, a chapter's running head counts once, and
+  // a box title that recurs in two chapters is kept in both.
+  const numbered = headingOutline([
+    { lines: [line('第一单元 小数乘法', 0.9, 20), line('1. 小数乘整数', 0.8, 16), line(TEXT, 0.6)] },
+    { lines: [line('第一单元 小数乘法', 0.9, 20), line('整理和复习', 0.8, 15), line(TEXT, 0.6)] },
+    { lines: [line('第二单元 位置', 0.9, 20), line('整理和复习', 0.8, 15), line(TEXT, 0.6)] },
+  ])
+  assert.deepEqual(numbered.map(entry => [entry.title, entry.level, entry.page]), [['第一单元 小数乘法', 1, 1], ['1. 小数乘整数', 2, 1], ['整理和复习', 2, 2], ['第二单元 位置', 1, 3], ['整理和复习', 2, 3]])
+  // A cover's big title is not a chapter once the pages have printed numbers.
+  const covered = [{ lines: [line('数学', 0.6, 40), line('示例教材', 0.2)] }, { lines: [line('小数的意义', 0.9, 18), line(TEXT, 0.6)] }, { lines: [line('小数的读法', 0.9, 18), line(TEXT, 0.6)] }]
+  assert.deepEqual(headingOutline(covered, { labels: [null, '1', '2'] }).map(entry => entry.title), ['小数的意义', '小数的读法'])
+  assert.deepEqual(headingOutline(covered).map(entry => entry.title), ['数学', '小数的意义', '小数的读法'], 'without printed numbers it cannot tell')
   const found = headingOutline(pages)
   assert.deepEqual(found.map(entry => [entry.title, entry.level, entry.page]), [
     ['第一单元 小数乘法', 1, 2],

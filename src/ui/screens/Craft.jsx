@@ -450,13 +450,15 @@ function Blueprint({ course, proposal, progress, boards, job, onChange, adding: 
             const remove = () => edit(next => { next[unitIndex].lectures[lectureIndex].lessons.splice(lessonIndex, 1) })
             return <div key={lesson.id ?? lessonIndex} className="aha-lesson" data-path={`u${key}`} data-flash={flash === `u${key}` ? 'true' : undefined}>
               <span className="aha-dot" />
-              <input value={lesson.title} title={lesson.summary} onChange={event => { const value = event.currentTarget.value; edit(next => { next[unitIndex].lectures[lectureIndex].lessons[lessonIndex].title = value }) }} />
+              <span className="aha-lessonName">
+                <input value={lesson.title} title={lesson.summary} onChange={event => { const value = event.currentTarget.value; edit(next => { next[unitIndex].lectures[lectureIndex].lessons[lessonIndex].title = value }) }} />
+                <LessonSources sources={(lesson.sources ?? []).filter(source => course.materialIds?.includes(source.materialId))} />
+              </span>
               <select className="aha-depthSelect" data-depth={lesson.depth || undefined} value={lesson.depth ?? ''} title={t('depthTitle')} aria-label={t('depthTitle')}
                 onChange={event => { const value = event.currentTarget.value; edit(next => { const target = next[unitIndex].lectures[lectureIndex].lessons[lessonIndex]; if (value) target.depth = value; else delete target.depth }) }}>
                 <option value="">{t('depthNone')}</option>
                 {LESSON_DEPTHS.map(depth => <option key={depth} value={depth}>{t(`depth_${depth}`)}</option>)}
               </select>
-              <LessonSources sources={(lesson.sources ?? []).filter(source => course.materialIds?.includes(source.materialId))} />
               <span className="aha-hint">{t('estMinutes', { minutes: lesson.estMinutes })}</span>
               {reworking === key ? <Spinner /> : !started(lesson) ? <span className="aha-menuAnchor">
                 <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" title={t('reworkLesson')} aria-label={t('reworkLesson')} aria-expanded={reworkMenu === key} onClick={() => setReworkMenu(open => (open === key ? null : key))}>✦</button>

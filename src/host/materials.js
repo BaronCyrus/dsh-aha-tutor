@@ -393,7 +393,7 @@ async function bookmarkPage(doc, dest) {
 
 // The PDF's outline: its bookmarks, or else the chapter and section titles
 // found on its pages (see headingOutline). { source, entries } or null.
-async function pdfOutline(doc, pages, running) {
+async function pdfOutline(doc, pages, running, labels) {
   let bookmarks = []
   try {
     bookmarks = flattenBookmarks(await doc.getOutline())
@@ -404,7 +404,7 @@ async function pdfOutline(doc, pages, running) {
   for (const entry of bookmarks) marked.push({ ...entry, page: await bookmarkPage(doc, entry.dest) })
   const fromBookmarks = finishOutline(marked, doc.numPages)
   if (fromBookmarks.length >= 2) return { source: 'bookmarks', entries: fromBookmarks }
-  const fromHeadings = finishOutline(headingOutline(pages, { running }), doc.numPages)
+  const fromHeadings = finishOutline(headingOutline(pages, { running, labels }), doc.numPages)
   return fromHeadings.length >= 2 ? { source: 'headings', entries: fromHeadings } : null
 }
 
@@ -466,7 +466,7 @@ export async function extractPdf(bytes, { signal, recognize } = {}) {
       const drop = new Set(numbers.furniture[index])
       return page.lines.filter((line, lineIndex) => !drop.has(lineIndex)).map(line => line.text).join('\n')
     })
-    const outline = await pdfOutline(doc, pages, numbers.running)
+    const outline = await pdfOutline(doc, pages, numbers.running, labels)
     const pictured = texts.flatMap((pageText, index) => (visibleLength(pageText) < MIN_PAGE_TEXT ? [index + 1] : []))
     const read = await readPictures(recognize, pictured.map(pageNumber => ({
       where: { page: pageNumber },

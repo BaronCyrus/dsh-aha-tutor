@@ -113,7 +113,7 @@ a.aha-btn{text-decoration:none}
 .aha-menu .aha-btn{justify-content:flex-start}
 .aha-unit{border:1px solid var(--aha-border);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--aha-surface)}
 .aha-lecture{margin-left:10px;padding-left:12px;border-left:2px solid var(--aha-border);display:flex;flex-direction:column;gap:4px}
-.aha-lesson{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:8px}
+.aha-lesson{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:5px 8px;border-radius:8px}
 .aha-lesson:hover{background:var(--aha-soft)}
 .aha-lesson input{flex:1;border:1px solid transparent;background:transparent;color:inherit;font:inherit;padding:2px 6px;border-radius:6px}
 .aha-lesson input:focus{border-color:var(--aha-border);outline:none;background:var(--aha-surface)}
@@ -283,8 +283,10 @@ a.aha-btn{text-decoration:none}
 .aha-outline li[data-level="1"] .aha-outlineTitle{font-weight:600}
 .aha-outlineTitle{min-width:0;overflow-wrap:anywhere}
 .aha-outline .aha-pageRef{flex:none;color:var(--aha-muted);font-size:${px(13)}}
-.aha-lessonSource{color:var(--aha-muted);font-size:${px(13)};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40%;cursor:help}
-.aha-crumb .aha-lessonSource{max-width:none}
+.aha-lessonSource{display:inline-block;vertical-align:bottom;color:var(--aha-muted);font-size:${px(13)};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;cursor:help}
+.aha-lessonName{flex:1 1 0;min-width:min(120px,calc(100% - 24px));display:flex;flex-direction:column;gap:1px}
+.aha-lessonName input{flex:none;width:100%;box-sizing:border-box}
+.aha-lessonName input+.aha-lessonSource{padding-left:7px}
 .aha-libraryHitText{font-size:${px(14.5)};line-height:${px(21.5)};overflow-wrap:anywhere}
 .aha-libraryHitText mark{background:color-mix(in srgb,#f2c94c 55%,transparent);color:inherit;border-radius:3px;padding:0 1px}
 @keyframes aha-flash{0%,40%{background:color-mix(in srgb,var(--aha-brand) 16%,transparent)}100%{background:transparent}}

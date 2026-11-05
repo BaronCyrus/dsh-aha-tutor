@@ -82,9 +82,11 @@ export function CourseScreen({ courseId, tab: initialTab = 'outline' }) {
           <div className="aha-hint" style={{ fontWeight: 600 }}>{t('lectureN', { n: lectureIndex + 1 })} · {lecture.title}</div>
           {lecture.lessons.map(lesson => <div key={lesson.id} className="aha-lesson">
             <span className="aha-dot" data-state={status(lesson.id)} />
-            <span style={{ flex: 1, cursor: 'pointer' }} onClick={() => navigate('lesson', { courseId, lessonId: lesson.id })} title={lesson.summary}>{lesson.title}</span>
+            <span className="aha-lessonName" style={{ cursor: 'pointer' }} onClick={() => navigate('lesson', { courseId, lessonId: lesson.id })} title={lesson.summary}>
+              <span>{lesson.title}</span>
+              <LessonSources sources={(lesson.sources ?? []).filter(source => course.materialIds?.includes(source.materialId))} />
+            </span>
             {lesson.kind === 'remedial' ? <span className="aha-tag">{t('remedial')}</span> : null}
-            <LessonSources sources={(lesson.sources ?? []).filter(source => course.materialIds?.includes(source.materialId))} />
             {lesson.depth ? <span className="aha-depth" data-depth={lesson.depth} title={t('depthTitle')}>{t(`depth_${lesson.depth}`)}</span> : null}
             <span className="aha-hint">{t('estMinutes', { minutes: lesson.estMinutes })}</span>
             <LessonMeter lesson={lesson} progress={progress} />

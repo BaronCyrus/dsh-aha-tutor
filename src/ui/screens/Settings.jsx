@@ -6,7 +6,7 @@ import { useApp, useLoad } from '../hooks.js'
 import { browserSpeechAvailable, listVoices, onVoicesChanged, pickVoice } from '../speech.js'
 import { BOARD_FONT } from '../styles.js'
 
-const PROVIDERS = [['openai', 'providerOpenai'], ['volcengine', 'providerVolcengine'], ['minimax', 'providerMinimax'], ['azure', 'providerAzure']]
+const PROVIDERS = [['openai', 'providerOpenai'], ['aliyun-tokenplan', 'providerAliyunTokenPlan'], ['volcengine', 'providerVolcengine'], ['minimax', 'providerMinimax'], ['azure', 'providerAzure']]
 const TEXT_SIZES = [['standard', 'textStandard'], ['large', 'textLarge'], ['larger', 'textLarger']]
 
 export function SettingsScreen() {

@@ -11,7 +11,7 @@ import { join } from 'node:path'
 import { estimateSpeechMs } from '../core/board-script.js'
 import { writeFileAtomic } from './store.js'
 
-export const TTS_PROVIDERS = Object.freeze(['openai', 'volcengine', 'minimax', 'azure'])
+export const TTS_PROVIDERS = Object.freeze(['openai', 'volcengine', 'minimax', 'azure', 'aliyun-tokenplan'])
 // One request ends within totalMs. A service that sends nothing for quietMs
 // has stalled, and a lesson should not wait out totalMs for it.
 export const TTS_LIMITS = Object.freeze({ totalMs: 45_000, quietMs: 10_000 })
@@ -54,6 +54,15 @@ export const PROVIDER_FIELDS = Object.freeze({
   azure: [
     { key: 'region', default: 'eastasia' },
     { key: 'voice', default: 'zh-CN-XiaoxiaoNeural' },
+    { key: 'apiKey', secret: true },
+  ],
+  // Alibaba Cloud Model Studio (Token Plan). Its speech endpoint is not
+  // OpenAI-compatible: it takes a DashScope body (input.text / input.voice /
+  // input.format / input.sample_rate) and answers with base64 audio or a URL.
+  'aliyun-tokenplan': [
+    { key: 'baseUrl', default: 'https://token-plan.cn-beijing.maas.aliyuncs.com' },
+    { key: 'model', default: 'qwen-audio-3.0-tts-plus' },
+    { key: 'voice', default: 'longanhuan_v3.6' },
     { key: 'apiKey', secret: true },
   ],
 })
@@ -286,10 +295,33 @@ const synthesizers = {
       body: ssml,
     }, MAX_AUDIO_BYTES)
   },
+
+  // Token Plan has no speed knob and always returns MP3, so `rate` is ignored.
+  'aliyun-tokenplan': async ({ text, config, secret, send }) => {
+    const base = checkEndpoint(config.baseUrl || 'https://token-plan.cn-beijing.maas.aliyuncs.com')
+    const url = new URL('/api/v1/services/audio/tts/SpeechSynthesizer', base)
+    const body = parseJson(await send(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: config.model || 'qwen-audio-3.0-tts-plus',
+        input: { text, voice: config.voice || 'longanhuan_v3.6', format: 'mp3', sample_rate: 24000 },
+      }),
+    }, MAX_JSON_BYTES), 'Token Plan')
+    const audio = body?.output?.audio ?? {}
+    if (typeof audio.data === 'string' && audio.data !== '') {
+      const bytes = Buffer.from(audio.data, 'base64')
+      if (bytes.length > MAX_AUDIO_BYTES) throw new TtsError('too-large', 'TTS response is too large')
+      return bytes
+    }
+    if (typeof audio.url === 'string' && audio.url !== '') return send(audio.url, { method: 'GET' }, MAX_AUDIO_BYTES)
+    throw new TtsError('request', 'Token Plan returned no audio')
+  },
 }
 
 // Request size limits in "units" (ASCII = 1, other = 3, roughly UTF-8 bytes).
-const CHUNK_UNITS = Object.freeze({ openai: 3800, volcengine: 900, minimax: 9000, azure: 6000 })
+// Token Plan accepts up to 5000 characters per request; keep a margin.
+const CHUNK_UNITS = Object.freeze({ openai: 3800, volcengine: 900, minimax: 9000, azure: 6000, 'aliyun-tokenplan': 6000 })
 
 export function createTts({ cacheDir, fetchImpl = globalThis.fetch, getSecret, limits = TTS_LIMITS }) {
   if (typeof getSecret !== 'function') throw new TypeError('createTts needs getSecret')

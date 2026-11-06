@@ -135,7 +135,14 @@ test('deleting a draft stops its blueprint, and what the blueprint still writes 
   await until(() => Boolean(release))
   assert.equal((await courses.list())[0].status, 'intake')
 
-  await courses.remove({ courseId })
+  const timers = () => process.getActiveResourcesInfo().filter(resource => resource === 'Timeout').length
+  const idle = timers()
+  const removing = courses.remove({ courseId })
+  // Nothing else is running: a wait that did not keep the process alive
+  // would never end (Node 22's test runner fails the test).
+  assert.ok(timers() > idle, 'removing waits for the blueprint on a timer that keeps the process alive')
+  await removing
+  assert.equal(timers(), idle, 'and leaves no timer behind')
   assert.equal(jobs.get(designing.id).status, 'cancelled', 'the blueprint stopped')
   assert.deepEqual(await courses.list(), [])
   release()

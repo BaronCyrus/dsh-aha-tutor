@@ -747,7 +747,7 @@ export function createLessons({ store, llm, jobs, courses, learner, mistakes = c
         const named = board.title || board.steps.flatMap(step => step.ops ?? []).find(op => op.t === 'title')?.text
         const next = current ?? { id, title: text(named || item.prompt, 60), language: place.language, materialIds: [], turns: [], createdAt: stamp() }
         next.turns = [...(next.turns ?? []), turn].slice(-THREAD_TURNS)
-        next.materialIds = [...new Set([...(next.materialIds ?? []), ...materialIds])].slice(0, 8)
+        next.materialIds = [...new Set([...(next.materialIds ?? []), ...materialIds])].slice(0, LIMITS.materials)
         next.updatedAt = stamp()
         return next
       })

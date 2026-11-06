@@ -28,11 +28,23 @@ export const LIMITS = Object.freeze({
   libraryCards: 300,
   sheetSections: 24,
   sheetItems: 16,
+  // Materials one course, study tool or question may use, everywhere they
+  // are picked: the prompts share their room out among them.
+  materials: 30,
 })
 
 export function text(value, max = 400) {
   if (value === null || value === undefined) return ''
   return String(value).replace(/\u0000/gu, '').trim().slice(0, max)
+}
+
+// The name of something made from several materials: their titles joined,
+// or the first two and how many in all when there are more than four.
+export function materialsTitle(titles, language = 'zh-CN') {
+  const names = (titles ?? []).map(title => text(title, 200)).filter(Boolean)
+  if (names.length <= 4) return names.join(' + ')
+  const first = `${names[0]} + ${names[1]}`
+  return /^zh/iu.test(String(language)) ? `${first} 等 ${names.length} 份资料` : `${first} and ${names.length - 2} more`
 }
 
 function list(value, max, mapper) {

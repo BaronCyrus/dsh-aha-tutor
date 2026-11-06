@@ -3,13 +3,14 @@
 // instant-help sessions on the board, and two-minute explainer shorts.
 
 import { orderOptions } from '../core/choice-order.js'
-import { LIMITS, materialQuizRange, normalizeCards, normalizeCheatsheet, normalizePractice, partCardRange, shareRange, takeEvenly, text, thinEvenly, uniqueCards } from '../core/course-model.js'
+import { LIMITS, materialQuizRange, materialsTitle, normalizeCards, normalizeCheatsheet, normalizePractice, partCardRange, shareRange, takeEvenly, text, thinEvenly, uniqueCards } from '../core/course-model.js'
 import { assertId, newId } from '../core/ids.js'
 import { createCard, review } from '../core/srs.js'
 import { checkRange, checkSheet, readPages, scrubCard, scrubDeep, scrubItem, scrubPages, scrubStep, shownBoard, shownSheet } from '../core/citations.js'
 import { buildIndex, documentParts, formatPassages, materialParts, passageRange, search, snippetOf, spreadPassages } from '../core/retrieval.js'
 import { allChunks, materialImages, materialPassages, materialTopics, outlineText, readMaterials, readProfile } from './context.js'
 import { fieldCounter, generateJson, generateSteps, generateText, TutorError } from './generate.js'
+import { createFolders } from './folders.js'
 import { ingestFile, ingestUrl, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from './materials.js'
 import { assistPrompt, cheatsheetPrompt, detectLanguage, digestPartPrompt, digestPrompt, flashcardsPrompt, materialBriefPrompt, quizPrompt, shortPrompt, summaryPrompt } from './prompts.js'
 import { createRecognizer } from './recognize.js'
@@ -28,8 +29,12 @@ const PART_FAILURES = new Set(['bad-output', 'llm-empty', 'llm-timeout', 'llm-fa
 
 // A study aid's title: the materials, and the focus when there is one.
 const titleOf = (scope, focus) => (focus ? `${scope.title} · ${focus}` : scope.title)
+// Room for what the materials of a study aid cover, in its prompts.
+const SCOPE_OUTLINE_CHARS = 12_000
+// A list joined with "; ", cut after its last whole entry within max.
+const clipList = (value, max) => (value.length <= max ? value : `${value.slice(0, value.lastIndexOf('; ', max) > 0 ? value.lastIndexOf('; ', max) : max)}…`)
 
-export function createStudio({ store, llm, jobs, now = () => new Date(), uiLanguage = () => 'zh-CN' }) {
+export function createStudio({ store, llm, jobs, now = () => new Date(), uiLanguage = () => 'zh-CN', folders = createFolders({ store, now }) }) {
   const stamp = () => now().toISOString()
 
   // ── materials ──────────────────────────────────────────────────────────────
@@ -86,8 +91,13 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
   // far as the job's progress.
   const recognizer = api => createRecognizer({ llm, signal: api.signal, onProgress: (done, total) => api.progress(done, total, 'recognizing') })
 
-  // From the HTTP upload route (bytes) or the RPC fallback (base64).
-  function upload({ name, base64, bytes: raw }) {
+  // The folder a new material goes into: the one asked for while it still
+  // exists, else none (a folder deleted during an upload).
+  const folderFor = async folderId => ((await folders.find(folderId)) ? folderId : null)
+
+  // From the HTTP upload route (bytes) or the RPC fallback (base64). The
+  // file's name and size are kept, so a folder uploaded again skips it.
+  function upload({ name, base64, bytes: raw, folderId }) {
     const fileName = text(name, 200) || 'file'
     if (!raw && (typeof base64 !== 'string' || !base64)) throw new TutorError('invalid', 'No file data')
     if (raw ? raw.length > MAX_UPLOAD_BYTES : base64.length > Math.ceil((MAX_UPLOAD_BYTES * 4) / 3) + 8) throw new TutorError('too-large', `The file is larger than ${MAX_UPLOAD_MB} MB`)
@@ -96,17 +106,17 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
       const bytes = raw ? (Buffer.isBuffer(raw) ? raw : Buffer.from(raw)) : Buffer.from(base64, 'base64')
       const result = await ingestFile({ name: fileName, bytes, signal: api.signal, recognize: recognizer(api) })
       api.progress(1, 2, 'summarizing')
-      const meta = await saveMaterial(result, { bytes, signal: api.signal, extra: { fileName } })
+      const meta = await saveMaterial(result, { bytes, signal: api.signal, extra: { fileName, fileSize: bytes.length, folderId: await folderFor(folderId) } })
       return { material: meta }
     })
   }
 
-  function addUrl({ url }) {
+  function addUrl({ url, folderId }) {
     return jobs.start('material/url', async api => {
       api.progress(0, 2, 'fetching')
       const result = await ingestUrl(url, { signal: api.signal, recognize: recognizer(api) })
       api.progress(1, 2, 'summarizing')
-      return { material: await saveMaterial(result, { signal: api.signal }) }
+      return { material: await saveMaterial(result, { signal: api.signal, extra: { folderId: await folderFor(folderId) } }) }
     })
   }
 
@@ -123,7 +133,8 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
 
   // Search the text of every material in the library at once, best passages
   // first, each with its material, its page or slide, and an excerpt.
-  async function searchMaterials({ query }) {
+  // folder: only the materials in this folder, or in none ('none').
+  async function searchMaterials({ query, folder }) {
     const wanted = text(query, 200)
     if (!wanted) return { results: [] }
     // A photo counts once the text in it was read.
@@ -138,8 +149,10 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
       }
       libraryIndex = { key, index: buildIndex(chunks) }
     }
+    const within = folder === undefined ? null : new Set(metas.filter(meta => (meta.folderId ?? 'none') === folder).map(meta => meta.id))
+    const hits = within ? search(libraryIndex.index, wanted, { limit: 400 }).filter(({ chunk }) => within.has(chunk.materialId)).slice(0, 12) : search(libraryIndex.index, wanted, { limit: 12 })
     return {
-      results: search(libraryIndex.index, wanted, { limit: 12 }).map(({ chunk }) => ({
+      results: hits.map(({ chunk }) => ({
         materialId: chunk.materialId,
         title: chunk.materialTitle,
         page: chunk.page ?? null,
@@ -235,14 +248,17 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
   // ── study materials from the library ─────────────────────────────────────
 
   async function scopeOf(materialIds) {
-    const ids = (Array.isArray(materialIds) ? materialIds : []).filter(id => /^mat_[a-z0-9]+$/u.test(String(id))).slice(0, 8)
+    const ids = [...new Set(Array.isArray(materialIds) ? materialIds : [])].filter(id => /^mat_[a-z0-9]+$/u.test(String(id))).slice(0, LIMITS.materials)
     if (!ids.length) throw new TutorError('no-material', 'Pick at least one material')
     const materials = await readMaterials(store, ids)
     if (!materials.some(item => item.chunks.length)) throw new TutorError('material-no-text', 'These materials have no text')
-    const title = materials.map(item => item.meta.title).join(' + ')
-    const language = detectLanguage(materials.find(item => item.chunks.length)?.chunks[0]?.text ?? title, uiLanguage())
-    const outline = materials.map(item => materialTopics(item.meta)).filter(Boolean).join('\n')
-    return { ids, materials, title, language, outline }
+    const titles = materials.map(item => item.meta.title)
+    const language = detectLanguage(materials.find(item => item.chunks.length)?.chunks[0]?.text ?? titles.join(' + '), uiLanguage())
+    // What each material covers, its share of the room, so many of them
+    // still make a short list.
+    const share = Math.max(300, Math.floor(SCOPE_OUTLINE_CHARS / materials.length))
+    const outline = materials.map(item => clipList(materialTopics(item.meta), share)).filter(Boolean).join('\n')
+    return { ids, materials, title: materialsTitle(titles, language), language, outline }
   }
 
   function makeSheet({ materialIds, focus }) {
@@ -301,10 +317,11 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
   }
 
   // The materials of a deck or quiz in parts, each written on its own: a
-  // short material is one part, a long one about 20,000 characters a part.
+  // short material is one part, a long one about 20,000 characters a part,
+  // and many short ones a few to a part. `source` labels a part's passages.
   function partsOf(scope) {
     const parts = materialParts(scope.materials.map(({ meta, chunks }) => ({ title: meta.title, chunks })))
-    return parts.map((part, index) => ({ ...part, label: parts.length > 1 ? { n: index + 1, of: parts.length, range: passageRange(part.passages) } : null }))
+    return parts.map((part, index) => ({ ...part, source: part.mixed ? null : part.title, label: parts.length > 1 ? { n: index + 1, of: parts.length, range: part.mixed ? '' : passageRange(part.passages) } : null }))
   }
 
   // Write something for every part, a few parts at a time: write(part,
@@ -363,7 +380,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
         return generateJson(llm, {
           purpose: 'teach',
           effort: 'lowest',
-          prompt: flashcardsPrompt({ scopeTitle: scope.title, outline: scope.outline, passages: formatPassages(part.passages, part.title), language: scope.language, range, part: part.label, focus: wanted }),
+          prompt: flashcardsPrompt({ scopeTitle: scope.title, outline: scope.outline, passages: formatPassages(part.passages, part.source), language: scope.language, range, part: part.label, focus: wanted }),
           maxTokens: 2000 + range.max * 250,
           signal: api.signal,
           onText,
@@ -397,7 +414,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
         const range = rangeOf(part)
         return generateJson(llm, {
           purpose: 'teach',
-          prompt: quizPrompt({ scopeTitle: scope.title, outline: scope.outline, concepts: '', passages: formatPassages(part.passages, part.title), language: scope.language, range, part: part.label, focus: wanted }),
+          prompt: quizPrompt({ scopeTitle: scope.title, outline: scope.outline, concepts: '', passages: formatPassages(part.passages, part.source), language: scope.language, range, part: part.label, focus: wanted }),
           maxTokens: 2000 + range.max * 500,
           signal: api.signal,
           onText,
@@ -468,7 +485,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
     const fresh = /^thd_[a-z0-9]{6,40}$/u.test(String(newThreadId)) ? newThreadId : null
     return jobs.start('assist/turn', async api => {
       let thread = threadId ? await store.readJson(store.paths.item('assist', assertId(threadId, 'thd')), null) : null
-      const ids = [...new Set([...(thread?.materialIds ?? []), ...(Array.isArray(materialIds) ? materialIds : [])])].filter(id => /^mat_[a-z0-9]+$/u.test(String(id))).slice(0, 8)
+      const ids = [...new Set([...(thread?.materialIds ?? []), ...(Array.isArray(materialIds) ? materialIds : [])])].filter(id => /^mat_[a-z0-9]+$/u.test(String(id))).slice(0, LIMITS.materials)
       const materials = await readMaterials(store, ids)
       const language = thread?.language ?? detectLanguage(ask, uiLanguage())
       const profile = await readProfile(store)
@@ -495,7 +512,7 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
       const saved = await store.updateJson(store.paths.item('assist', id), null, current => {
         const next = current ?? { id, title: board.title || ask.slice(0, 60), language, materialIds: [], turns: [], createdAt: stamp() }
         next.turns = [...(next.turns ?? []), turn].slice(-MAX_TURNS)
-        next.materialIds = [...new Set([...(next.materialIds ?? []), ...ids])].slice(0, 8)
+        next.materialIds = [...new Set([...(next.materialIds ?? []), ...ids])].slice(0, LIMITS.materials)
         next.updatedAt = stamp()
         return next
       })

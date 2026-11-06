@@ -9,6 +9,7 @@ import { join } from 'node:path'
 import { credentialKey } from '@deepseek-ai/dsh-credentials'
 
 import { createCourses } from './host/courses.js'
+import { createFolders } from './host/folders.js'
 import { TutorError } from './host/generate.js'
 import { fontRoute, speechRoute, ttsRoute, uploadRoute } from './host/http.js'
 import { createJobs } from './host/jobs.js'
@@ -54,7 +55,8 @@ export function apply(ctx) {
   const research = createResearch({ getWeb: () => ctx.get?.('web'), llm, logger })
   const courses = createCourses({ store, llm, jobs, research, mistakes })
   const lessons = createLessons({ store, llm, jobs, courses, learner, mistakes })
-  const studio = createStudio({ store, llm, jobs, uiLanguage: () => uiLanguage })
+  const folders = createFolders({ store })
+  const studio = createStudio({ store, llm, jobs, uiLanguage: () => uiLanguage, folders })
   const projects = createProjects({ store, llm, jobs, courses })
   const samples = createSamples({ dirUrl: new URL('../samples/', import.meta.url), courses })
   const tts = createTts({ cacheDir: store.paths.ttsCache(), getSecret: provider => keys.read(provider) })
@@ -82,7 +84,7 @@ export function apply(ctx) {
   }
 
   const routes = {
-    ...createRoutes({ courses, lessons, learner, studio, projects, jobs, settings, tts: { speak }, plugin, info, speechInput }),
+    ...createRoutes({ courses, lessons, learner, studio, folders, projects, jobs, settings, tts: { speak }, plugin, info, speechInput }),
     'app/info': payload => info(payload),
     'samples/list': () => samples.list(),
     'samples/import': payload => samples.importSample({ id: payload.id }),

@@ -1,7 +1,7 @@
 // Shared lookups for building prompts: the learner profile, mastery of the
 // concepts at hand, and the material passages relevant to a lesson.
 
-import { conceptIndex, findLesson } from '../core/course-model.js'
+import { conceptIndex, findLesson, LIMITS } from '../core/course-model.js'
 import { boundChunks } from '../core/lesson-sources.js'
 import { summarizeForPrompt } from '../core/mastery.js'
 import { buildIndex, fitPassages, formatPassages, samplePassages, search, selectPassages } from '../core/retrieval.js'
@@ -34,7 +34,7 @@ export function masteryFor(course, progress, lessonId) {
 }
 
 // A course uses at most this many materials.
-export const COURSE_MATERIALS = 12
+export const COURSE_MATERIALS = LIMITS.materials
 
 export async function readMaterials(store, materialIds = []) {
   const items = []
@@ -83,16 +83,27 @@ export function materialTopics(meta) {
   return top.length ? top.map(entry => entry.title).slice(0, 60).join('; ') : (meta?.brief?.topics ?? []).join('; ')
 }
 
+// How much of its contents each of `count` materials shows in a course
+// design prompt: 6,000 characters shared out, at least 800 each, and no more
+// than 12,000 in all once there are more than 15 (a list that long keeps
+// only its chapters).
+export function contentsShare(count) {
+  const materials = Math.max(1, count)
+  return Math.max(Math.floor(6000 / materials), Math.min(800, Math.floor(12000 / materials)))
+}
+
 // The materials for course design: what each is, and its contents with
 // pages. refs: number the materials and their contents entries (see
 // lesson-sources.js), the first one as M<offset + 1>.
 export function materialsSummary(materials, { refs = false, offset = 0 } = {}) {
-  const share = Math.max(800, Math.floor(6000 / Math.max(1, materials.length)))
+  const share = contentsShare(materials.length)
+  // A brief is up to 800 characters; more than ten materials shorten theirs.
+  const about = Math.max(200, Math.floor(8000 / Math.max(1, materials.length)))
   return materials.map(({ meta }, index) => {
     const ref = refs ? `M${offset + index + 1}` : ''
     const size = meta.pages ? `${meta.pages} pages` : meta.slides ? `${meta.slides} slides` : meta.kind
     const lines = [`- ${ref ? `[${ref}] ` : ''}${meta.title} (${size})`]
-    if (meta.brief?.summary) lines.push(`  ${meta.brief.summary}`)
+    if (meta.brief?.summary) lines.push(`  ${meta.brief.summary.length > about ? `${meta.brief.summary.slice(0, about)}…` : meta.brief.summary}`)
     if (meta.outline?.entries?.length) {
       lines.push(`  Contents${meta.printed ? ' (pages as printed in it)' : ''}:`)
       lines.push(outlineText(meta.outline, { maxChars: share, ref }).split('\n').map(line => `    ${line}`).join('\n'))
@@ -135,11 +146,15 @@ export const SAMPLED_NOTE = '(No passage of the materials matched these words. T
 // page number printed on it, else its place in the file.
 const pageOf = chunk => chunk.label ?? (chunk.page ? String(chunk.page) : null)
 
+// The least room worth giving one material's matching passages.
+const MIN_SHARE = 600
+
 // The passages of some materials a prompt needs, within maxChars: the pages
 // the learner named first (`pages`, page numbers as printed), then the
 // pages the lesson is bound to (`sources`, see lesson-sources.js; the parts
 // matching `query` when they do not all fit), then the passages matching
-// `query` anywhere, best first, each material its share. When nothing in
+// `query` anywhere, best first, each material its share (with too many
+// materials for shares of MIN_SHARE, the best of all of them). When nothing in
 // any material matches, excerpts from `around` (see samplePassages) stand
 // in, introduced by SAMPLED_NOTE. whole: a material that fits in its share
 // is given whole (a study aid on all of it). Returns the text for the
@@ -179,11 +194,18 @@ export function materialPassages(materials, { query = '', maxChars = 9000, aroun
     }
   }
   if (left >= 300) {
-    const share = Math.max(600, Math.floor(left / own.length))
     const nothingYet = picked.every(list => !list.length)
-    for (const material of own) {
-      if (!query && !nothingYet) break
-      take(selectPassages(material.chunks.filter(chunk => !taken.has(keyOf(chunk))), query, { maxChars: share, fallback: 'none' }), share)
+    if (query && left / own.length < MIN_SHARE) {
+      // Too many materials for each to get a share worth reading: the
+      // passages that match best, whichever material they are in.
+      const rest = own.flatMap(material => material.chunks.filter(chunk => !taken.has(keyOf(chunk))))
+      take(selectPassages(rest, query, { maxChars: left, limit: Math.ceil(left / 400), fallback: 'none' }), left)
+    } else {
+      const share = Math.max(MIN_SHARE, Math.floor(left / own.length))
+      for (const material of own) {
+        if (!query && !nothingYet) break
+        take(selectPassages(material.chunks.filter(chunk => !taken.has(keyOf(chunk))), query, { maxChars: share, fallback: 'none' }), share)
+      }
     }
   }
   const sampled = Boolean(query) && picked.every(list => !list.length)

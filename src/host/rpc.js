@@ -3,12 +3,13 @@
 // { ok: true, value } or { ok: false, error: { code, message, details } }.
 // Only messages written for users leave the host.
 
+import { LIMITS } from '../core/course-model.js'
 import { TutorError } from './generate.js'
 import { publicCode, publicMessage } from './jobs.js'
 import { MAX_SPEECH_BYTES } from './speech.js'
 
 const ID = prefix => new RegExp(`^${prefix}_[a-z0-9]{6,40}$`, 'u')
-const IDS = { crs: ID('crs'), les: ID('les'), unt: ID('unt'), prj: ID('prj'), mat: ID('mat'), job: ID('job'), thd: ID('thd'), sht: ID('sht'), chs: ID('chs'), dck: ID('dck'), exm: ID('exm'), nte: ID('nte'), asd: ID('asd'), evd: ID('evd'), cpt: ID('cpt') }
+const IDS = { crs: ID('crs'), les: ID('les'), unt: ID('unt'), prj: ID('prj'), mat: ID('mat'), job: ID('job'), thd: ID('thd'), sht: ID('sht'), chs: ID('chs'), dck: ID('dck'), exm: ID('exm'), nte: ID('nte'), asd: ID('asd'), evd: ID('evd'), cpt: ID('cpt'), fld: ID('fld') }
 
 function need(payload, key, prefix) {
   const value = payload?.[key]
@@ -20,7 +21,8 @@ function optional(payload, key, prefix) {
   return payload?.[key] === undefined || payload?.[key] === null ? undefined : need(payload, key, prefix)
 }
 
-function idList(value, prefix, max = 8) {
+// Lists of ids are material lists: as many as a course may use.
+function idList(value, prefix, max = LIMITS.materials) {
   return (Array.isArray(value) ? value : []).filter(item => typeof item === 'string' && IDS[prefix].test(item)).slice(0, max)
 }
 
@@ -103,7 +105,12 @@ const ITEM_KINDS = { sheets: 'chs', decks: 'dck', assist: 'thd', shorts: 'sht' }
 const GRADES = ['again', 'hard', 'good', 'easy']
 const STYLES = ['analogy', 'visual', 'example', 'simpler', 'deeper']
 
-export function createRoutes({ courses, lessons, learner, studio, projects, jobs, settings, tts, plugin, info, speechInput }) {
+// A folder to file under: a folder id, or null for none.
+function folderOf(payload, key = 'folderId') {
+  return payload?.[key] === null || payload?.[key] === undefined ? null : need(payload, key, 'fld')
+}
+
+export function createRoutes({ courses, lessons, learner, studio, folders, projects, jobs, settings, tts, plugin, info, speechInput }) {
   return {
     'app/info': () => info(),
 
@@ -118,7 +125,7 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
     'course/rework-lesson': payload => ({ job: courses.reworkLesson({ courseId: need(payload, 'courseId', 'crs'), lesson: payload.lesson, unitTitle: payload.unitTitle, lectureTitle: payload.lectureTitle, mode: payload.mode === 'split' ? 'split' : 'deepen' }) }),
     'course/intake': payload => ({ job: courses.submitIntake({ courseId: need(payload, 'courseId', 'crs'), answers: payload.answers, timeline: payload.timeline, size: payload.size, weeklyMinutes: payload.weeklyMinutes, deadline: payload.deadline }) }),
     'course/revise': payload => ({ job: courses.revise({ courseId: need(payload, 'courseId', 'crs'), instruction: payload.instruction }) }),
-    'course/add-materials': payload => ({ job: courses.addMaterials({ courseId: need(payload, 'courseId', 'crs'), materialIds: idList(payload.materialIds, 'mat', 12), instruction: payload.instruction }) }),
+    'course/add-materials': payload => ({ job: courses.addMaterials({ courseId: need(payload, 'courseId', 'crs'), materialIds: idList(payload.materialIds, 'mat'), instruction: payload.instruction }) }),
     'course/save-blueprint': payload => courses.saveBlueprint({ courseId: need(payload, 'courseId', 'crs'), blueprint: payload.blueprint }),
     'course/confirm': payload => ({ job: courses.confirm({ courseId: need(payload, 'courseId', 'crs') }) }),
     'course/update': payload => courses.update({ courseId: need(payload, 'courseId', 'crs'), title: payload.title, archived: payload.archived, settings: payload.settings }),
@@ -183,13 +190,18 @@ export function createRoutes({ courses, lessons, learner, studio, projects, jobs
     'plan/remove-exam': payload => learner.removeExam({ id: need(payload, 'id', 'exm') }),
     'review/session': payload => learner.reviewSession({ courseId: optional(payload, 'courseId', 'crs'), mistakes: payload.mistakes === true }),
 
-    'material/upload': payload => ({ job: studio.upload({ name: payload.name, base64: payload.base64 }) }),
-    'material/url': payload => ({ job: studio.addUrl({ url: payload.url }) }),
+    'material/upload': payload => ({ job: studio.upload({ name: payload.name, base64: payload.base64, folderId: folderOf(payload) }) }),
+    'material/url': payload => ({ job: studio.addUrl({ url: payload.url, folderId: folderOf(payload) }) }),
     'material/list': () => studio.listMaterials(),
-    'material/search': payload => studio.searchMaterials({ query: typeof payload.query === 'string' ? payload.query : '' }),
+    'material/search': payload => studio.searchMaterials({ query: typeof payload.query === 'string' ? payload.query : '', folder: payload.folder === 'none' ? 'none' : payload.folder === undefined || payload.folder === null ? undefined : need(payload, 'folder', 'fld') }),
     'material/get': payload => studio.getMaterial({ id: need(payload, 'id', 'mat') }),
     'material/rename': payload => studio.renameMaterial({ id: need(payload, 'id', 'mat'), title: payload.title }),
     'material/remove': payload => studio.removeMaterial({ id: need(payload, 'id', 'mat') }),
+    'material/move': payload => folders.move({ id: need(payload, 'id', 'mat'), folderId: folderOf(payload) }),
+    'folder/list': () => folders.list(),
+    'folder/create': payload => folders.create({ name: typeof payload.name === 'string' ? payload.name : '', reuse: payload.reuse === true }),
+    'folder/rename': payload => folders.rename({ id: need(payload, 'id', 'fld'), name: typeof payload.name === 'string' ? payload.name : '' }),
+    'folder/remove': payload => folders.remove({ id: need(payload, 'id', 'fld') }),
     'material/digest': payload => ({ job: studio.digest({ id: need(payload, 'id', 'mat') }) }),
     'studio/sheet': payload => ({ job: studio.makeSheet({ materialIds: idList(payload.materialIds, 'mat'), focus: payload.focus }) }),
     'studio/notes': payload => ({ job: studio.makeNotes({ materialIds: idList(payload.materialIds, 'mat'), focus: payload.focus }) }),

@@ -100,6 +100,8 @@ a.aha-btn{text-decoration:none}
 .aha-option{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--aha-border);border-radius:10px;background:var(--aha-surface);cursor:pointer;text-align:left;color:var(--aha-text)}
 .aha-option[data-active=true]{border-color:var(--aha-brand);box-shadow:0 0 0 1px var(--aha-brand) inset}
 .aha-option small{color:var(--aha-muted);font-size:${px(13)};line-height:${px(18)}}
+.aha-option[data-off=true]{opacity:.5;cursor:not-allowed}
+.aha-pickCount{margin-right:auto}
 .aha-tree{display:flex;flex-direction:column;gap:10px;border:0;margin:0;padding:0;min-width:0}
 .aha-tree:disabled{opacity:.6}
 .aha-proposal{border-color:var(--aha-brand)}
@@ -111,6 +113,7 @@ a.aha-btn{text-decoration:none}
 .aha-menuAnchor{position:relative;display:inline-flex}
 .aha-menu{position:absolute;right:0;top:110%;z-index:20;padding:6px;gap:2px;min-width:140px}
 .aha-menu .aha-btn{justify-content:flex-start}
+.aha-menu .aha-btn[data-danger=true]{color:var(--aha-bad)}
 .aha-unit{border:1px solid var(--aha-border);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;background:var(--aha-surface)}
 .aha-lecture{margin-left:10px;padding-left:12px;border-left:2px solid var(--aha-border);display:flex;flex-direction:column;gap:4px}
 .aha-lesson{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;padding:5px 8px;border-radius:8px}
@@ -247,6 +250,16 @@ a.aha-btn{text-decoration:none}
 .aha-viewToggle button[aria-pressed=true]{background:var(--aha-surface);color:var(--aha-text);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
 .aha-lesson[data-flash=true],.aha-card[data-flash=true]{animation:aha-flash 1.6s ease}
 .aha-librarySearch .aha-input{flex:1;min-width:0}
+.aha-folderBar{gap:6px}
+.aha-folderBar .aha-chip{padding:4px 10px}
+.aha-folderBar .aha-chip small{color:var(--aha-muted);font-size:${px(12)}}
+.aha-folderBar .aha-chip[data-kind=add]{border-style:dashed;color:var(--aha-muted)}
+.aha-chipName{max-width:14em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aha-folderHead{padding:8px 12px;border-radius:10px;background:var(--aha-soft)}
+.aha-folderName{font-size:${px(16)};overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.aha-moveFolder{width:auto;max-width:180px;padding:4px 8px;font-size:${px(13)}}
+.aha-uploadReport{border:1px solid var(--aha-border);border-radius:10px;padding:8px 12px;background:var(--aha-soft)}
+.aha-folderPlan+.aha-folderPlan{border-top:1px solid var(--aha-border);padding-top:8px}
 .aha-addMaterials{gap:8px;border-style:dashed}
 /* A lesson's handout (Handout.jsx), on screen and on paper. */
 .aha-handout{display:flex;flex-direction:column;gap:18px;padding:22px 26px;border:1px solid var(--aha-border);border-radius:var(--aha-radius);background:var(--aha-surface);color:var(--aha-text);font-size:${px(15.5)};line-height:${px(24.5)}}

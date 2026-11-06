@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { blueprintDiff, diffIsEmpty, LESSON_DEPTHS } from '../../core/course-model.js'
+import { blueprintDiff, diffIsEmpty, LESSON_DEPTHS, LIMITS } from '../../core/course-model.js'
 import { BlueprintMap } from '../BlueprintMap.jsx'
-import { Confirm, ErrorLine, JobProgress, LessonSources, MaterialPicker, SourceList, Spinner } from '../components.jsx'
+import { Confirm, courseName, ErrorLine, errorText, JobProgress, LessonSources, MaterialPicker, MoreMenu, SourceList, Spinner } from '../components.jsx'
 import { useApp, useJob, useLoad } from '../hooks.js'
 import { outlineTree } from '../mindmap.js'
 
@@ -14,57 +14,104 @@ const WEEKLY = [60, 120, 180, 300, 420, 600]
 // `edit` reopens the editor for a course that is already running; `add`
 // opens it with the panel for adding materials.
 export function CraftScreen({ jobId, courseId, edit = false, add = false }) {
-  const { api, t, navigate } = useApp()
+  const { api, t, navigate, toast } = useApp()
   const [error, setError] = useState(null)
   const [stage, setStage] = useState('questions')
 
-  // Arriving from Home with a start job: wait for it, then switch to the course.
+  // Arriving from Home with a start job: wait for it, then switch to the
+  // course. A cancelled start leaves no course behind: back to Home.
   useEffect(() => {
     if (!jobId || courseId) return undefined
     const controller = new AbortController()
     api.follow({ job: { id: jobId, status: 'running' } }, { signal: controller.signal, onProgress: progress => setStage(progress?.label === 'research' ? 'research' : 'questions') })
       .then(result => navigate('craft', { courseId: result.courseId }, { replace: true }))
-      .catch(failure => { if (!controller.signal.aborted) setError(failure) })
+      .catch(failure => {
+        if (controller.signal.aborted) return
+        if (failure?.code !== 'cancelled') return setError(failure)
+        toast(t('craftCancelled'))
+        navigate('home', {}, { replace: true })
+      })
     return () => controller.abort()
   }, [jobId, courseId])
 
   if (!courseId) {
     return <div className="aha-page">
       <h2 className="aha-title">{t('craftQuestionsTitle')}</h2>
-      {error ? <><ErrorLine error={error} /><button type="button" className="aha-btn" onClick={() => navigate('home')}>{t('back')}</button></> : <Spinner label={stage === 'research' ? t('researching') : t('thinkingQuestions')} />}
+      {error ? <><ErrorLine error={error} /><button type="button" className="aha-btn" onClick={() => navigate('home')}>{t('back')}</button></> : <div className="aha-row" style={{ gap: 8 }}>
+        <Spinner label={stage === 'research' ? t('researching') : t('thinkingQuestions')} />
+        <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={() => api.cancel(jobId)}>{t('cancel')}</button>
+      </div>}
     </div>
   }
   return <CraftCourse courseId={courseId} edit={edit} add={add} />
 }
 
 function CraftCourse({ courseId, edit, add }) {
-  const { api, t, navigate } = useApp()
+  const { api, t, navigate, toast } = useApp()
   const detail = useLoad(() => api.call('course/get', { courseId }), [courseId])
   const job = useJob()
   const course = detail.value?.course
+  // A start that failed took its draft with it: why, and the way back.
+  const [startFailed, setStartFailed] = useState(null)
+  const mounted = useRef(true)
+  useEffect(() => () => { mounted.current = false }, [])
 
   // Resume a generation that was running when the screen was left.
   useEffect(() => {
     const running = detail.value?.jobs?.questions ?? detail.value?.jobs?.blueprint ?? detail.value?.jobs?.confirm
     if (!running || job.running) return
-    job.run(null, null, { existing: running }).then(() => detail.reload()).catch(() => undefined)
+    job.run(null, null, { existing: running }).then(() => { if (mounted.current) detail.reload() }).catch(failure => {
+      if (!mounted.current || running.kind !== 'craft/start') return
+      if (failure?.code !== 'cancelled') return setStartFailed(failure)
+      toast(t('craftCancelled'))
+      navigate('home', {}, { replace: true })
+    })
   }, [detail.value])
 
   useEffect(() => {
     if (course?.status === 'ready' && !job.running && !edit) navigate('course', { courseId }, { replace: true })
   }, [course?.status])
 
+  if (startFailed) return <div className="aha-page">
+    <h2 className="aha-title">{t('craftQuestionsTitle')}</h2>
+    <ErrorLine error={startFailed} />
+    <div className="aha-row"><button type="button" className="aha-btn" onClick={() => navigate('home', {}, { replace: true })}>{t('back')}</button></div>
+  </div>
   if (detail.loading && !detail.value) return <div className="aha-page"><Spinner label={t('loading')} /></div>
   if (detail.error && !detail.value) return <div className="aha-page"><ErrorLine error={detail.error} /></div>
   if (!course) return null
 
   if (course.status === 'intake') {
-    return <Intake course={course} intake={detail.value.intake} job={job} onDone={() => detail.reload()} />
+    return <Intake course={course} intake={detail.value.intake} job={job} starting={Boolean(detail.value.jobs?.questions)} onDone={() => detail.reload()} />
   }
   return <Blueprint course={course} proposal={detail.value.proposal} progress={detail.value.progress} boards={detail.value.ready?.boards ?? []} job={job} onChange={() => detail.reload()} adding={add} />
 }
 
-function Intake({ course, intake, job, onDone }) {
+// A course still being made (questions or blueprint) is deleted from its
+// pages through ⋯; the host stops whatever it is writing first.
+function DraftMenu({ course }) {
+  const { api, t, navigate, toast } = useApp()
+  const [asking, setAsking] = useState(false)
+  if (course.status === 'ready') return null
+  async function remove() {
+    setAsking(false)
+    try {
+      await api.call('course/remove', { courseId: course.id })
+      toast(t('courseDeleted', { title: courseName(course) }))
+      navigate('courses', {}, { replace: true })
+    } catch (failure) {
+      toast(errorText(t, failure))
+    }
+  }
+  return <>
+    <MoreMenu items={[{ label: t('deleteCourse'), danger: true, onSelect: () => setAsking(true) }]} />
+    {asking ? <Confirm danger text={t('deleteConfirm', { title: courseName(course) })} onCancel={() => setAsking(false)} onConfirm={remove} /> : null}
+  </>
+}
+
+// starting: the questions are still being written (the draft's start job);
+// cancelling it deletes the draft.
+function Intake({ course, intake, job, starting, onDone }) {
   const { t } = useApp()
   const questions = intake?.questionnaire?.questions ?? []
   const [answers, setAnswers] = useState({})
@@ -91,16 +138,19 @@ function Intake({ course, intake, job, onDone }) {
   }
 
   if (job.running) {
-    if (job.progress?.label === 'questions') return <div className="aha-page"><h2 className="aha-title">{course.goal}</h2><JobProgress progress={job.progress} label={t('thinkingQuestions')} onCancel={job.cancel} /></div>
+    if (starting) return <div className="aha-page"><h2 className="aha-title">{course.goal}</h2><JobProgress progress={job.progress} label={job.progress?.label === 'research' ? t('researching') : t('thinkingQuestions')} onCancel={job.cancel} /></div>
     return <BuildLog course={course} job={job} research={intake?.research} />
   }
 
   return <div className="aha-page">
-    <div className="aha-col" style={{ gap: 4 }}>
-      <h2 className="aha-title">{t('craftQuestionsTitle')}</h2>
-      <p className="aha-subtitle">{course.goal}</p>
-      <p className="aha-hint">{t('craftQuestionsHint')}</p>
-      {intake?.research ? <ResearchNote research={intake.research} /> : null}
+    <div className="aha-spread" style={{ alignItems: 'flex-start' }}>
+      <div className="aha-col" style={{ gap: 4, flex: 1, minWidth: 'min(260px, 100%)' }}>
+        <h2 className="aha-title">{t('craftQuestionsTitle')}</h2>
+        <p className="aha-subtitle">{course.goal}</p>
+        <p className="aha-hint">{t('craftQuestionsHint')}</p>
+        {intake?.research ? <ResearchNote research={intake.research} /> : null}
+      </div>
+      <DraftMenu course={course} />
     </div>
     {questions.map((question, index) => <section key={question.id} className="aha-card">
       <div className="aha-cardTitle">{index + 1}. {question.prompt}</div>
@@ -168,9 +218,12 @@ function BuildLog({ course, job, research }) {
   ]
   const at = steps.findIndex(([key]) => key === phase)
   return <div className="aha-page">
-    <div className="aha-col" style={{ gap: 4 }}>
-      <h2 className="aha-title">{job.preview?.title || course.goal}</h2>
-      <p className="aha-hint">{t('designingBlueprint')} {t('keepsRunning')}</p>
+    <div className="aha-spread" style={{ alignItems: 'flex-start' }}>
+      <div className="aha-col" style={{ gap: 4, flex: 1, minWidth: 'min(260px, 100%)' }}>
+        <h2 className="aha-title">{job.preview?.title || course.goal}</h2>
+        <p className="aha-hint">{t('designingBlueprint')} {t('keepsRunning')}</p>
+      </div>
+      <DraftMenu course={course} />
     </div>
     <ol className="aha-buildLog">
       {steps.map(([key, label], index) => <li key={key} data-state={index < at ? 'done' : index === at ? 'current' : 'todo'}>
@@ -204,6 +257,9 @@ function AddMaterials({ course, job, onDone, onClose }) {
   const [picking, setPicking] = useState(false)
   const [note, setNote] = useState('')
   const titles = new Map((library.value ?? []).map(item => [item.id, item.title]))
+  // A course uses at most LIMITS.materials: what is left for these.
+  const used = course.materialIds?.length ?? 0
+  const room = Math.max(0, LIMITS.materials - used)
   async function send() {
     try {
       await job.run('course/add-materials', { courseId: course.id, materialIds: chosen, instruction: note.trim() })
@@ -215,13 +271,14 @@ function AddMaterials({ course, job, onDone, onClose }) {
   return <section className="aha-card aha-addMaterials">
     <div className="aha-spread"><b>{t('addMaterialsTitle')}</b><button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={onClose}>{t('cancel')}</button></div>
     <p className="aha-hint">{t('addMaterialsHint')}</p>
+    {used ? <p className="aha-hint">{room ? t('courseMaterialsRoom', { count: used, room }) : t('courseMaterialsFull', { count: used })}</p> : null}
     <div className="aha-row" style={{ gap: 6 }}>
       {chosen.map(id => <span key={id} className="aha-tag">{titles.get(id) ?? '…'}</span>)}
-      <button type="button" className="aha-btn" data-size="sm" onClick={() => { library.reload(); setPicking(true) }}>{chosen.length ? t('changeMaterials') : t('pickMaterials')}</button>
+      <button type="button" className="aha-btn" data-size="sm" disabled={!room} onClick={() => { library.reload(); setPicking(true) }}>{chosen.length ? t('changeMaterials') : t('pickMaterials')}</button>
     </div>
     <input className="aha-input" value={note} placeholder={t('addMaterialsPlaceholder')} aria-label={t('addMaterialsPlaceholder')} onChange={event => setNote(event.currentTarget.value)} />
     <div className="aha-row"><button type="button" className="aha-btn" data-kind="primary" disabled={!chosen.length} onClick={send}>{t('addMaterialsSend')}</button></div>
-    {picking ? <MaterialPicker selected={chosen} max={12} exclude={course.materialIds ?? []} onChange={value => { setChosen(value); library.reload() }} onClose={() => setPicking(false)} /> : null}
+    {picking ? <MaterialPicker selected={chosen} max={room} exclude={course.materialIds ?? []} onChange={value => { setChosen(value); library.reload() }} onClose={() => setPicking(false)} /> : null}
   </section>
 }
 
@@ -372,7 +429,10 @@ function Blueprint({ course, proposal, progress, boards, job, onChange, adding: 
       ? t('confirming', { done: job.progress.done, total: job.progress.total })
       : job.progress?.done ? t('revisingSoFar', { count: job.progress.done })
         : t('revising')
-    return <div className="aha-page"><h2 className="aha-title">{course.emoji} {course.title}</h2><JobProgress progress={job.progress} label={label} onCancel={job.cancel} /></div>
+    return <div className="aha-page">
+      <div className="aha-spread" style={{ alignItems: 'flex-start' }}><h2 className="aha-title" style={{ flex: 1, minWidth: 0 }}>{course.emoji} {course.title}</h2><DraftMenu course={course} /></div>
+      <JobProgress progress={job.progress} label={label} onCancel={job.cancel} />
+    </div>
   }
 
   const askRemove = (text, run) => setRemoving({ text, run })
@@ -393,6 +453,7 @@ function Blueprint({ course, proposal, progress, boards, job, onChange, adding: 
         {ready
           ? <button type="button" className="aha-btn" data-kind="primary" disabled={saving || locked} onClick={backToCourse}>{dirty ? t('saveAndBack') : t('backToCourse')}</button>
           : <button type="button" className="aha-btn" data-kind="primary" disabled={locked} onClick={confirm}>{t('confirmCourse')}</button>}
+        <DraftMenu course={course} />
       </div>
     </div>
     {course.summary ? <p>{course.summary}</p> : null}

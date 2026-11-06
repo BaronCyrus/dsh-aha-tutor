@@ -32,6 +32,12 @@ import { blueprintPrompt, detectLanguage, materialsRevisePrompt, practicePrompt,
 
 const TIMELINES = ['intensive', 'balanced', 'relaxed']
 const SIZES = ['auto', 'short', 'standard', 'full']
+// How long removing a course waits for its cancelled jobs to stop writing.
+const REMOVE_WAIT_MS = 5000
+// A start no process here knows of is given up after this long: writing the
+// questions, web research included, takes a few minutes at most.
+const STALE_START_MS = 15 * 60_000
+const sleep = ms => new Promise(resolve => { setTimeout(resolve, ms).unref?.() })
 
 // The blueprint streams: count the lessons written so far (there is no total
 // yet) and, at each new lesson, repair the text so far into an outline the
@@ -53,7 +59,8 @@ function outlineStream(api) {
 }
 
 // research: optional web research (research.js) run before the questions.
-export function createCourses({ store, llm, jobs, research, mistakes = createMistakes({ store }), now = () => new Date() }) {
+// removeWaitMs: how long removing a course waits for its cancelled jobs.
+export function createCourses({ store, llm, jobs, research, mistakes = createMistakes({ store }), now = () => new Date(), removeWaitMs = REMOVE_WAIT_MS }) {
   const stamp = () => now().toISOString()
 
   async function readCourse(courseId) {
@@ -66,7 +73,7 @@ export function createCourses({ store, llm, jobs, research, mistakes = createMis
 
   async function summary(courseId) {
     const course = await store.readJson(store.paths.course(courseId), null)
-    if (!course) return null
+    if (!course || abandoned(course)) return null
     const progress = await readProgress(store, courseId)
     const stats = course.units ? courseProgress(course, progress) : { total: 0, done: 0, percent: 0, minutesLeft: 0 }
     const next = course.units ? nextLesson(course, progress) : null
@@ -95,6 +102,7 @@ export function createCourses({ store, llm, jobs, research, mistakes = createMis
 
   async function get({ courseId }) {
     const course = await readCourse(courseId)
+    if (abandoned(course)) throw new TutorError('not-found', 'Course not found')
     const [progress, intake, proposal] = await Promise.all([readProgress(store, courseId), store.readJson(store.paths.intake(courseId), null), store.readJson(store.paths.proposal(courseId), null)])
     const boards = new Set(await store.listIds(store.paths.boardsDir(courseId), 'les'))
     const practice = new Set(await store.listIds(store.paths.practiceDir(courseId), 'les'))
@@ -139,10 +147,12 @@ export function createCourses({ store, llm, jobs, research, mistakes = createMis
   }
 
   // Step 1: create the draft and ask the intake questions (unless quick).
+  // The draft shows in the course list at once, marked `starting`; a start
+  // that fails or is cancelled before its questions are written leaves none.
   function startCraft({ goal, materialIds = [], quick = false, language, web = false }) {
     const cleanGoal = text(goal, 2000)
     if (!cleanGoal && !materialIds.length) throw new TutorError('empty-goal', 'Tell me what you want to learn')
-    const ids = materialIds.filter(id => /^mat_[a-z0-9]+$/u.test(id)).slice(0, 8)
+    const ids = [...new Set(materialIds)].filter(id => /^mat_[a-z0-9]+$/u.test(id)).slice(0, COURSE_MATERIALS)
     const courseId = newId('crs')
     return jobs.start('craft/start', async api => {
       api.progress(0, quick ? 1 : 2, 'questions')
@@ -156,34 +166,54 @@ export function createCourses({ store, llm, jobs, research, mistakes = createMis
         materialIds: ids,
         createdAt: stamp(),
       }
-      await saveCourse(draft)
-      // Look the subject up first, so the questions and the blueprint can use it.
-      let found = null
-      if (web && research) {
-        api.progress(0, quick ? 1 : 2, 'research')
-        found = await research.run({ goal: draft.goal, language: draft.language, signal: api.signal })
-        api.progress(0, quick ? 1 : 2, 'questions')
+      await saveCourse({ ...draft, starting: true })
+      try {
+        // Look the subject up first, so the questions and the blueprint can use it.
+        let found = null
+        if (web && research) {
+          api.progress(0, quick ? 1 : 2, 'research')
+          found = await research.run({ goal: draft.goal, language: draft.language, signal: api.signal })
+          api.progress(0, quick ? 1 : 2, 'questions')
+        }
+        let questionnaire = null
+        if (!quick) {
+          const profile = await readProfile(store)
+          questionnaire = await generateJson(llm, {
+            purpose: 'teach',
+            prompt: questionnairePrompt({ goal: draft.goal, language: draft.language, materialsSummary: materialsSummary(materials), profile, sources: found?.sources }),
+            maxTokens: 3000,
+            signal: api.signal,
+            normalize: raw => {
+              const value = normalizeQuestionnaire(raw)
+              if (!value.questions.length) throw new Error('no questions')
+              return value
+            },
+          })
+        }
+        api.signal.throwIfAborted()
+        if (questionnaire || found) await store.writeJson(store.paths.intake(courseId), { questionnaire, answers: {}, ...(found ? { research: found } : {}), at: stamp() })
+        await saveCourse(draft)
+        if (!quick) api.progress(1, 2, 'questions')
+        return { courseId, questionnaire, research: found }
+      } catch (error) {
+        await store.removeDir(store.paths.courseDir(courseId)).catch(() => undefined)
+        throw error
       }
-      if (quick) {
-        if (found) await store.writeJson(store.paths.intake(courseId), { questionnaire: null, answers: {}, research: found, at: stamp() })
-        return { courseId, questionnaire: null, research: found }
-      }
-      const profile = await readProfile(store)
-      const questionnaire = await generateJson(llm, {
-        purpose: 'teach',
-        prompt: questionnairePrompt({ goal: draft.goal, language: draft.language, materialsSummary: materialsSummary(materials), profile, sources: found?.sources }),
-        maxTokens: 3000,
-        signal: api.signal,
-        normalize: raw => {
-          const value = normalizeQuestionnaire(raw)
-          if (!value.questions.length) throw new Error('no questions')
-          return value
-        },
-      })
-      await store.writeJson(store.paths.intake(courseId), { questionnaire, answers: {}, ...(found ? { research: found } : {}), at: stamp() })
-      api.progress(1, 2, 'questions')
-      return { courseId, questionnaire, research: found }
     }, { key: `questions:${courseId}`, meta: { courseId } })
+  }
+
+  // A draft whose start ended without its questions is gone, and its folder
+  // is removed: at once when this process ran the start (it failed or was
+  // cancelled), else once it is STALE_START_MS old (DSH quit meanwhile). A
+  // younger one may be another DSH process's start, writing its questions
+  // into the same data folder.
+  function abandoned(course) {
+    if (!course?.starting) return false
+    const ended = jobs.ended(`questions:${course.id}`)
+    if (ended === false) return false
+    if (ended === null && now().getTime() - Date.parse(course.createdAt) < STALE_START_MS) return false
+    store.removeDir(store.paths.courseDir(course.id)).catch(() => undefined)
+    return true
   }
 
   // Step 2: answers → blueprint.
@@ -277,16 +307,24 @@ export function createCourses({ store, llm, jobs, research, mistakes = createMis
       const course = await readCourse(courseId)
       if (!course.units) throw new TutorError('no-blueprint', 'There is no blueprint to revise yet')
       const known = course.materialIds ?? []
-      const added = (await readMaterials(store, wanted.filter(id => !known.includes(id)))).slice(0, Math.max(0, COURSE_MATERIALS - known.length))
-      if (!added.length) throw new TutorError(wanted.every(id => known.includes(id)) ? 'materials-known' : known.length >= COURSE_MATERIALS ? 'materials-full' : 'not-found', 'These materials cannot be added')
+      const fresh = wanted.filter(id => !known.includes(id))
+      if (!fresh.length) throw new TutorError('materials-known', 'These materials are already in the course')
+      if (known.length >= COURSE_MATERIALS) throw new TutorError('materials-full', 'This course uses as many materials as a course can')
+      // More than the course has room for is refused, not cut short.
+      if (known.length + fresh.length > COURSE_MATERIALS) throw new TutorError('materials-too-many', 'More materials than this course has room for')
+      const added = await readMaterials(store, fresh)
+      if (!added.length) throw new TutorError('not-found', 'These materials cannot be added')
       const current = { title: course.title, subtitle: course.subtitle, emoji: course.emoji, summary: course.summary, level: course.level, units: stripSources(course.units), projects: course.projects }
       // The new materials are numbered after the course's own, as they will
       // be once the proposal is applied.
       const before = await readMaterials(store, known)
       const index = sourceIndex([...before, ...added])
       const plan = sourcing(added, course.language)
+      // Excerpts of each, 9,000 characters in all: fewer of them (200
+      // characters at least) when many materials share the room.
       const share = Math.floor(9000 / added.length)
-      const passages = added.filter(item => item.chunks.length).map(item => formatPassages(spreadPassages(item.chunks, { maxChars: share, samples: 8 }), item.meta.title)).join('\n\n')
+      const samples = Math.max(2, Math.min(8, Math.floor(share / 200)))
+      const passages = added.filter(item => item.chunks.length).map(item => formatPassages(spreadPassages(item.chunks, { maxChars: share, samples }), item.meta.title)).join('\n\n')
       api.progress(0, 0, 'blueprint')
       const summaryText = materialsSummary(added, { refs: plan.refs, offset: before.length })
       const listed = new Set([...mentionedPages(summaryText), ...mentionedPages(passages), ...mentionedPages(JSON.stringify(current))])
@@ -471,9 +509,16 @@ export function createCourses({ store, llm, jobs, research, mistakes = createMis
     return summary(courseId)
   }
 
+  // The course's jobs are cancelled first (a draft may be writing its
+  // questions or blueprint): what they would still write is removed too,
+  // whenever their work ends.
   async function remove({ courseId }) {
     assertId(courseId, 'crs')
-    await store.removeDir(store.paths.courseDir(courseId))
+    const folder = store.paths.courseDir(courseId)
+    const ended = jobs.cancelWhere(meta => meta.courseId === courseId)
+    await Promise.race([ended, sleep(removeWaitMs)])
+    await store.removeDir(folder)
+    ended.then(() => store.removeDir(folder)).catch(() => undefined)
     return { removed: courseId }
   }
 

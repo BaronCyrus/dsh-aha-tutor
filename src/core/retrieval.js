@@ -122,7 +122,8 @@ export function spreadPassages(chunks, { maxChars = 12000, samples = 16 } = {}) 
   const share = Math.max(200, Math.floor(maxChars / count))
   const picked = []
   for (let index = 0; index < count; index += 1) {
-    const at = Math.round((index * (chunks.length - 1)) / (count - 1))
+    // A material of one long chunk is that chunk, cut to size.
+    const at = count === 1 ? 0 : Math.round((index * (chunks.length - 1)) / (count - 1))
     if (picked.at(-1) !== at) picked.push(at)
   }
   return picked.map(at => {
@@ -152,14 +153,38 @@ export function documentParts(chunks, { partChars = 20000, maxParts = 24, maxPar
 
 // Several documents ({ title, chunks }) in parts, for reading them one part
 // at a time: each document is split on its own, so a part never mixes two,
-// and the parts are shared out by size, about maxParts in all.
+// and the parts are shared out by size, maxParts in all (one each at least).
+// With more documents than maxParts, short ones are read together instead,
+// as many as fit in about partChars: such a part is `mixed`, titled by all
+// of them, and each of its passages names its own document (`source`).
 export function materialParts(documents, { partChars = 20000, maxParts = 24 } = {}) {
+  const sizeOf = chunks => chunks.reduce((sum, chunk) => sum + chunk.text.length, 0)
   const sized = documents
-    .map(document => ({ title: document.title, chunks: document.chunks ?? [], chars: (document.chunks ?? []).reduce((sum, chunk) => sum + chunk.text.length, 0) }))
+    .map(document => ({ title: document.title, chunks: document.chunks ?? [], chars: sizeOf(document.chunks ?? []) }))
     .filter(document => document.chars > 0)
   const total = sized.reduce((sum, document) => sum + document.chars, 0)
-  return sized.flatMap(document => documentParts(document.chunks, { partChars, maxParts: Math.max(1, Math.floor((document.chars / total) * maxParts)) })
-    .map(passages => ({ title: document.title, passages, chars: passages.reduce((sum, chunk) => sum + chunk.text.length, 0) })))
+  const own = (document, count) => documentParts(document.chunks, { partChars, maxParts: count }).map(passages => ({ title: document.title, passages, chars: sizeOf(passages) }))
+  if (sized.length <= maxParts) {
+    const spare = maxParts - sized.length
+    return sized.flatMap(document => own(document, 1 + Math.floor((document.chars / total) * spare)))
+  }
+  const parts = []
+  let group = []
+  let size = 0
+  const flush = () => {
+    if (group.length === 1) parts.push(...own(group[0], 1))
+    else if (group.length) parts.push({ title: group.map(document => document.title).join(' + '), mixed: true, passages: group.flatMap(document => document.chunks.map(chunk => ({ ...chunk, source: document.title }))), chars: size })
+    group = []
+    size = 0
+  }
+  for (const document of sized) {
+    if (size && size + document.chars > partChars) flush()
+    group.push(document)
+    size += document.chars
+    if (size >= partChars) flush()
+  }
+  flush()
+  return parts
 }
 
 // Where a passage is, as the reader of the material would name it: the

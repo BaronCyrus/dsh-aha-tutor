@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 
 import { ApiError, fileToBase64 } from './api.js'
 import { useApp, useLoad } from './hooks.js'
+import { ALL, FOLDER_FILE_LIMIT, foldersFromInput, inView, knownView, planFolder, readDrop, shortList, UNFILED, UPLOAD_ACCEPT, viewCounts } from './folders.js'
 import { Icon } from './icons.jsx'
-import { shortCourseTitle } from '../core/course-model.js'
+import { LIMITS, shortCourseTitle } from '../core/course-model.js'
 
 export function Spinner({ label }) {
   return <span className="aha-row" style={{ gap: 8 }}><span className="aha-spinner" />{label ? <span className="aha-hint">{label}</span> : null}</span>
@@ -67,6 +68,39 @@ export function Confirm({ text, onConfirm, onCancel, danger = false }) {
   </>}><p>{text}</p></Modal>
 }
 
+// A ⋯ button with a short list of actions: items [{ label, onSelect,
+// danger }]. It closes on a pick, on Escape and on a press outside it, and
+// keeps its clicks from reaching a clickable card it sits on.
+export function MoreMenu({ items, style }) {
+  const { t } = useApp()
+  const [open, setOpen] = useState(false)
+  const anchor = useRef(null)
+  useEffect(() => {
+    if (!open) return undefined
+    const outside = event => { if (!anchor.current?.contains(event.target)) setOpen(false) }
+    const escape = event => { if (event.key === 'Escape') setOpen(false) }
+    document.addEventListener('pointerdown', outside)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('pointerdown', outside)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [open])
+  return <span ref={anchor} className="aha-menuAnchor" style={style} onClick={event => event.stopPropagation()}>
+    <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" aria-label={t('moreActions')} title={t('moreActions')} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}>⋯</button>
+    {open ? <div className="aha-card aha-menu" role="menu">
+      {items.map(item => <button key={item.label} type="button" role="menuitem" className="aha-btn" data-kind="ghost" data-danger={item.danger ? 'true' : undefined} onClick={() => { setOpen(false); item.onSelect() }}>{item.label}</button>)}
+    </div> : null}
+  </span>
+}
+
+// A course's name for a sentence: a draft is named by its goal, which can
+// be long.
+export function courseName(course) {
+  const name = String(course?.title || course?.goal || '').trim()
+  return name.length > 40 ? `${name.slice(0, 40)}…` : name
+}
+
 // A host error in the learner's language when its code is known; the raw
 // message stays available on hover.
 export function errorText(t, error) {
@@ -91,17 +125,18 @@ export function Empty({ children }) {
   return <div className="aha-empty">{children}</div>
 }
 
-const ACCEPT = '.pdf,.docx,.pptx,.md,.markdown,.txt,.csv,.json,.tex,.py,.js,.ts,.html,.png,.jpg,.jpeg,.webp,.gif'
-
 // Upload files / add links; resolves to the new material metas. progress is
 // the host job's ({ done, total, label }), and cancel() stops it while it runs:
-// reading the text in a long scan takes minutes.
+// reading the text in a long scan takes minutes. folderId: the library
+// folder new materials go into (none when null).
 export function useMaterialUpload() {
   const { api } = useApp()
   const [busy, setBusy] = useState(null)
   const [error, setError] = useState(null)
   const [progress, setProgress] = useState(null)
   const [jobId, setJobId] = useState(null)
+  // A computer's folder on its way: which library folder, which file of how many.
+  const [batch, setBatch] = useState(null)
   async function follow(value) {
     setJobId(value?.job?.id ?? null)
     try {
@@ -111,10 +146,13 @@ export function useMaterialUpload() {
       setProgress(null)
     }
   }
-  // Raw bytes over the plugin's HTTP route; base64 over RPC on hosts without it.
-  async function sendFile(file) {
+  // Raw bytes over the plugin's HTTP route; base64 over RPC on hosts without
+  // it. name: the file's name, or its path inside an uploaded folder.
+  async function sendFile(file, { name = file.name, folderId = null } = {}) {
+    const query = new URLSearchParams({ name })
+    if (folderId) query.set('folder', folderId)
     try {
-      const response = await fetch(new URL(`api/aha-tutor/upload?name=${encodeURIComponent(file.name)}`, document.baseURI), {
+      const response = await fetch(new URL(`api/aha-tutor/upload?${query}`, document.baseURI), {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'content-type': file.type || 'application/octet-stream' },
@@ -129,16 +167,16 @@ export function useMaterialUpload() {
       if (error?.message !== 'Failed to fetch') throw error
     }
     const base64 = await fileToBase64(file)
-    return (await follow(await api.call('material/upload', { name: file.name, base64 }))).material
+    return (await follow(await api.call('material/upload', { name, base64, folderId }))).material
   }
 
-  async function upload(files) {
+  async function upload(files, { folderId = null } = {}) {
     const results = []
     setError(null)
     for (const file of files) {
       setBusy(file.name)
       try {
-        results.push(await sendFile(file))
+        results.push(await sendFile(file, { folderId }))
       } catch (failure) {
         // Cancelling stops the files still waiting as well.
         if (failure?.code === 'cancelled') break
@@ -148,11 +186,49 @@ export function useMaterialUpload() {
     setBusy(null)
     return results
   }
-  async function addUrl(url) {
+
+  // Folders of the computer planned with planFolder, one after the other,
+  // each into its library folder (made when it has none of that name yet).
+  // Resolves to a report for each: { name, folder, added, failed, known,
+  // unsupported, cancelled }. Cancelling stops the files still waiting.
+  async function uploadFolders(plans) {
+    const reports = []
+    setError(null)
+    for (const plan of plans) {
+      const report = { name: plan.name, folder: plan.folder, added: [], failed: [], known: plan.known, unsupported: plan.unsupported, cancelled: false }
+      reports.push(report)
+      if (!plan.upload.length) continue
+      try {
+        report.folder ??= (await api.call('folder/create', { name: plan.name, reuse: true })).folder
+      } catch (failure) {
+        report.failed.push({ path: plan.name, error: failure })
+        continue
+      }
+      for (const [index, entry] of plan.upload.entries()) {
+        setBatch({ folder: report.folder.name, n: index + 1, total: plan.upload.length })
+        setBusy(entry.path)
+        try {
+          report.added.push(await sendFile(entry.file, { name: entry.path, folderId: report.folder.id }))
+        } catch (failure) {
+          if (failure?.code === 'cancelled') {
+            report.cancelled = true
+            break
+          }
+          report.failed.push({ path: entry.path, error: failure })
+        }
+      }
+      if (report.cancelled) break
+    }
+    setBatch(null)
+    setBusy(null)
+    return reports
+  }
+
+  async function addUrl(url, { folderId = null } = {}) {
     setBusy(url)
     setError(null)
     try {
-      const result = await follow(await api.call('material/url', { url }))
+      const result = await follow(await api.call('material/url', { url, folderId }))
       return [result.material]
     } catch (failure) {
       if (failure?.code !== 'cancelled') setError(failure)
@@ -161,75 +237,236 @@ export function useMaterialUpload() {
       setBusy(null)
     }
   }
-  return { upload, addUrl, busy, error, progress, cancel: jobId ? () => api.cancel(jobId) : null }
+  return { upload, uploadFolders, addUrl, busy, batch, error, progress, cancel: jobId ? () => api.cancel(jobId) : null }
 }
 
 // What an upload is doing: reading the file, reading the text in its
-// pictures one by one, or summing the material up.
-function uploadLabel(t, name, progress) {
-  if (progress?.label === 'recognizing' && progress.total) return t('readingPictures', { done: progress.done, total: progress.total, name })
-  if (progress?.label === 'summarizing') return t('summarizingMaterial', { name })
-  return `${t('reading')} ${name}`
+// pictures one by one, or summing the material up; in an uploaded folder,
+// which file of how many.
+function uploadLabel(t, name, progress, batch) {
+  const label = progress?.label === 'recognizing' && progress.total
+    ? t('readingPictures', { done: progress.done, total: progress.total, name })
+    : progress?.label === 'summarizing' ? t('summarizingMaterial', { name }) : `${t('reading')} ${name}`
+  return batch ? t('uploadingFolder', { name: batch.folder, n: batch.n, total: batch.total, label }) : label
 }
 
-export function UploadZone({ onAdded, compact = false }) {
+// Before a computer's folder is uploaded: how many files go into which
+// library folder, which are left out, and what it costs.
+function FolderPlan({ pending, folderName, onStart, onCancel }) {
   const { t } = useApp()
+  const files = pending.plans.reduce((sum, plan) => sum + plan.upload.length, 0)
+  const total = files + pending.loose.length
+  return <Modal title={t('folderUploadTitle')} onClose={onCancel} width={560} footer={total ? <>
+    <button type="button" className="aha-btn" onClick={onCancel}>{t('cancel')}</button>
+    <button type="button" className="aha-btn" data-kind="primary" onClick={onStart}>{t('folderUploadStart', { count: total })}</button>
+  </> : <button type="button" className="aha-btn" onClick={onCancel}>{t('close')}</button>}>
+    {pending.plans.map((plan, index) => <div key={`${plan.name}:${index}`} className="aha-col aha-folderPlan" style={{ gap: 4 }}>
+      {plan.tooMany ? <p>{t('folderTooMany', { name: plan.name, max: FOLDER_FILE_LIMIT })}</p> : <>
+        <p>{plan.upload.length ? t(plan.folder ? 'folderUploadInto' : 'folderUploadNew', { count: plan.upload.length, name: plan.name }) : t('folderUploadNothing', { name: plan.name })}</p>
+        {plan.known.length ? <p className="aha-hint">{t('folderUploadKnown', { count: plan.known.length })}</p> : null}
+        {plan.unsupported.length ? <p className="aha-hint">{t('folderUploadUnsupported', { count: plan.unsupported.length, list: shortList(plan.unsupported, t) })}</p> : null}
+      </>}
+    </div>)}
+    {pending.loose.length ? <p className="aha-hint">{folderName ? t('folderUploadLooseInto', { count: pending.loose.length, name: folderName }) : t('folderUploadLoose', { count: pending.loose.length })}</p> : null}
+    {files ? <p className="aha-hint">{t('folderUploadCost')}</p> : null}
+  </Modal>
+}
+
+// What uploading the computer's folders did, until closed.
+function FolderReport({ reports, onClose }) {
+  const { t } = useApp()
+  return <div className="aha-uploadReport" role="status">
+    <div className="aha-spread" style={{ alignItems: 'flex-start' }}>
+      <div className="aha-col" style={{ gap: 2, flex: 1, minWidth: 0 }}>
+        {reports.map((report, index) => <div key={`${report.name}:${index}`} className="aha-col" style={{ gap: 2 }}>
+          <b>{t('folderUploadDone', { count: report.added.length, name: report.folder?.name ?? report.name })}</b>
+          {report.known.length ? <span className="aha-hint">{t('folderUploadSkippedKnown', { count: report.known.length })}</span> : null}
+          {report.unsupported.length ? <span className="aha-hint">{t('folderUploadSkippedUnsupported', { count: report.unsupported.length, list: shortList(report.unsupported, t) })}</span> : null}
+          {report.failed.length ? <span className="aha-error">{t('folderUploadFailed', { count: report.failed.length, list: shortList(report.failed.map(entry => `${entry.path}（${errorText(t, entry.error)}）`), t, 3) })}</span> : null}
+          {report.cancelled ? <span className="aha-hint">{t('folderUploadCancelled')}</span> : null}
+        </div>)}
+      </div>
+      <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" onClick={onClose} aria-label={t('close')}>✕</button>
+    </div>
+  </div>
+}
+
+// Files and links into the library. A whole folder of the computer can be
+// picked or dropped too: it goes into a library folder of its name, once
+// the learner has seen what it holds (FolderPlan). folderId: where single
+// files and links go (folderName: its name). onAdded(materials, { folders })
+// names the library folders that uploaded computer folders went into.
+export function UploadZone({ onAdded, compact = false, folderId = null, folderName = '' }) {
+  const { api, t } = useApp()
   const input = useRef(null)
+  const folderInput = useRef(null)
   const [url, setUrl] = useState('')
   const [over, setOver] = useState(false)
-  const { upload, addUrl, busy, error, progress, cancel } = useMaterialUpload()
+  const [pending, setPending] = useState(null)
+  const [reports, setReports] = useState(null)
+  const [planError, setPlanError] = useState(null)
+  const { upload, uploadFolders, addUrl, busy, batch, error, progress, cancel } = useMaterialUpload()
   const handle = async files => {
-    const added = await upload([...files])
-    if (added.length) onAdded?.(added)
+    const added = await upload([...files], { folderId })
+    if (added.length) onAdded?.(added, { folders: [] })
+  }
+  // The library's folders and materials as they are now, to plan against.
+  async function plan(folders, loose = []) {
+    setPlanError(null)
+    try {
+      const [{ folders: existing }, materials] = await Promise.all([api.call('folder/list'), api.call('material/list')])
+      setPending({ plans: folders.map(entry => planFolder(entry, { folders: existing, materials, fallbackName: t('folderNewName') })), loose })
+    } catch (failure) {
+      setPlanError(failure)
+    }
+  }
+  async function start() {
+    const { plans, loose } = pending
+    setPending(null)
+    setReports(null)
+    const done = await uploadFolders(plans.filter(entry => !entry.tooMany && entry.upload.length))
+    const skipped = plans.filter(entry => !entry.tooMany && !entry.upload.length).map(entry => ({ name: entry.name, folder: entry.folder, added: [], failed: [], known: entry.known, unsupported: entry.unsupported, cancelled: false }))
+    const all = [...done, ...skipped]
+    if (all.length) setReports(all)
+    const added = done.flatMap(report => report.added)
+    if (loose.length && !done.some(report => report.cancelled)) added.push(...await upload(loose, { folderId }))
+    const folders = all.map(report => report.folder).filter(Boolean)
+    if (added.length || folders.length) onAdded?.(added, { folders })
+  }
+  const drop = event => {
+    event.preventDefault()
+    setOver(false)
+    const dropped = readDrop(event.dataTransfer)
+    dropped.folders().then(folders => (folders.length ? plan(folders, dropped.loose) : handle(dropped.loose)), setPlanError)
   }
   return <div className="aha-col">
     <div className="aha-empty" style={{ padding: compact ? 14 : 24, borderColor: over ? 'var(--aha-brand)' : undefined, cursor: 'pointer' }}
       onClick={() => input.current?.click()}
       onDragOver={event => { event.preventDefault(); setOver(true) }}
       onDragLeave={() => setOver(false)}
-      onDrop={event => { event.preventDefault(); setOver(false); handle(event.dataTransfer.files) }}>
+      onDrop={drop}>
       <div className="aha-row" style={{ justifyContent: 'center' }}><Icon name="upload" />{t('dropHere')}</div>
-      <input ref={input} type="file" multiple accept={ACCEPT} hidden onChange={event => { handle(event.currentTarget.files); event.currentTarget.value = '' }} />
+      <div className="aha-row" style={{ justifyContent: 'center' }}>
+        <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" disabled={Boolean(busy)} onClick={event => { event.stopPropagation(); folderInput.current?.click() }}><Icon name="folder" size={15} />{t('uploadFolder')}</button>
+      </div>
+      <input ref={input} type="file" multiple accept={UPLOAD_ACCEPT} hidden onChange={event => { handle(event.currentTarget.files); event.currentTarget.value = '' }} />
+      <input ref={folderInput} type="file" multiple hidden webkitdirectory="" onChange={event => { const files = [...event.currentTarget.files]; event.currentTarget.value = ''; if (files.length) plan(foldersFromInput(files)) }} />
     </div>
     <form className="aha-row" onSubmit={async event => {
       event.preventDefault()
       if (!url.trim()) return
-      const added = await addUrl(url.trim())
+      const added = await addUrl(url.trim(), { folderId })
       if (added.length) {
         setUrl('')
-        onAdded?.(added)
+        onAdded?.(added, { folders: [] })
       }
     }}>
       <input className="aha-input" style={{ flex: 1 }} value={url} placeholder={t('urlPlaceholder')} onChange={event => setUrl(event.currentTarget.value)} />
       <button type="submit" className="aha-btn" disabled={!url.trim() || Boolean(busy)}><Icon name="link" />{t('addUrl')}</button>
     </form>
     {busy ? <div className="aha-row" style={{ gap: 8 }}>
-      <Spinner label={uploadLabel(t, busy, progress)} />
+      <Spinner label={uploadLabel(t, busy, progress, batch)} />
       {cancel ? <button type="button" className="aha-btn" data-size="sm" data-kind="ghost" onClick={cancel}>{t('cancel')}</button> : null}
     </div> : null}
-    <ErrorLine error={error} />
+    {reports && !busy ? <FolderReport reports={reports} onClose={() => setReports(null)} /> : null}
+    <ErrorLine error={error ?? planError} />
+    {pending ? <FolderPlan pending={pending} folderName={folderId ? folderName : ''} onStart={start} onCancel={() => setPending(null)} /> : null}
   </div>
 }
 
-// exclude: materials not to offer (those a course already uses).
-export function MaterialPicker({ selected, onChange, onClose, exclude = [], max = 8 }) {
+// The row of folder chips: every material, the unfiled ones and each
+// folder, with how many each holds; ＋ 新建文件夹 when onCreate is given.
+export function FolderBar({ folders, materials, view, onChange, onCreate }) {
+  const { t } = useApp()
+  const counts = viewCounts(materials)
+  const chip = (key, label, icon) => <button key={key} type="button" className="aha-chip" data-active={view === key} aria-pressed={view === key} onClick={() => onChange(key)}>
+    {icon ? <Icon name="folder" size={14} /> : null}<span className="aha-chipName">{label}</span><small>{counts.get(key) ?? 0}</small>
+  </button>
+  return <div className="aha-row aha-folderBar" role="toolbar" aria-label={t('folders')}>
+    {chip(ALL, t('foldersAll'))}
+    {chip(UNFILED, t('foldersUnfiled'))}
+    {(folders ?? []).map(folder => chip(folder.id, folder.name, true))}
+    {onCreate ? <button type="button" className="aha-chip" data-kind="add" onClick={onCreate}><Icon name="plus" size={14} />{t('folderNew')}</button> : null}
+  </div>
+}
+
+// exclude: materials not to offer (those a course already uses). max: how
+// many may be picked (LIMITS.materials, or what a course has room for).
+// Once that many are picked the others are greyed out, and files uploaded
+// here beyond it stay in the library, with a note saying so. With folders,
+// a row of folder chips picks the view, and a folder can be picked whole
+// (as much of it as there is room for); files uploaded here go into the
+// folder shown.
+export function MaterialPicker({ selected, onChange, onClose, exclude = [], max = LIMITS.materials }) {
   const { api, t } = useApp()
   const materials = useLoad(() => api.call('material/list'), [])
-  const toggle = id => onChange(selected.includes(id) ? selected.filter(value => value !== id) : [...selected, id].slice(0, max))
-  return <Modal title={t('pickMaterials')} onClose={onClose} width={640} footer={<button type="button" className="aha-btn" data-kind="primary" onClick={onClose}>{t('confirm')}</button>}>
-    <UploadZone compact onAdded={added => { materials.reload(); onChange([...selected, ...added.map(item => item.id)].slice(0, max)) }} />
+  const folderList = useLoad(() => api.call('folder/list'), [])
+  const folders = folderList.value?.folders ?? []
+  const [chosenView, setView] = useState(ALL)
+  const view = knownView(chosenView, folders)
+  const folder = folders.find(entry => entry.id === view) ?? null
+  const [leftOut, setLeftOut] = useState(0)
+  const [folderLeftOut, setFolderLeftOut] = useState(0)
+  const offered = (materials.value ?? []).filter(item => !exclude.includes(item.id))
+  const shown = inView(offered, view)
+  const full = selected.length >= max
+  const toggle = id => {
+    if (selected.includes(id)) onChange(selected.filter(value => value !== id))
+    else if (!full) onChange([...selected, id])
+  }
+  const uploaded = (added, { folders: into = [] } = {}) => {
+    materials.reload()
+    folderList.reload()
+    if (into[0]) setView(into[0].id)
+    const fresh = added.map(item => item.id).filter(id => !selected.includes(id))
+    const room = Math.max(0, max - selected.length)
+    onChange([...selected, ...fresh.slice(0, room)])
+    setLeftOut(Math.max(0, fresh.length - room))
+  }
+  // The folder shown, picked whole in its order, or unpicked once it all is.
+  const inFolder = folder ? shown.map(item => item.id) : []
+  const wholeFolder = inFolder.length > 0 && inFolder.every(id => selected.includes(id))
+  const pickFolder = () => {
+    if (wholeFolder) {
+      onChange(selected.filter(id => !inFolder.includes(id)))
+      setFolderLeftOut(0)
+      return
+    }
+    const fresh = inFolder.filter(id => !selected.includes(id))
+    const room = Math.max(0, max - selected.length)
+    onChange([...selected, ...fresh.slice(0, room)])
+    setFolderLeftOut(Math.max(0, fresh.length - room))
+  }
+  return <Modal title={t('pickMaterials')} onClose={onClose} width={640} footer={<>
+    <span className="aha-hint aha-pickCount" aria-live="polite">{t('pickedCount', { count: selected.length, max })}</span>
+    <button type="button" className="aha-btn" data-kind="primary" onClick={onClose}>{t('confirm')}</button>
+  </>}>
+    <UploadZone compact folderId={folder?.id ?? null} folderName={folder?.name ?? ''} onAdded={uploaded} />
+    {leftOut ? <p className="aha-hint" role="status">{t('pickLeftOut', { count: leftOut, max })}</p> : null}
+    {full ? <p className="aha-hint" role="status">{t('pickFull', { max })}</p> : null}
+    {folders.length ? <FolderBar folders={folders} materials={offered} view={view} onChange={next => { setView(next); setFolderLeftOut(0) }} /> : null}
+    {folder && inFolder.length ? <div className="aha-row" style={{ gap: 8 }}>
+      <button type="button" className="aha-btn" data-size="sm" disabled={!wholeFolder && full} onClick={pickFolder}>{wholeFolder ? t('unpickFolder') : t('pickFolder', { count: inFolder.length })}</button>
+      {folderLeftOut ? <span className="aha-hint" role="status">{t('pickFolderLeftOut', { count: folderLeftOut, max })}</span> : null}
+    </div> : null}
     {materials.loading && !materials.value ? <Spinner label={t('loading')} /> : null}
     <div className="aha-col" style={{ gap: 6, maxHeight: 320, overflow: 'auto' }}>
-      {(materials.value ?? []).filter(item => !exclude.includes(item.id)).map(item => <label key={item.id} className="aha-option" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <input type="checkbox" checked={selected.includes(item.id)} onChange={() => toggle(item.id)} />
-        <span className="aha-col" style={{ gap: 0 }}><b>{item.title}</b><small>{describeMaterial(item, t)}</small></span>
-      </label>)}
+      {shown.map(item => {
+        const off = full && !selected.includes(item.id)
+        return <label key={item.id} className="aha-option" data-off={off ? 'true' : undefined} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <input type="checkbox" checked={selected.includes(item.id)} disabled={off} onChange={() => toggle(item.id)} />
+          <span className="aha-col" style={{ gap: 0 }}><b>{item.title}</b><small>{describeMaterial(item, t)}</small></span>
+        </label>
+      })}
+      {folder && !shown.length ? <p className="aha-hint">{t('pickFolderEmpty')}</p> : null}
     </div>
   </Modal>
 }
 
 export function describeMaterial(item, t) {
   const parts = [item.kind.toUpperCase()]
+  // A file from a subfolder of an uploaded folder: where it was.
+  if (String(item.fileName ?? '').includes('/')) parts.push(item.fileName)
   if (item.pages) parts.push(t('pages', { count: item.pages }))
   if (item.slides) parts.push(t('slides', { count: item.slides }))
   const read = item.ocr?.read ?? 0

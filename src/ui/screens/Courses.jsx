@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 
-import { Empty, ErrorLine, Progress, Spinner } from '../components.jsx'
+import { Confirm, courseName, Empty, ErrorLine, MoreMenu, Progress, Spinner } from '../components.jsx'
 import { useApp, useLoad } from '../hooks.js'
 
 const FILTERS = [['all', 'filterAll'], ['active', 'filterActive'], ['done', 'filterDone'], ['archived', 'filterArchived']]
@@ -11,6 +11,8 @@ export function CoursesScreen() {
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
   const [error, setError] = useState(null)
+  // A course still being made (questions or blueprint) can be deleted here.
+  const [removing, setRemoving] = useState(null)
   const input = useRef(null)
 
   const rows = (courses.value ?? []).filter(course => {
@@ -33,6 +35,19 @@ export function CoursesScreen() {
     }
   }
 
+  async function remove(course) {
+    setRemoving(null)
+    setError(null)
+    courses.setValue(list => (list ?? []).filter(row => row.id !== course.id))
+    try {
+      await api.call('course/remove', { courseId: course.id })
+      toast(t('courseDeleted', { title: courseName(course) }))
+    } catch (failure) {
+      setError(failure)
+    }
+    courses.reload()
+  }
+
   return <div className="aha-page">
     <div className="aha-spread">
       <h2 className="aha-title">{t('coursesTitle')}</h2>
@@ -49,7 +64,11 @@ export function CoursesScreen() {
     <ErrorLine error={error ?? courses.error} />
     {courses.loading && !courses.value ? <Spinner label={t('loading')} /> : rows.length ? <div className="aha-grid">
       {rows.map(course => <div key={course.id} className="aha-card" data-click="true" onClick={() => navigate(course.status === 'ready' ? 'course' : 'craft', { courseId: course.id })}>
-        <div className="aha-row" style={{ flexWrap: 'nowrap' }}><span style={{ fontSize: 26 }}>{course.emoji}</span><span className="aha-cardTitle">{course.title}</span></div>
+        <div className="aha-row" style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}>
+          <span style={{ fontSize: 26 }}>{course.emoji}</span>
+          <span className="aha-cardTitle" style={{ flex: 1, minWidth: 0 }}>{course.title}</span>
+          {course.status !== 'ready' ? <MoreMenu items={[{ label: t('deleteCourse'), danger: true, onSelect: () => setRemoving(course) }]} /> : null}
+        </div>
         {course.subtitle ? <p className="aha-hint">{course.subtitle}</p> : null}
         {course.status === 'ready' ? <>
           <Progress value={course.progress.percent} />
@@ -57,5 +76,6 @@ export function CoursesScreen() {
         </> : <span className="aha-tag">{course.status === 'intake' ? t('statusIntake') : t('statusBlueprint')}</span>}
       </div>)}
     </div> : <Empty>{t('noCourses')}</Empty>}
+    {removing ? <Confirm danger text={t('deleteConfirm', { title: courseName(removing) })} onCancel={() => setRemoving(null)} onConfirm={() => remove(removing)} /> : null}
   </div>
 }

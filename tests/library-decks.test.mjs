@@ -282,3 +282,27 @@ test('notes follow the focus, and the routes pass it on', async () => {
   for (const endpoint of ['studio/cards', 'studio/quiz', 'studio/notes']) await routes[endpoint]({ materialIds, focus: '第 3 章', count: 99 })
   assert.deepEqual(seen, [['cards', { materialIds, focus: '第 3 章' }], ['quiz', { materialIds, focus: '第 3 章' }], ['notes', { materialIds, focus: '第 3 章' }]])
 })
+
+test('a quiz on thirty short papers reads them a few to a part, each passage under its own title', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'aha-library-'))
+  try {
+    const store = createStore({ root: join(root, 'data') })
+    const llm = libraryLlm()
+    const jobs = createJobs()
+    const studio = createStudio({ store, llm, jobs })
+    const papers = []
+    for (let n = 1; n <= 30; n += 1) papers.push(await material(store, `试卷 ${n}`, [{ id: 'c1', page: 1, text: `第 ${n} 套：${'分数的加减与比较。'.repeat(330)}` }]))
+    const { item } = await finish(jobs, studio.makeQuiz({ materialIds: [...papers, papers[0]] }))
+    const calls = llm.calls.filter(call => call.user.includes('Return {"items"'))
+    assert.equal(calls.length, 5, 'six papers of 3,000 characters to a part, not a call for each')
+    assert.match(calls[0].user, /<<试卷 1 · p\.1>>\n第 1 套/u)
+    assert.match(calls[0].user, /<<试卷 6 · p\.1>>\n第 6 套/u, 'a part holds several papers, each named')
+    assert.ok(calls.every(call => /<part>\nPart \d of 5\. The other parts/u.test(call.user)), 'a part of several papers names no pages')
+    assert.equal(item.title, '试卷 1 + 试卷 2 等 30 份资料')
+    assert.deepEqual(item.materialIds, papers, 'each paper once')
+    assert.ok(item.items.length >= 20)
+    jobs.dispose()
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

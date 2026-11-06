@@ -69,11 +69,13 @@ export function createJobs({ logger, now = Date.now } = {}) {
       },
     }
     // Cancelling settles the job at once, even if the work has not reached a
-    // point where it checks the signal yet.
+    // point where it checks the signal yet; `work` ends when the work does.
     const aborted = new Promise((_, reject) => {
       controller.signal.addEventListener('abort', () => reject(controller.signal.reason ?? new Error('cancelled')), { once: true })
     })
-    job.settled = Promise.race([Promise.resolve().then(() => run(api)), aborted])
+    const work = Promise.resolve().then(() => run(api))
+    job.work = work.then(() => undefined, () => undefined)
+    job.settled = Promise.race([work, aborted])
       .then(result => {
         job.status = 'done'
         job.result = result
@@ -133,10 +135,30 @@ export function createJobs({ logger, now = Date.now } = {}) {
     return snapshot(job)
   }
 
+  // Whether the job last started under `key` has ended (done, failed or
+  // cancelled); null when this process ran none, or no longer remembers it.
+  function ended(key) {
+    const job = jobs.get(byKey.get(key))
+    return job ? Boolean(job.finishedAt || job.controller.signal.aborted) : null
+  }
+
   // Cancel the job running under `key`, if any (regenerating replaces it).
   function cancelKey(key) {
     const job = running(key)
     return job ? cancel(job.id) : null
+  }
+
+  // Cancel every job whose meta `match` picks (the jobs of a course that is
+  // removed). Returns when their work ends, which can be later than the
+  // jobs settle: it stops where it next checks the signal. Never rejects.
+  function cancelWhere(match) {
+    const work = []
+    for (const job of jobs.values()) {
+      if (!match(job.meta ?? {})) continue
+      if (!job.finishedAt) job.controller.abort(new Error('cancelled'))
+      work.push(job.work)
+    }
+    return Promise.all(work).then(() => undefined)
   }
 
   function dispose() {
@@ -145,7 +167,7 @@ export function createJobs({ logger, now = Date.now } = {}) {
     byKey.clear()
   }
 
-  return Object.freeze({ start, get, wait, cancel, cancelKey, running, dispose })
+  return Object.freeze({ start, get, wait, cancel, cancelKey, cancelWhere, running, ended, dispose })
 }
 
 // Only messages written for users cross to the browser.

@@ -2,6 +2,24 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## Unreleased
+
+### Added
+
+- **Delete a course that is not finished**: a course still at its questions or its blueprint opened only its creation pages, which had no delete, so the only way to get rid of one was to finish it first. Its card in **My courses** now has a **⋯** menu with **Delete course**, and so do its question and blueprint pages. Deleting a course stops whatever it is still writing first (its questions, its blueprint, its practice), and what that work would still write is removed too, so a deleted course never comes back.
+- **Library folders**: materials of one kind can be kept in a folder: **Library** shows a row of chips (**All**, **Unfiled** and each folder, with how many it holds), where a folder is made, opened, renamed or deleted (its materials stay, unfiled). Each material has **Move to folder**, filtering and full-text search keep to the open folder, files and links added there go into it, and **Course from this folder** builds a course from it (at most 30 materials, by name, after saying so when it holds more). Every material picker has the same chips and **Pick this whole folder**, as much of it as there is room for, saying how many were left out.
+- **Upload a whole folder**: **Upload a whole folder**, or a folder dropped on the upload box, uploads a folder of the computer, its subfolders included, into a library folder of the same name (the one there is, when there is one). First it says how many files it will upload and what that costs in model calls; files already in that folder (same name and size) and files it cannot read are skipped and listed, the computer's own leftovers (.DS_Store, ~$ lock files, hidden folders) are passed over. A file from a subfolder shows its path under its title, such as 「第一章/练习.pdf」, and a folder lists its materials by file name, as the computer does. The upload shows which file of how many, can be cancelled, and reports what was uploaded, skipped and refused. A folder of more than 1,000 files is not read.
+- **Up to 30 materials, counted**: a new course, the study tools and instant help took at most 8 materials and a course at most 12, and the picker said nothing: a ninth box simply would not tick, and of several files uploaded in it only the first 8 were picked. Every picker now takes up to 30, shows how many are picked, greys out the rest once full and says why, and says when files uploaded in it were saved to the library but not picked. **Add materials** shows how many more the course can take and refuses more than that instead of dropping the rest.
+
+### Changed
+
+- **Room for many materials**: course design keeps each material's contents and brief as before up to 15 materials (10 for the brief); with more, their contents and briefs share a fixed room, so 30 materials keep their chapters with pages without making the prompt three times as long. When there are too many materials for each to get a useful share of a lesson's passages, the passages that match best are taken from all of them, instead of the first materials' only. Thirty short materials in a deck or quiz are read a few to a part (each passage under its own title) instead of one model call each, and a study aid made from more than four is named by the first two and how many.
+- **A start that fails or is cancelled leaves no course**: a course was saved before its questions were written, so a start that failed, was cancelled or was cut off by quitting DSH left a course at its questions in **My courses** and on Home. A start that fails or is cancelled now leaves nothing, one cut off by quitting DSH is removed 15 minutes after it began, and the page that waits for the questions has **Cancel**.
+
+### Fixed
+
+- **Excerpts of one-chunk materials**: excerpting a material made of a single chunk longer than its share (the text of a photo, a one-page handout) threw. With six or more such materials, adding them to a course at once failed, and so did a lesson or question whose words matched nothing in any of them.
+
 ## 1.13.0 - 2026-11-05
 
 ### Added

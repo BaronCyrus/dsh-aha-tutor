@@ -86,6 +86,8 @@ export function createStore({ root }) {
     // The latest set of questions on one concept (「练这个知识点」).
     drill: (id, conceptId) => join(paths.courseDir(id), 'drills', `${assertId(conceptId, 'cpt')}.json`),
     materials: () => join(root, 'materials'),
+    // The library's folders (names by id); a material names its own.
+    folders: () => join(root, 'folders.json'),
     materialDir: id => join(root, 'materials', assertId(id, 'mat')),
     material: id => join(paths.materialDir(id), 'meta.json'),
     materialChunks: id => join(paths.materialDir(id), 'chunks.json'),

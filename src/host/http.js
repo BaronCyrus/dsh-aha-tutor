@@ -8,6 +8,7 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 
 import { BOARD_FONT_FILES } from '../core/board-fonts.js'
+import { isId } from '../core/ids.js'
 import { publicCode } from './jobs.js'
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from './materials.js'
 import { MAX_SPEECH_BYTES } from './speech.js'
@@ -39,7 +40,10 @@ export function uploadRoute({ studio }) {
     methods: ['POST'],
     requestBody: 'streaming',
     fetch: async request => {
-      const name = new URL(request.url).searchParams.get('name') ?? 'file'
+      const query = new URL(request.url).searchParams
+      const name = query.get('name') ?? 'file'
+      // The library folder to file it under; anything else files it under none.
+      const folderId = isId(query.get('folder'), 'fld') ? query.get('folder') : null
       let bytes
       try {
         bytes = await readCapped(request.body, MAX_UPLOAD_BYTES, request.signal)
@@ -48,7 +52,7 @@ export function uploadRoute({ studio }) {
       }
       if (bytes === null) return failure('too-large', `The file is larger than ${MAX_UPLOAD_MB} MB`, 413)
       try {
-        return json({ ok: true, value: { job: studio.upload({ name, bytes }) } })
+        return json({ ok: true, value: { job: studio.upload({ name, bytes, folderId }) } })
       } catch (error) {
         return failure(publicCode(error), error?.name === 'TutorError' ? error.message : 'Upload failed', 400)
       }

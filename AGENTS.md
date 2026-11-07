@@ -8,7 +8,7 @@ This file governs the entire `dsh-aha-tutor` repository.
 - npm package: `dsh-aha-tutor`
 - DSH plugin rows: `aha-tutor` (the plugin) and `preset-aha-tutor` (the conversation preset), both inserted by `cordis.patch.yml`
 - Product name: 「开窍 · AI 私人老师」, English "Aha Tutor"; mascot 「小窍」
-- RPC channel `/aha-tutor`; HTTP routes `/api/aha-tutor/upload`, `/api/aha-tutor/tts`, `/api/aha-tutor/speech` and `/api/aha-tutor/font`
+- RPC channel `/aha-tutor`; HTTP routes `/api/aha-tutor/upload`, `/api/aha-tutor/tts`, `/api/aha-tutor/speech`, `/api/aha-tutor/font` and `/api/aha-tutor/picture`
 - Data directory: `$DSH_HOME/aha-tutor/`; project folders: `~/AhaTutor/projects/`
 
 ## Project boundaries

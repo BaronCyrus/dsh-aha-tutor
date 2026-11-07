@@ -1,7 +1,7 @@
 // Exact HTTP routes under DSH's connection (owner-only, same-origin): raw
 // file uploads without base64 inflation, TTS audio as real audio bytes,
-// recorded questions as raw WAV for transcription, and the board's bundled
-// handwriting fonts.
+// recorded questions as raw WAV for transcription, the board's bundled
+// handwriting fonts, and the pictures pasted into questions.
 
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
@@ -10,13 +10,14 @@ import { dirname, join } from 'node:path'
 import { BOARD_FONT_FILES } from '../core/board-fonts.js'
 import { isId } from '../core/ids.js'
 import { publicCode } from './jobs.js'
-import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from './materials.js'
+import { MAX_IMAGE_BYTES, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from './materials.js'
 import { MAX_SPEECH_BYTES } from './speech.js'
 
 export const UPLOAD_PATH = '/api/aha-tutor/upload'
 export const TTS_PATH = '/api/aha-tutor/tts'
 export const FONT_PATH = '/api/aha-tutor/font'
 export const SPEECH_PATH = '/api/aha-tutor/speech'
+export const PICTURE_PATH = '/api/aha-tutor/picture'
 
 export async function readCapped(stream, max, signal) {
   const parts = []
@@ -34,7 +35,9 @@ export async function readCapped(stream, max, signal) {
 const json = (value, status = 200) => Response.json(value, { status, headers: { 'cache-control': 'no-store' } })
 const failure = (code, message, status) => json({ ok: false, error: { code: `aha-tutor/${code}`, message, details: {} } }, status)
 
-export function uploadRoute({ studio }) {
+// for=question: a picture pasted into a question (host/pictures.js), not a
+// library material.
+export function uploadRoute({ studio, pictures }) {
   return {
     path: UPLOAD_PATH,
     methods: ['POST'],
@@ -44,15 +47,16 @@ export function uploadRoute({ studio }) {
       const name = query.get('name') ?? 'file'
       // The library folder to file it under; anything else files it under none.
       const folderId = isId(query.get('folder'), 'fld') ? query.get('folder') : null
+      const picture = query.get('for') === 'question'
       let bytes
       try {
-        bytes = await readCapped(request.body, MAX_UPLOAD_BYTES, request.signal)
+        bytes = await readCapped(request.body, picture ? MAX_IMAGE_BYTES : MAX_UPLOAD_BYTES, request.signal)
       } catch {
         return failure('aborted', 'Upload interrupted', 400)
       }
-      if (bytes === null) return failure('too-large', `The file is larger than ${MAX_UPLOAD_MB} MB`, 413)
+      if (bytes === null) return picture ? failure('image-too-large', 'Pictures must be smaller than 10 MB', 413) : failure('too-large', `The file is larger than ${MAX_UPLOAD_MB} MB`, 413)
       try {
-        return json({ ok: true, value: { job: studio.upload({ name, bytes, folderId }) } })
+        return json({ ok: true, value: { job: picture ? pictures.upload({ name, bytes }) : studio.upload({ name, bytes, folderId }) } })
       } catch (error) {
         return failure(publicCode(error), error?.name === 'TutorError' ? error.message : 'Upload failed', 400)
       }
@@ -132,6 +136,23 @@ export function fontRoute({ dir = fontsDir() } = {}) {
         return new Response('Not found', { status: 404 })
       }
       return new Response(loaded.get(name), { status: 200, headers: { 'content-type': 'font/woff2', 'cache-control': 'public, max-age=31536000, immutable' } })
+    },
+  }
+}
+
+// GET ?id=<picture>: a picture pasted into a question, for its thumbnail.
+// Only stored pictures of the four formats checked on upload are served,
+// as what they are; an id never names another picture, so it may be cached.
+export function pictureRoute({ pictures }) {
+  return {
+    path: PICTURE_PATH,
+    methods: ['GET'],
+    requestBody: 'buffered',
+    fetch: async request => {
+      const id = new URL(request.url).searchParams.get('id') ?? ''
+      const found = isId(id, 'pic') ? await pictures.blob(id).catch(() => null) : null
+      if (!found) return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } })
+      return new Response(found.data, { status: 200, headers: { 'content-type': found.mime, 'cache-control': 'private, max-age=86400', 'x-content-type-options': 'nosniff', 'content-security-policy': "default-src 'none'" } })
     },
   }
 }

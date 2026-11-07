@@ -11,7 +11,7 @@ import { credentialKey } from '@deepseek-ai/dsh-credentials'
 import { createCourses } from './host/courses.js'
 import { createFolders } from './host/folders.js'
 import { TutorError } from './host/generate.js'
-import { fontRoute, speechRoute, ttsRoute, uploadRoute } from './host/http.js'
+import { fontRoute, pictureRoute, speechRoute, ttsRoute, uploadRoute } from './host/http.js'
 import { createJobs } from './host/jobs.js'
 import { createLearner } from './host/learner.js'
 import { createLessons } from './host/lessons.js'
@@ -26,6 +26,7 @@ import { createSamples } from './host/samples.js'
 import { createKeyStore, createPrefs, createSettingsService } from './host/settings.js'
 import { createSpeechInput } from './host/speech.js'
 import { createStore, DATA_DIR_NAME, resolveDshHome } from './host/store.js'
+import { createPictures } from './host/pictures.js'
 import { createStudio } from './host/studio.js'
 import { createTts } from './host/tts.js'
 
@@ -56,7 +57,8 @@ export function apply(ctx) {
   const courses = createCourses({ store, llm, jobs, research, mistakes })
   const lessons = createLessons({ store, llm, jobs, courses, learner, mistakes })
   const folders = createFolders({ store })
-  const studio = createStudio({ store, llm, jobs, uiLanguage: () => uiLanguage, folders })
+  const pictures = createPictures({ store, llm, jobs })
+  const studio = createStudio({ store, llm, jobs, uiLanguage: () => uiLanguage, folders, pictures })
   const projects = createProjects({ store, llm, jobs, courses })
   const samples = createSamples({ dirUrl: new URL('../samples/', import.meta.url), courses })
   const tts = createTts({ cacheDir: store.paths.ttsCache(), getSecret: provider => keys.read(provider) })
@@ -84,7 +86,7 @@ export function apply(ctx) {
   }
 
   const routes = {
-    ...createRoutes({ courses, lessons, learner, studio, folders, projects, jobs, settings, tts: { speak }, plugin, info, speechInput }),
+    ...createRoutes({ courses, lessons, learner, studio, folders, pictures, projects, jobs, settings, tts: { speak }, plugin, info, speechInput }),
     'app/info': payload => info(payload),
     'samples/list': () => samples.list(),
     'samples/import': payload => samples.importSample({ id: payload.id }),
@@ -103,10 +105,11 @@ export function apply(ctx) {
   ctx.inject(['connection'], connectionCtx => {
     const fetchRoutes = connectionCtx.connection?.fetch
     if (typeof fetchRoutes?.register !== 'function') return
-    connectionCtx.effect(() => fetchRoutes.register(uploadRoute({ studio })), 'aha-tutor: upload route')
+    connectionCtx.effect(() => fetchRoutes.register(uploadRoute({ studio, pictures })), 'aha-tutor: upload route')
     connectionCtx.effect(() => fetchRoutes.register(ttsRoute({ speak })), 'aha-tutor: tts route')
     connectionCtx.effect(() => fetchRoutes.register(speechRoute({ speechInput })), 'aha-tutor: speech route')
     connectionCtx.effect(() => fetchRoutes.register(fontRoute()), 'aha-tutor: font route')
+    connectionCtx.effect(() => fetchRoutes.register(pictureRoute({ pictures })), 'aha-tutor: picture route')
   })
 
   // Services for the teacher preset's tools (src/agent.js).

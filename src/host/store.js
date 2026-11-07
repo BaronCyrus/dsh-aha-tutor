@@ -92,6 +92,12 @@ export function createStore({ root }) {
     material: id => join(paths.materialDir(id), 'meta.json'),
     materialChunks: id => join(paths.materialDir(id), 'chunks.json'),
     materialBlob: id => join(paths.materialDir(id), 'original.bin'),
+    // Pictures pasted into a question (即时答疑), kept with its thread, not
+    // in the library (see host/pictures.js).
+    pictures: () => join(root, 'pictures'),
+    pictureDir: id => join(root, 'pictures', assertId(id, 'pic')),
+    picture: id => join(paths.pictureDir(id), 'meta.json'),
+    pictureBlob: id => join(paths.pictureDir(id), 'original.bin'),
     collection: kind => join(root, assertKind(kind)),
     item: (kind, id) => join(root, assertKind(kind), `${assertId(id, KIND_PREFIX[kind])}.json`),
     profile: () => join(root, 'profile.json'),

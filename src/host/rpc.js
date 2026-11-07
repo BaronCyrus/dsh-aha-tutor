@@ -4,12 +4,17 @@
 // Only messages written for users leave the host.
 
 import { LIMITS } from '../core/course-model.js'
+import { QUESTION_PICTURES } from '../core/pictures.js'
 import { TutorError } from './generate.js'
 import { publicCode, publicMessage } from './jobs.js'
+import { MAX_IMAGE_BYTES } from './materials.js'
 import { MAX_SPEECH_BYTES } from './speech.js'
 
 const ID = prefix => new RegExp(`^${prefix}_[a-z0-9]{6,40}$`, 'u')
-const IDS = { crs: ID('crs'), les: ID('les'), unt: ID('unt'), prj: ID('prj'), mat: ID('mat'), job: ID('job'), thd: ID('thd'), sht: ID('sht'), chs: ID('chs'), dck: ID('dck'), exm: ID('exm'), nte: ID('nte'), asd: ID('asd'), evd: ID('evd'), cpt: ID('cpt'), fld: ID('fld') }
+const IDS = { crs: ID('crs'), les: ID('les'), unt: ID('unt'), prj: ID('prj'), mat: ID('mat'), job: ID('job'), thd: ID('thd'), sht: ID('sht'), chs: ID('chs'), dck: ID('dck'), exm: ID('exm'), nte: ID('nte'), asd: ID('asd'), evd: ID('evd'), cpt: ID('cpt'), fld: ID('fld'), pic: ID('pic') }
+
+// A picture's base64, within the bytes a picture may have.
+const PICTURE_BASE64_MAX = Math.ceil((MAX_IMAGE_BYTES * 4) / 3) + 8
 
 function need(payload, key, prefix) {
   const value = payload?.[key]
@@ -110,7 +115,7 @@ function folderOf(payload, key = 'folderId') {
   return payload?.[key] === null || payload?.[key] === undefined ? null : need(payload, key, 'fld')
 }
 
-export function createRoutes({ courses, lessons, learner, studio, folders, projects, jobs, settings, tts, plugin, info, speechInput }) {
+export function createRoutes({ courses, lessons, learner, studio, folders, pictures, projects, jobs, settings, tts, plugin, info, speechInput }) {
   return {
     'app/info': () => info(),
 
@@ -226,7 +231,16 @@ export function createRoutes({ courses, lessons, learner, studio, folders, proje
       if (!GRADES.includes(payload.grade)) throw new TutorError('invalid', 'Invalid grade')
       return studio.reviewDeckCard({ id: need(payload, 'id', 'dck'), cardId: String(payload.cardId ?? '').slice(0, 12), grade: payload.grade })
     },
-    'assist/ask': payload => ({ job: studio.assist({ mode: payload.mode, request: payload.request, materialIds: idList(payload.materialIds, 'mat'), threadId: optional(payload, 'threadId', 'thd'), newThreadId: optional(payload, 'newThreadId', 'thd') }) }),
+    'assist/ask': payload => ({ job: studio.assist({ mode: payload.mode, request: payload.request, materialIds: idList(payload.materialIds, 'mat'), pictureIds: idList(payload.pictureIds, 'pic', QUESTION_PICTURES), threadId: optional(payload, 'threadId', 'thd'), newThreadId: optional(payload, 'newThreadId', 'thd') }) }),
+    // Pictures pasted into a question: base64 here only on hosts without the
+    // HTTP upload route.
+    'picture/upload': payload => {
+      if (typeof payload.base64 !== 'string' || payload.base64.length > PICTURE_BASE64_MAX) throw new TutorError('image-too-large', 'Pictures must be smaller than 10 MB')
+      return { job: pictures.upload({ name: typeof payload.name === 'string' ? payload.name : '', base64: payload.base64 }) }
+    },
+    'picture/discard': payload => pictures.discard(need(payload, 'id', 'pic')),
+    'picture/get': payload => pictures.list(idList(payload.ids, 'pic', QUESTION_PICTURES)),
+    'picture/keep': payload => ({ job: studio.keepPicture({ id: need(payload, 'id', 'pic') }) }),
     'short/make': payload => ({ job: studio.makeShort({ topic: payload.topic, url: typeof payload.url === 'string' && payload.url.trim() ? payload.url.trim().slice(0, 2000) : undefined, newId: optional(payload, 'newId', 'sht') }) }),
 
     'project/get': payload => projects.get({ courseId: need(payload, 'courseId', 'crs'), projectId: need(payload, 'projectId', 'prj') }),

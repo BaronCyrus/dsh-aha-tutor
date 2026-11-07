@@ -15,6 +15,7 @@ Model output, uploaded files and fetched web pages are all treated as untrusted 
 | Animations | Run in `<iframe sandbox="allow-scripts">` without same-origin access and with a CSP of `default-src 'none'`, so they cannot reach DSH, cookies or the network |
 | Web import | `http(s)` only; localhost, private, link-local and metadata addresses are refused, redirects are followed by hand and re-checked; 20 s timeout and size limits |
 | Uploads | 60 MB per file, 10 MB per image; parsed host-side with pdf.js (no eval), mammoth and JSZip; text capped at 2 M characters per material |
+| Pictures in questions | Taken only when their first bytes are PNG, JPEG, WebP or GIF (never SVG); stored under random ids with the question's thread, not under their names; served back by id only, as that type, with `nosniff` and `default-src 'none'`; deleted with the thread, or a day after they came when no question used them |
 | Project folders | Starter-file paths are validated (relative, no `..`, no Windows reserved names); existing files are never overwritten; reviews read only text files, skip symlinks and cap the total size |
 | Course packs | Imports are fully re-normalized, get fresh ids and are size-limited; nothing in a pack executes on import |
 
@@ -26,7 +27,7 @@ Model output, uploaded files and fetched web pages are all treated as untrusted 
 
 ## Browser ↔ host
 
-- The RPC channel `/aha-tutor` and the routes `/api/aha-tutor/upload` and `/api/aha-tutor/tts` are served by DSH's connection layer, which requires an authenticated browser session (owner). The handler additionally rejects non-owner peers.
+- The RPC channel `/aha-tutor` and the routes `/api/aha-tutor/upload`, `/api/aha-tutor/tts` and `/api/aha-tutor/picture` are served by DSH's connection layer, which requires an authenticated browser session (owner). The handler additionally rejects non-owner peers.
 - Every payload is validated (id formats, enums, sizes) before reaching a service; errors returned to the browser carry only messages written for users.
 
 ## Plugin updates

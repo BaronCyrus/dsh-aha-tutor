@@ -2,6 +2,19 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## Unreleased
+
+### Added
+
+- **Pictures in a question**: a screenshot or a photo of a problem can be pasted (⌘V / Ctrl+V) or dropped straight into **Ask anything**, up to four a question, and a question may be pictures alone: **Solve with me** solves the problem in them, **Explain a concept** explains what they show, **Show me visually** draws it out. Before, a picture had to be uploaded into the library through **Add material** first, and a question needed words. The pictures stay with the question's thread, not in the library, and are deleted with it; each one shown over the board opens large and has **Save to library**. A thread of pictures alone is named by the topic its board opens with, not by the question every such thread asks. Pictures pasted but never asked about are removed after a day. A copy that also carries text (cells from a spreadsheet) pastes its text.
+- **Whether the tutor sees the pictures**: when the "Course design & teaching" model can see images, the tutor is given the pictures themselves; when only "Grading & questions" can, the text in them is read as they arrive and the tutor gets that text; when neither can, each picture says the tutor cannot see it, with the setting that fixes it, a question of pictures alone is not sent, and one with typed words goes ahead on the words alone. Before, a picture no model could see was attached without a word and the tutor answered as if there were none.
+- **Files dropped on the home page**: the home composer takes dropped files and folders and pasted pictures, by mode. **Build a course** puts them into the library and attaches them; **Digest a long read** digests a dropped document at once, or asks which one when several came; the question modes keep pictures with the question and put other files into the library; **Two-minute short** takes none and says so.
+- **Delete an instant-help thread**: each thread in **History** has **⋯ → Delete**, after a confirmation; it stops an answer still being written to it and deletes its boards and pictures.
+
+### Changed
+
+- **A digest asks which document**: with several materials attached, **Digest a long read** digested the first and said nothing about the rest; it now asks which one to digest.
+
 ## 1.14.0 - 2026-11-06
 
 ### Added

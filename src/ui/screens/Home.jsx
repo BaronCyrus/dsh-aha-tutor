@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 
-import { Empty, ErrorLine, errorText, MaterialPicker, Progress, Spinner } from '../components.jsx'
+import { describeMaterial, Empty, ErrorLine, errorText, MaterialPicker, Modal, Progress, Spinner, useLibraryIntake } from '../components.jsx'
 import { useApp, useLoad, usePersistentState } from '../hooks.js'
 import { Icon } from '../icons.jsx'
+import { PictureChips, useFileDrop, usePictureUploads } from '../pictures.jsx'
 import { PlanItem, togglePlanItem } from '../PlanItem.jsx'
+import { LIMITS } from '../../core/course-model.js'
+import { isPictureFile } from '../../core/pictures.js'
 import { toDay } from '../../core/planner.js'
 
 const MODES = [
@@ -14,6 +17,9 @@ const MODES = [
   ['digest', 'modeDigest', '📚'],
   ['short', 'modeShort', '🎬'],
 ]
+// The modes that open 即时答疑: pictures dropped in them go with the
+// question, not into the library.
+const QUESTION_MODES = ['explain', 'solve', 'visualize']
 
 export function HomeScreen() {
   const { api, t, navigate, toast } = useApp()
@@ -27,6 +33,44 @@ export function HomeScreen() {
   const [picking, setPicking] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
+  const [notice, setNotice] = useState(null)
+  const [digestChoice, setDigestChoice] = useState(null)
+  const [leftOut, setLeftOut] = useState(0)
+  const pictures = usePictureUploads()
+  // Files dropped or pasted follow the mode they came in: into the library
+  // (a course, a digest, a question's documents), or with the question.
+  const attachedNow = useRef(materialIds)
+  attachedNow.current = materialIds
+  const droppedIn = useRef(mode)
+  function attach(added) {
+    const current = attachedNow.current
+    const fresh = added.map(item => item.id).filter(id => !current.includes(id))
+    const room = Math.max(0, LIMITS.materials - current.length)
+    setMaterialIds([...current, ...fresh.slice(0, room)])
+    setLeftOut(Math.max(0, fresh.length - room))
+  }
+  const intake = useLibraryIntake({
+    onAdded: added => {
+      if (droppedIn.current === 'digest' && added.length === 1) {
+        navigate('item', { kind: 'digest', materialId: added[0].id })
+        return
+      }
+      attach(added)
+      if (droppedIn.current === 'digest' && added.length > 1) setDigestChoice(added)
+    },
+  })
+  const drop = useFileDrop(({ files, folders }) => {
+    setNotice(null)
+    if (mode === 'short') {
+      setNotice('shortNoFiles')
+      return
+    }
+    droppedIn.current = mode
+    const asks = QUESTION_MODES.includes(mode)
+    const shots = asks ? files.filter(file => isPictureFile(file)) : []
+    if (shots.length) pictures.add(shots)
+    intake.take({ files: asks ? files.filter(file => !isPictureFile(file)) : files, folders })
+  })
   const courses = useLoad(() => api.call('course/list'), [])
   const plan = useLoad(() => api.call('plan/get', { today: toDay(new Date()) }), [])
   const samples = useLoad(() => api.call('samples/list'), [])
@@ -37,14 +81,24 @@ export function HomeScreen() {
     if (!materialIds.length) setWebDefault(!web)
   }
 
+  // Pictures pasted for a question go into the library when the mode is
+  // then changed to a course or a digest (存进资料库), as their materials.
+  async function keepPictures() {
+    const ids = []
+    for (const picture of pictures.ready) ids.push((await api.run('picture/keep', { id: picture.id })).material.id)
+    return ids
+  }
+
   async function start(quick = false) {
     const goal = text.trim()
     setError(null)
+    if (pictures.busy) return
     if (mode === 'course') {
-      if (!goal && !materialIds.length) return
+      if (!goal && !materialIds.length && !pictures.ready.length) return
       setBusy(true)
       try {
-        const { job } = await api.call('course/start', { goal, materialIds, quick, web })
+        const kept = await keepPictures()
+        const { job } = await api.call('course/start', { goal, materialIds: [...new Set([...materialIds, ...kept])].slice(0, LIMITS.materials), quick, web })
         navigate('craft', { jobId: job.id })
       } catch (failure) {
         setError(failure)
@@ -54,11 +108,33 @@ export function HomeScreen() {
       return
     }
     if (mode === 'digest') {
-      if (!materialIds.length) {
+      let ids = materialIds
+      if (pictures.ready.length) {
+        setBusy(true)
+        try {
+          ids = [...new Set([...materialIds, ...await keepPictures()])]
+        } catch (failure) {
+          setError(failure)
+          return
+        } finally {
+          setBusy(false)
+        }
+      }
+      if (!ids.length) {
         setPicking(true)
         return
       }
-      navigate('item', { kind: 'digest', materialId: materialIds[0] })
+      if (ids.length === 1) {
+        navigate('item', { kind: 'digest', materialId: ids[0] })
+        return
+      }
+      // A digest reads one document: the learner picks which.
+      try {
+        const library = await api.call('material/list')
+        setDigestChoice(ids.map(id => library.find(item => item.id === id)).filter(Boolean))
+      } catch (failure) {
+        setError(failure)
+      }
       return
     }
     if (mode === 'short') {
@@ -66,8 +142,8 @@ export function HomeScreen() {
       navigate('shorts', { draftTopic: isUrl ? '' : goal, draftUrl: isUrl ? goal : '', token: Date.now().toString(36) })
       return
     }
-    if (!goal) return
-    navigate('assist', { draftMode: mode, draftRequest: goal, draftMaterials: materialIds, token: Date.now().toString(36) })
+    if (!goal && !pictures.ready.length) return
+    navigate('assist', { draftMode: mode, draftRequest: goal, draftMaterials: materialIds, draftPictures: pictures.ready, token: Date.now().toString(36) })
   }
 
   const active = (courses.value ?? []).filter(course => course.status === 'ready' && !course.archived && course.progress.percent < 100).slice(0, 3)
@@ -86,9 +162,11 @@ export function HomeScreen() {
     <section className="aha-hero">
       <div className="aha-heroTitle">{t('heroTitle')}</div>
       <p className="aha-subtitle">{t('heroHint')}</p>
-      <div className="aha-composer">
-        <textarea value={text} placeholder={t('heroPlaceholder')} onChange={event => setText(event.currentTarget.value)}
+      <div className="aha-composer" {...drop.box}>
+        <textarea value={text} placeholder={t('heroPlaceholder')} onChange={event => setText(event.currentTarget.value)} onPaste={drop.paste}
           onKeyDown={event => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) start() }} />
+        <PictureChips uploads={pictures} />
+        {pictures.items.length && !QUESTION_MODES.includes(mode) ? <p className="aha-hint" role="status">{t(mode === 'short' ? 'shortNoFiles' : 'picturesToLibrary')}</p> : null}
         <div className="aha-spread">
           <div className="aha-row" style={{ gap: 6 }}>
             <button type="button" className="aha-btn" data-size="sm" onClick={() => setPicking(true)}><Icon name="plus" size={15} />{materialIds.length ? t('attached', { count: materialIds.length }) : t('attach')}</button>
@@ -96,10 +174,14 @@ export function HomeScreen() {
           </div>
           <div className="aha-row" style={{ gap: 6 }}>
             {mode === 'course' ? <button type="button" className="aha-btn" data-kind="ghost" disabled={busy} onClick={() => start(true)}>{t('quickStart')}</button> : null}
-            <button type="button" className="aha-btn" data-kind="primary" disabled={busy || (!text.trim() && !materialIds.length)} onClick={() => start(false)}>{busy ? <span className="aha-spinner" /> : null}{t('start')}</button>
+            <button type="button" className="aha-btn" data-kind="primary" disabled={busy || pictures.busy || (!text.trim() && !materialIds.length && !pictures.ready.length)} onClick={() => start(false)}>{busy ? <span className="aha-spinner" /> : null}{t('start')}</button>
           </div>
         </div>
+        {drop.box['data-over'] ? <div className="aha-dropCover" aria-hidden="true">{t(mode === 'short' ? 'shortNoFiles' : 'dropToAttach')}</div> : null}
       </div>
+      {intake.status}
+      {leftOut ? <p className="aha-hint" role="status">{t('pickLeftOut', { count: leftOut, max: LIMITS.materials })}</p> : null}
+      {notice ? <p className="aha-hint" role="status">{t(notice)}</p> : null}
       <div className="aha-row" style={{ gap: 8 }}>
         {MODES.map(([value, label, emoji]) => <button key={value} type="button" className="aha-chip" data-active={mode === value} onClick={() => setMode(value)}>{emoji} {t(label)}</button>)}
       </div>
@@ -150,5 +232,13 @@ export function HomeScreen() {
     </section> : null}
 
     {picking ? <MaterialPicker selected={materialIds} onChange={setMaterialIds} onClose={() => setPicking(false)} /> : null}
+    {digestChoice ? <Modal title={t('digestWhich')} onClose={() => setDigestChoice(null)} width={560}>
+      <p className="aha-hint">{t('digestWhichHint')}</p>
+      <div className="aha-col" style={{ gap: 6, maxHeight: 360, overflow: 'auto' }}>
+        {digestChoice.map(item => <button key={item.id} type="button" className="aha-option" onClick={() => { setDigestChoice(null); navigate('item', { kind: 'digest', materialId: item.id }) }}>
+          <b>{item.title}</b><small>{describeMaterial(item, t)}</small>
+        </button>)}
+      </div>
+    </Modal> : null}
   </div>
 }

@@ -715,13 +715,32 @@ const ASSIST_MODES = Object.freeze({
   visualize: 'Make the idea visible: lead with plots of formulas, charts of data, diagrams or an animation built from correct numbers, and narrate what to notice in each picture. 3–7 steps.',
 })
 
-export function assistPrompt({ mode, request, language, passages, history, learner }) {
+const plural = (count, one, many) => (count > 1 ? many : one)
+
+// What the learner's pictures are to the model: images given with the
+// message ({ shown }), the text read from them ({ texts }), or neither
+// ({ unseen }). Pictures are the learner's own material; what is read from
+// them is quoted, never followed as instructions.
+function picturesNote(pictures) {
+  if (!pictures) return ''
+  const { shown = 0, earlier = 0, texts = [], unseen = 0 } = pictures
+  const opening = 'Open the board by writing out what you read in them (for a problem, the problem itself as given), so a misreading shows; then, without waiting for any reply, teach it through to the end in this same board.'
+  return join(
+    shown ? `The learner attached ${shown} ${plural(shown, 'picture', 'pictures')}, given to you with this message${earlier ? ` (the last ${earlier} from earlier in this session)` : ''}. Read what they show carefully: the problem, its figure, its numbers. ${opening}` : '',
+    texts.length ? block('learner_pictures', texts.join('\n\n')) : '',
+    texts.length ? `That is the text read from ${plural(texts.length, 'a picture', 'pictures')} the learner attached; figures, graphs and drawings in them were not read. ${opening} If the question depends on a figure the text does not describe, say what you would need to know.` : '',
+    unseen ? `The learner also attached ${unseen} ${plural(unseen, 'picture that', 'pictures that')} could not be shown to you. Do not guess what ${plural(unseen, 'it shows', 'they show')}; teach from the request.` : '',
+  )
+}
+
+export function assistPrompt({ mode, request, language, passages, history, learner, pictures }) {
   return {
     system: join(PERSONA, BOARD_SPEC, STEP_SPEC, languageRule(language), JSONL_ONLY),
     user: join(
       learnerBlock(learner),
       block('earlier_in_this_session', history),
       block('source_passages', passages),
+      picturesNote(pictures),
       block('request', request),
       ASSIST_MODES[mode] ?? ASSIST_MODES.explain,
       'Start with a step whose ops begin with a {"t":"title"} op naming the topic.',

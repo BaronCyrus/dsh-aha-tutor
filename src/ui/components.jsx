@@ -291,31 +291,30 @@ function FolderReport({ reports, onClose }) {
   </div>
 }
 
-// Files and links into the library. A whole folder of the computer can be
-// picked or dropped too: it goes into a library folder of its name, once
-// the learner has seen what it holds (FolderPlan). folderId: where single
-// files and links go (folderName: its name). onAdded(materials, { folders })
-// names the library folders that uploaded computer folders went into.
-export function UploadZone({ onAdded, compact = false, folderId = null, folderName = '' }) {
+// Files and folders on their way into the library, from an upload box or a
+// composer they were dropped or pasted on: files go in at once; a folder of
+// the computer is planned and shown to the learner first (FolderPlan), then
+// goes into a library folder of its name. folderId: where single files go
+// (folderName: its name). onAdded(materials, { folders }) names the library
+// folders that uploaded computer folders went into. status: what to show
+// meanwhile (progress with Cancel, the folders' report, an error, the plan).
+export function useLibraryIntake({ folderId = null, folderName = '', onAdded }) {
   const { api, t } = useApp()
-  const input = useRef(null)
-  const folderInput = useRef(null)
-  const [url, setUrl] = useState('')
-  const [over, setOver] = useState(false)
   const [pending, setPending] = useState(null)
   const [reports, setReports] = useState(null)
   const [planError, setPlanError] = useState(null)
-  const { upload, uploadFolders, addUrl, busy, batch, error, progress, cancel } = useMaterialUpload()
-  const handle = async files => {
-    const added = await upload([...files], { folderId })
+  const uploads = useMaterialUpload()
+  const { upload, uploadFolders, busy, batch, error, progress, cancel } = uploads
+  const files = async list => {
+    const added = await upload([...list], { folderId })
     if (added.length) onAdded?.(added, { folders: [] })
   }
   // The library's folders and materials as they are now, to plan against.
-  async function plan(folders, loose = []) {
+  async function folders(entries, loose = []) {
     setPlanError(null)
     try {
       const [{ folders: existing }, materials] = await Promise.all([api.call('folder/list'), api.call('material/list')])
-      setPending({ plans: folders.map(entry => planFolder(entry, { folders: existing, materials, fallbackName: t('folderNewName') })), loose })
+      setPending({ plans: entries.map(entry => planFolder(entry, { folders: existing, materials, fallbackName: t('folderNewName') })), loose })
     } catch (failure) {
       setPlanError(failure)
     }
@@ -330,14 +329,42 @@ export function UploadZone({ onAdded, compact = false, folderId = null, folderNa
     if (all.length) setReports(all)
     const added = done.flatMap(report => report.added)
     if (loose.length && !done.some(report => report.cancelled)) added.push(...await upload(loose, { folderId }))
-    const folders = all.map(report => report.folder).filter(Boolean)
-    if (added.length || folders.length) onAdded?.(added, { folders })
+    const into = all.map(report => report.folder).filter(Boolean)
+    if (added.length || into.length) onAdded?.(added, { folders: into })
   }
+  // What was dropped (readDrop's loose files and folders()): the folders,
+  // when there are any, are planned with the loose files; else the files go.
+  const take = ({ files: loose = [], folders: read = async () => [] }) => read().then(found => (found.length ? folders(found, loose) : files(loose)), setPlanError)
+  const status = <>
+    {busy ? <div className="aha-row" style={{ gap: 8 }}>
+      <Spinner label={uploadLabel(t, busy, progress, batch)} />
+      {cancel ? <button type="button" className="aha-btn" data-size="sm" data-kind="ghost" onClick={cancel}>{t('cancel')}</button> : null}
+    </div> : null}
+    {reports && !busy ? <FolderReport reports={reports} onClose={() => setReports(null)} /> : null}
+    <ErrorLine error={error ?? planError} />
+    {pending ? <FolderPlan pending={pending} folderName={folderId ? folderName : ''} onStart={start} onCancel={() => setPending(null)} /> : null}
+  </>
+  return { files, folders, take, status, busy, addUrl: uploads.addUrl }
+}
+
+// Files and links into the library. A whole folder of the computer can be
+// picked or dropped too: it goes into a library folder of its name, once
+// the learner has seen what it holds (FolderPlan). folderId: where single
+// files and links go (folderName: its name). onAdded(materials, { folders })
+// names the library folders that uploaded computer folders went into.
+export function UploadZone({ onAdded, compact = false, folderId = null, folderName = '' }) {
+  const { t } = useApp()
+  const input = useRef(null)
+  const folderInput = useRef(null)
+  const [url, setUrl] = useState('')
+  const [over, setOver] = useState(false)
+  const intake = useLibraryIntake({ folderId, folderName, onAdded })
+  const busy = intake.busy
   const drop = event => {
     event.preventDefault()
     setOver(false)
     const dropped = readDrop(event.dataTransfer)
-    dropped.folders().then(folders => (folders.length ? plan(folders, dropped.loose) : handle(dropped.loose)), setPlanError)
+    intake.take({ files: dropped.loose, folders: dropped.folders })
   }
   return <div className="aha-col">
     <div className="aha-empty" style={{ padding: compact ? 14 : 24, borderColor: over ? 'var(--aha-brand)' : undefined, cursor: 'pointer' }}
@@ -349,13 +376,13 @@ export function UploadZone({ onAdded, compact = false, folderId = null, folderNa
       <div className="aha-row" style={{ justifyContent: 'center' }}>
         <button type="button" className="aha-btn" data-kind="ghost" data-size="sm" disabled={Boolean(busy)} onClick={event => { event.stopPropagation(); folderInput.current?.click() }}><Icon name="folder" size={15} />{t('uploadFolder')}</button>
       </div>
-      <input ref={input} type="file" multiple accept={UPLOAD_ACCEPT} hidden onChange={event => { handle(event.currentTarget.files); event.currentTarget.value = '' }} />
-      <input ref={folderInput} type="file" multiple hidden webkitdirectory="" onChange={event => { const files = [...event.currentTarget.files]; event.currentTarget.value = ''; if (files.length) plan(foldersFromInput(files)) }} />
+      <input ref={input} type="file" multiple accept={UPLOAD_ACCEPT} hidden onChange={event => { intake.files(event.currentTarget.files); event.currentTarget.value = '' }} />
+      <input ref={folderInput} type="file" multiple hidden webkitdirectory="" onChange={event => { const files = [...event.currentTarget.files]; event.currentTarget.value = ''; if (files.length) intake.folders(foldersFromInput(files)) }} />
     </div>
     <form className="aha-row" onSubmit={async event => {
       event.preventDefault()
       if (!url.trim()) return
-      const added = await addUrl(url.trim(), { folderId })
+      const added = await intake.addUrl(url.trim(), { folderId })
       if (added.length) {
         setUrl('')
         onAdded?.(added, { folders: [] })
@@ -364,13 +391,7 @@ export function UploadZone({ onAdded, compact = false, folderId = null, folderNa
       <input className="aha-input" style={{ flex: 1 }} value={url} placeholder={t('urlPlaceholder')} onChange={event => setUrl(event.currentTarget.value)} />
       <button type="submit" className="aha-btn" disabled={!url.trim() || Boolean(busy)}><Icon name="link" />{t('addUrl')}</button>
     </form>
-    {busy ? <div className="aha-row" style={{ gap: 8 }}>
-      <Spinner label={uploadLabel(t, busy, progress, batch)} />
-      {cancel ? <button type="button" className="aha-btn" data-size="sm" data-kind="ghost" onClick={cancel}>{t('cancel')}</button> : null}
-    </div> : null}
-    {reports && !busy ? <FolderReport reports={reports} onClose={() => setReports(null)} /> : null}
-    <ErrorLine error={error ?? planError} />
-    {pending ? <FolderPlan pending={pending} folderName={folderId ? folderName : ''} onStart={start} onCancel={() => setPending(null)} /> : null}
+    {intake.status}
   </div>
 }
 

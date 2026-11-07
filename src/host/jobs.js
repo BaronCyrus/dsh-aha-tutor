@@ -170,6 +170,19 @@ export function createJobs({ logger, now = Date.now } = {}) {
   return Object.freeze({ start, get, wait, cancel, cancelKey, cancelWhere, running, ended, dispose })
 }
 
+// Waits for `work`, at most `ms`. The timer is an ordinary one, so the wait
+// keeps the process alive while it lasts (on an unref'd timer, a process
+// with nothing else to run would never see it end), and it is cleared as
+// soon as the work ends first.
+export async function waitAtMost(work, ms) {
+  let timer
+  try {
+    await Promise.race([work, new Promise(resolve => { timer = setTimeout(resolve, ms) })])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 // Only messages written for users cross to the browser.
 export function publicMessage(error) {
   if (error?.userMessage) return String(error.userMessage)

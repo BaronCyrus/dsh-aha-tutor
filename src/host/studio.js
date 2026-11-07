@@ -4,13 +4,16 @@
 
 import { orderOptions } from '../core/choice-order.js'
 import { LIMITS, materialQuizRange, materialsTitle, normalizeCards, normalizeCheatsheet, normalizePractice, partCardRange, shareRange, takeEvenly, text, thinEvenly, uniqueCards } from '../core/course-model.js'
-import { assertId, newId } from '../core/ids.js'
+import { assertId, isId, newId } from '../core/ids.js'
+import { pictureAsk, QUESTION_PICTURES } from '../core/pictures.js'
 import { createCard, review } from '../core/srs.js'
 import { checkRange, checkSheet, readPages, scrubCard, scrubDeep, scrubItem, scrubPages, scrubStep, shownBoard, shownSheet } from '../core/citations.js'
 import { buildIndex, documentParts, formatPassages, materialParts, passageRange, search, snippetOf, spreadPassages } from '../core/retrieval.js'
 import { allChunks, materialImages, materialPassages, materialTopics, outlineText, readMaterials, readProfile } from './context.js'
 import { fieldCounter, generateJson, generateSteps, generateText, TutorError } from './generate.js'
 import { createFolders } from './folders.js'
+import { waitAtMost } from './jobs.js'
+import { createPictures, shownPicture } from './pictures.js'
 import { ingestFile, ingestUrl, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from './materials.js'
 import { assistPrompt, cheatsheetPrompt, detectLanguage, digestPartPrompt, digestPrompt, flashcardsPrompt, materialBriefPrompt, quizPrompt, shortPrompt, summaryPrompt } from './prompts.js'
 import { createRecognizer } from './recognize.js'
@@ -18,6 +21,8 @@ import { cleanLayout } from './lessons.js'
 
 const ASSIST_MODES = ['explain', 'solve', 'visualize']
 const MAX_TURNS = 30
+// How long deleting a thread waits for an answer still being written to it.
+const REMOVE_WAIT_MS = 5000
 // A document up to this size is digested in one call; a longer one is read
 // part by part (about 20,000 characters each, at most 24 parts) first.
 const DIGEST_SINGLE_CHARS = 24_000
@@ -34,7 +39,7 @@ const SCOPE_OUTLINE_CHARS = 12_000
 // A list joined with "; ", cut after its last whole entry within max.
 const clipList = (value, max) => (value.length <= max ? value : `${value.slice(0, value.lastIndexOf('; ', max) > 0 ? value.lastIndexOf('; ', max) : max)}…`)
 
-export function createStudio({ store, llm, jobs, now = () => new Date(), uiLanguage = () => 'zh-CN', folders = createFolders({ store, now }) }) {
+export function createStudio({ store, llm, jobs, now = () => new Date(), uiLanguage = () => 'zh-CN', folders = createFolders({ store, now }), pictures = createPictures({ store, llm, jobs, now }), removeWaitMs = REMOVE_WAIT_MS }) {
   const stamp = () => now().toISOString()
 
   // ── materials ──────────────────────────────────────────────────────────────
@@ -450,7 +455,21 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
 
   async function removeItem({ kind, id }) {
     const path = store.paths.item(kind, id)
-    await store.removeDir(path)
+    if (kind !== 'assist') {
+      await store.removeDir(path)
+      return { removed: id }
+    }
+    // An answer still being written (a question, 「讲这题」) would save the
+    // thread again: it is stopped first, and whatever it still writes is
+    // removed once it has ended. The thread's pictures go with it.
+    const ended = jobs.cancelWhere(meta => meta.threadId === id)
+    const clear = async () => {
+      await store.removeDir(path)
+      await pictures.removeThread(id)
+    }
+    await waitAtMost(ended, removeWaitMs)
+    await clear()
+    ended.then(clear).catch(() => undefined)
     return { removed: id }
   }
 
@@ -477,26 +496,55 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
   // ── instant help on the board ────────────────────────────────────────────
 
   // newThreadId lets a caller (the teacher preset's tool) know the thread id
-  // before the board is finished.
-  function assist({ mode = 'explain', request, materialIds = [], threadId, newThreadId }) {
-    const ask = text(request, 4000)
-    if (!ask) throw new TutorError('empty-question', 'Type your question')
+  // before the board is finished. pictureIds: pictures pasted into this
+  // question (host/pictures.js); with them the question may have no words,
+  // and then asks what pictureAsk says for the mode.
+  function assist({ mode = 'explain', request, materialIds = [], pictureIds = [], threadId, newThreadId }) {
+    const typed = text(request, 4000)
+    const pictureList = [...new Set(Array.isArray(pictureIds) ? pictureIds : [])].filter(id => isId(id, 'pic')).slice(0, QUESTION_PICTURES)
+    if (!typed && !pictureList.length) throw new TutorError('empty-question', 'Type your question')
     const chosen = ASSIST_MODES.includes(mode) ? mode : 'explain'
-    const fresh = /^thd_[a-z0-9]{6,40}$/u.test(String(newThreadId)) ? newThreadId : null
+    const fresh = isId(newThreadId, 'thd') ? newThreadId : null
     return jobs.start('assist/turn', async api => {
-      let thread = threadId ? await store.readJson(store.paths.item('assist', assertId(threadId, 'thd')), null) : null
+      const thread = threadId ? await store.readJson(store.paths.item('assist', assertId(threadId, 'thd')), null) : null
+      const id = thread?.id ?? fresh ?? newId('thd')
       const ids = [...new Set([...(thread?.materialIds ?? []), ...(Array.isArray(materialIds) ? materialIds : [])])].filter(id => /^mat_[a-z0-9]+$/u.test(String(id))).slice(0, LIMITS.materials)
       const materials = await readMaterials(store, ids)
-      const language = thread?.language ?? detectLanguage(ask, uiLanguage())
+      const language = thread?.language ?? detectLanguage(typed, uiLanguage())
+      const ask = typed || pictureAsk(chosen, language)
+      // This question's pictures, then the latest earlier ones of the
+      // thread, as many as one call shows.
+      const own = await pictures.forQuestion(pictureList, id)
+      const earlierIds = [...new Set((thread?.turns ?? []).flatMap(turn => (turn.pictures ?? []).map(picture => picture.id)).reverse())].filter(pictureId => !pictureList.includes(pictureId))
+      const earlier = (await pictures.existing(earlierIds.slice(0, QUESTION_PICTURES))).slice(0, QUESTION_PICTURES - own.length)
+      const { way, views } = await pictures.prepare([...own, ...earlier], { signal: api.signal })
+      const ownViews = views.slice(0, own.length)
+      // Pictures alone, and the teacher would take in none of them.
+      if (!typed && ownViews.every(view => view.seen === 'none')) {
+        if (way === 'none') throw new TutorError('pictures-unseen', 'No model chosen in Aha settings can see pictures')
+        const failed = ownViews.map(view => view.meta.failed).find(code => code && code !== 'failed')
+        throw new TutorError(failed ?? 'pictures-unread', 'No text could be read from the pictures')
+      }
       const profile = await readProfile(store)
-      const history = (thread?.turns ?? []).slice(-4).map(turn => `Learner (${turn.mode}): ${turn.request}\nTutor board: ${(shownBoard(turn.board)?.steps ?? []).slice(0, 6).map(step => step.say).join(' ')}`).join('\n\n')
-      const images = await assistImages(ids)
-      const found = materialPassages(materials, { query: ask, maxChars: 8000 })
+      const history = (thread?.turns ?? []).slice(-4).map(turn => `Learner (${turn.mode}): ${turn.request}${turn.pictures?.length ? ` [with ${turn.pictures.length} picture(s)]` : ''}\nTutor board: ${(shownBoard(turn.board)?.steps ?? []).slice(0, 6).map(step => step.say).join(' ')}`).join('\n\n')
+      const pictureImages = await pictures.images(views)
+      const images = [...pictureImages, ...await assistImages(ids)].slice(0, QUESTION_PICTURES)
+      const texts = views.map((view, index) => (view.seen === 'text' ? `Picture ${index + 1} (${index < own.length ? 'this question' : 'earlier in this session'}):\n${view.text}` : null)).filter(Boolean)
+      const seenEarlier = views.slice(own.length).filter(view => view.seen === 'image').length
+      const found = materialPassages(materials, { query: [typed, ...views.map(view => view.text)].filter(Boolean).join('\n') || ask, maxChars: 8000 })
       const allowed = readPages(found.passages)
       const written = await generateSteps(llm, {
         purpose: 'teach',
         effort: 'lowest',
-        prompt: assistPrompt({ mode: chosen, request: ask, language, passages: found.text, history, learner: { profile } }),
+        prompt: assistPrompt({
+          mode: chosen,
+          request: ask,
+          language,
+          passages: found.text,
+          history,
+          learner: { profile },
+          pictures: views.length ? { shown: pictureImages.length, earlier: Math.min(seenEarlier, pictureImages.length), texts, unseen: ownViews.filter(view => view.seen === 'none').length } : undefined,
+        }),
         images: images.length ? images : undefined,
         maxTokens: 10000,
         signal: api.signal,
@@ -505,19 +553,60 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
         clean: step => scrubStep(step, allowed),
       })
       const board = { ...written, pagesChecked: true }
-      const turn = { mode: chosen, request: ask, board, at: stamp() }
-      const id = thread?.id ?? fresh ?? newId('thd')
+      // How the teacher took in each picture: 'image', 'text' or 'none'.
+      const turn = { mode: chosen, request: ask, ...(own.length ? { pictures: ownViews.map(view => ({ id: view.meta.id, seen: view.seen })) } : {}), board, at: stamp() }
+      let dropped = false
       // Append under the store's lock: an earlier answer may finish in the
       // background while this one was being written.
+      // A thread is named by its first question; one of pictures alone, by
+      // the topic its board opens with (every such question asks the same).
+      const name = board.title || (typed ? ask : boardHeading(board) || ask)
       const saved = await store.updateJson(store.paths.item('assist', id), null, current => {
-        const next = current ?? { id, title: board.title || ask.slice(0, 60), language, materialIds: [], turns: [], createdAt: stamp() }
-        next.turns = [...(next.turns ?? []), turn].slice(-MAX_TURNS)
+        const next = current ?? { id, title: name.slice(0, 60), language, materialIds: [], turns: [], createdAt: stamp() }
+        const turns = [...(next.turns ?? []), turn]
+        dropped = turns.slice(0, -MAX_TURNS).some(old => old.pictures?.length)
+        next.turns = turns.slice(-MAX_TURNS)
         next.materialIds = [...new Set([...(next.materialIds ?? []), ...ids])].slice(0, LIMITS.materials)
         next.updatedAt = stamp()
         return next
       })
-      return { threadId: saved.id, turn: saved.turns.length - 1, board }
-    }, { meta: { threadId: threadId ?? fresh, title: ask.slice(0, 60) } })
+      await pictures.claim(pictureList, saved.id)
+      // The oldest questions of a long thread are dropped, and their pictures with them.
+      if (dropped) await pictures.removeUnused(saved.id, new Set(saved.turns.flatMap(kept => (kept.pictures ?? []).map(picture => picture.id))))
+      return { threadId: saved.id, turn: saved.turns.length - 1, board, pictures: turn.pictures ?? [] }
+    }, { meta: { threadId: threadId ?? fresh, title: (typed || pictureAsk(chosen, uiLanguage())).slice(0, 60) } })
+  }
+
+  // 存进资料库: a copy of a question's picture becomes a library material,
+  // its text read and described like any upload. The picture stays with its
+  // thread, and keeping it again gives the same material while that exists.
+  function keepPicture({ id }) {
+    return jobs.start('picture/keep', async api => {
+      const meta = await pictures.get(id)
+      if (!meta) throw new TutorError('picture-missing', 'This picture is gone')
+      const kept = meta.materialId ? await store.readJson(store.paths.material(meta.materialId), null) : null
+      if (kept) return { material: kept, picture: shownPicture(meta) }
+      const data = await store.readBlob(store.paths.pictureBlob(id))
+      if (!data) throw new TutorError('picture-missing', 'This picture is gone')
+      api.progress(0, 2, 'reading')
+      const name = pictureFileName(meta)
+      const result = await ingestFile({ name, bytes: data, signal: api.signal, recognize: recognizer(api) })
+      api.progress(1, 2, 'summarizing')
+      const title = await pictureTitle(meta)
+      const material = await saveMaterial(result, { bytes: data, signal: api.signal, extra: { fileName: name, fileSize: data.length, folderId: null, ...(title ? { title } : {}) } })
+      const picture = await pictures.remember(id, { materialId: material.id })
+      return { material, picture: shownPicture(picture ?? meta) }
+    }, { key: `keep:${id}` })
+  }
+
+  // A kept picture is named after its thread ("…", or "… (2)" for the
+  // second picture of the thread); one not asked about yet keeps its file name.
+  async function pictureTitle(meta) {
+    const thread = meta.threadId ? await store.readJson(store.paths.item('assist', meta.threadId), null) : null
+    if (!thread?.title) return null
+    const all = [...new Set((thread.turns ?? []).flatMap(turn => (turn.pictures ?? []).map(picture => picture.id)))]
+    const place = all.indexOf(meta.id)
+    return text(all.length > 1 && place >= 0 ? `${thread.title} (${place + 1})` : thread.title, 160)
   }
 
   // Images are offered to vision-capable models only.
@@ -562,8 +651,26 @@ export function createStudio({ store, llm, jobs, now = () => new Date(), uiLangu
   return Object.freeze({
     upload, addUrl, listMaterials, searchMaterials, getMaterial, renameMaterial, removeMaterial, digest,
     makeSheet, makeTopicSheet, makeNotes, makeCards, makeQuiz, listItems, getItem, removeItem, saveStandaloneLayout, reviewDeckCard,
-    assist, assistImages, makeShort,
+    assist, assistImages, keepPicture, makeShort,
   })
+}
+
+// The topic a board opens with: the text of its first title.
+function boardHeading(board) {
+  for (const step of board?.steps ?? []) {
+    const heading = (step.ops ?? []).find(op => op.t === 'title')?.text
+    if (heading) return text(heading, 60)
+  }
+  return ''
+}
+
+// The name a picture is read under when it is kept: its own, ending in the
+// extension of its format, so the library reads it as a picture.
+const PICTURE_EXTENSION = Object.freeze({ 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' })
+function pictureFileName(meta) {
+  const extension = PICTURE_EXTENSION[meta.mime] ?? 'png'
+  const base = String(meta.name ?? '').replace(/\.[^.]*$/u, '') || 'picture'
+  return `${base}.${extension}`
 }
 
 // An item as it is shown: a board written before pages were checked shows

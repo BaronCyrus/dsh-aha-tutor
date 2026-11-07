@@ -27,6 +27,7 @@ import { formatPassages, spreadPassages } from '../core/retrieval.js'
 import { mentionedPages, readPages, scrubBlueprint, scrubDeep, scrubItem } from '../core/citations.js'
 import { COURSE_MATERIALS, emptyProgress, materialImages, materialPassages, materialsSummary, readMaterials, readProfile, readProgress, sourcing } from './context.js'
 import { generateJson, streamCounter, TutorError } from './generate.js'
+import { waitAtMost } from './jobs.js'
 import { createMistakes } from './mistakes.js'
 import { blueprintPrompt, detectLanguage, materialsRevisePrompt, practicePrompt, projectsPrompt, questionnairePrompt, revisePrompt, reworkPrompt } from './prompts.js'
 
@@ -37,19 +38,6 @@ const REMOVE_WAIT_MS = 5000
 // A start no process here knows of is given up after this long: writing the
 // questions, web research included, takes a few minutes at most.
 const STALE_START_MS = 15 * 60_000
-// Waits for `work`, at most `ms`. The timer is an ordinary one, so the wait
-// keeps the process alive while it lasts (on an unref'd timer, a process
-// with nothing else to run would never see it end), and it is cleared as
-// soon as the work ends first.
-async function waitAtMost(work, ms) {
-  let timer
-  try {
-    await Promise.race([work, new Promise(resolve => { timer = setTimeout(resolve, ms) })])
-  } finally {
-    clearTimeout(timer)
-  }
-}
-
 // The blueprint streams: count the lessons written so far (there is no total
 // yet) and, at each new lesson, repair the text so far into an outline the
 // learner can watch grow.

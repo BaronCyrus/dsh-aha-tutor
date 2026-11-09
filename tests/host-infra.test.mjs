@@ -111,6 +111,7 @@ test('TTS splits long text, calls each provider correctly and caches audio', asy
     if (host === 'openspeech.bytedance.com') return Response.json({ code: 3000, data: Buffer.from('VOLC').toString('base64') })
     if (host === 'api.minimaxi.com') return Response.json({ base_resp: { status_code: 0 }, data: { audio: Buffer.from('MINI').toString('hex') } })
     if (host.endsWith('.tts.speech.microsoft.com')) return new Response(Buffer.from('AZURE'), { status: 200 })
+    if (host === 'token-plan.cn-beijing.maas.aliyuncs.com') return Response.json({ output: { audio: { data: Buffer.from('TOKENPLAN').toString('base64') } } })
     if (String(url).includes('bad-key')) return new Response('', { status: 401 })
     return new Response(Buffer.from('OPENAI'), { status: 200 })
   }
@@ -135,12 +136,57 @@ test('TTS splits long text, calls each provider correctly and caches audio', asy
     assert.match(calls[2].url, /GroupId=g1/)
     assert.equal((await tts.synthesize({ provider: 'azure', config: { region: 'eastasia' }, text: '<b>&' })).audio.toString(), 'AZURE')
     assert.match(calls[3].init.body, /&lt;b&gt;&amp;/)
+    const tokenPlan = await tts.synthesize({ provider: 'aliyun-tokenplan', config: {}, text: '你好' })
+    assert.equal(tokenPlan.audio.toString(), 'TOKENPLAN')
+    assert.equal(calls[4].url, 'https://token-plan.cn-beijing.maas.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer')
+    assert.equal(calls[4].init.headers.Authorization, 'Bearer sk-test')
+    const tpBody = JSON.parse(calls[4].init.body)
+    assert.equal(tpBody.model, 'qwen-audio-3.0-tts-plus')
+    assert.deepEqual(tpBody.input, { text: '你好', voice: 'longanlingxin', format: 'mp3', sample_rate: 24000, rate: 1 })
     await assert.rejects(tts.synthesize({ provider: 'openai', config: { baseUrl: 'https://bad-key.example/v1' }, text: 'x' }), error => error.code === 'auth')
     await assert.rejects(tts.synthesize({ provider: 'volcengine', config: {}, text: 'x' }), /App ID/)
     const noKey = createTts({ cacheDir: null, fetchImpl, getSecret: async () => undefined })
     await assert.rejects(noKey.synthesize({ provider: 'azure', text: 'x' }), /No key/)
   } finally {
     await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('Token Plan audio comes as a link, fetched over https from Alibaba Cloud only and without the key', async () => {
+  let link = ''
+  const calls = []
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url: String(url), init })
+    if (String(url).endsWith('/SpeechSynthesizer')) return Response.json({ output: { audio: { data: '', url: link } } })
+    return new Response(Buffer.from('LINKED'), { status: 200 })
+  }
+  const tts = createTts({ cacheDir: null, fetchImpl, getSecret: async () => 'sk-test' })
+  // The documented non-streaming answer: no inline audio, an http link to OSS.
+  link = 'http://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/a.mp3?Expires=1&Signature=x'
+  assert.equal((await tts.synthesize({ provider: 'aliyun-tokenplan', config: {}, text: '你好', rate: 0.2 })).audio.toString(), 'LINKED')
+  assert.equal(JSON.parse(calls[0].init.body).input.rate, 0.5)
+  assert.equal(calls[1].url, 'https://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/a.mp3?Expires=1&Signature=x')
+  assert.equal(calls[1].init.method, 'GET')
+  assert.equal(calls[1].init.headers, undefined, 'the key stays with Token Plan')
+  assert.equal(calls[1].init.redirect, 'error')
+  const refused = [
+    'http://169.254.169.254/latest/meta-data/',
+    'https://192.168.1.1/a.mp3',
+    'http://localhost:9222/json',
+    'https://example.com/a.mp3',
+    'https://evilaliyuncs.com/a.mp3',
+    'https://aliyuncs.com.example.com/a.mp3',
+    'http://oss.aliyuncs.com:8080/a.mp3',
+    'https://user:pw@oss.aliyuncs.com/a.mp3',
+    'ftp://oss.aliyuncs.com/a.mp3',
+    'not a link',
+    '',
+  ]
+  for (const bad of refused) {
+    link = bad
+    calls.length = 0
+    await assert.rejects(tts.synthesize({ provider: 'aliyun-tokenplan', config: {}, text: '你好' }), error => error.code === 'response', bad)
+    assert.equal(calls.length, 1, `${bad} is not fetched`)
   }
 })
 

@@ -62,7 +62,7 @@ For a single question, use "Explain a concept", "Solve with me" or "Show me visu
 | Option | Notes |
 | --- | --- |
 | **System voice (default, free)** | macOS / Windows voices, selectable in settings; you are told when no voice matches the course language |
-| **Cloud voice (optional)** | OpenAI-compatible APIs (including SiliconFlow and others), Volcengine (Doubao), MiniMax and Azure Speech. Keys live in DSH's credential store, are used host-side only and never reach the browser; synthesized audio is cached locally so replays cost nothing |
+| **Cloud voice (optional)** | OpenAI-compatible APIs (including SiliconFlow and others), Volcengine (Doubao), MiniMax, Azure Speech and Alibaba Cloud Token Plan. Keys live in DSH's credential store, are used host-side only and never reach the browser; synthesized audio is cached locally so replays cost nothing. Alibaba Cloud allows Token Plan only for interactive use inside AI coding and agent tools, and calls outside that scope can get the subscription suspended or the key banned; read its [terms](https://help.aliyun.com/zh/model-studio/token-plan-personal-overview) (in Chinese) before using it |
 
 Only cloud voices can be recorded into exported videos; with a system voice the video has captions and no sound. Board animations appear in videos as a still frame.
 

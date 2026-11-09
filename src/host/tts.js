@@ -11,12 +11,13 @@ import { join } from 'node:path'
 import { estimateSpeechMs } from '../core/board-script.js'
 import { writeFileAtomic } from './store.js'
 
-export const TTS_PROVIDERS = Object.freeze(['openai', 'volcengine', 'minimax', 'azure'])
+export const TTS_PROVIDERS = Object.freeze(['openai', 'volcengine', 'minimax', 'azure', 'aliyun-tokenplan'])
 // One request ends within totalMs. A service that sends nothing for quietMs
 // has stalled, and a lesson should not wait out totalMs for it.
 export const TTS_LIMITS = Object.freeze({ totalMs: 45_000, quietMs: 10_000 })
 const MAX_AUDIO_BYTES = 12 * 1024 * 1024
-// Volcengine and MiniMax send the audio inside JSON, as base64 or hex.
+// Volcengine and MiniMax send the audio inside JSON, as base64 or hex; Token
+// Plan's JSON carries a link to it.
 const MAX_JSON_BYTES = 3 * MAX_AUDIO_BYTES
 const CACHE_MAX_BYTES = 300 * 1024 * 1024
 
@@ -54,6 +55,17 @@ export const PROVIDER_FIELDS = Object.freeze({
   azure: [
     { key: 'region', default: 'eastasia' },
     { key: 'voice', default: 'zh-CN-XiaoxiaoNeural' },
+    { key: 'apiKey', secret: true },
+  ],
+  // Alibaba Cloud Model Studio's Token Plan, whose one speech model is
+  // qwen-audio-3.0-tts-plus. Its endpoint is not OpenAI-compatible: it takes a
+  // DashScope body (model, input.text / voice / format / sample_rate / rate).
+  // A voice works with its own model only; Plus has longanlingxin (female)
+  // and longanlufeng (male).
+  'aliyun-tokenplan': [
+    { key: 'baseUrl', default: 'https://token-plan.cn-beijing.maas.aliyuncs.com' },
+    { key: 'model', default: 'qwen-audio-3.0-tts-plus' },
+    { key: 'voice', default: 'longanlingxin' },
     { key: 'apiKey', secret: true },
   ],
 })
@@ -209,6 +221,26 @@ function xmlEscape(value) {
   return String(value).replace(/[<>&'"]/gu, char => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' })[char])
 }
 
+// A non-streaming Token Plan call answers with a link to the audio, kept for
+// a day on Alibaba Cloud storage. The link comes from the reply, so it is
+// fetched only from Alibaba Cloud, only over https (the documented links say
+// http) and without the key.
+const ALIYUN_HOST = /(^|\.)aliyuncs\.com$/u
+
+function audioLink(value) {
+  let url
+  try {
+    url = new URL(String(value))
+  } catch {
+    throw new TtsError('response', 'Token Plan returned an unreadable audio link')
+  }
+  if (url.protocol === 'http:' && !url.port) url.protocol = 'https:'
+  if (url.protocol !== 'https:' || url.port || url.username || url.password || !ALIYUN_HOST.test(url.hostname)) {
+    throw new TtsError('response', 'Token Plan returned an audio link outside Alibaba Cloud')
+  }
+  return url
+}
+
 // Each synthesizer sends its request with send(url, init, maxBytes), which
 // bounds it in time and size and returns the body of a successful response.
 const synthesizers = {
@@ -286,10 +318,37 @@ const synthesizers = {
       body: ssml,
     }, MAX_AUDIO_BYTES)
   },
+
+  // The audio comes as a link (see audioLink), or inline as base64 should the
+  // service send it that way.
+  'aliyun-tokenplan': async ({ text, config, secret, rate, send }) => {
+    const base = checkEndpoint(config.baseUrl || 'https://token-plan.cn-beijing.maas.aliyuncs.com')
+    const url = new URL('/api/v1/services/audio/tts/SpeechSynthesizer', base)
+    const body = parseJson(await send(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: config.model || 'qwen-audio-3.0-tts-plus',
+        input: { text, voice: config.voice || 'longanlingxin', format: 'mp3', sample_rate: 24000, rate: rateNumber(rate) },
+      }),
+    }, MAX_JSON_BYTES), 'Token Plan')
+    const audio = body?.output?.audio ?? {}
+    if (typeof audio.data === 'string' && audio.data !== '') {
+      const bytes = Buffer.from(audio.data, 'base64')
+      if (bytes.length > MAX_AUDIO_BYTES) throw new TtsError('too-large', 'TTS response is too large')
+      return bytes
+    }
+    if (typeof audio.url === 'string' && audio.url !== '') return send(audioLink(audio.url), { method: 'GET' }, MAX_AUDIO_BYTES)
+    throw new TtsError('response', 'Token Plan returned no audio')
+  },
 }
 
 // Request size limits in "units" (ASCII = 1, other = 3, roughly UTF-8 bytes).
-const CHUNK_UNITS = Object.freeze({ openai: 3800, volcengine: 900, minimax: 9000, azure: 6000 })
+// Alibaba documents no limit for Token Plan's speech model. Its non-streaming
+// call answers only once the whole text is synthesized, so long text goes in
+// pieces of about 300 Chinese characters, like Volcengine's, to keep each
+// wait short.
+const CHUNK_UNITS = Object.freeze({ openai: 3800, volcengine: 900, minimax: 9000, azure: 6000, 'aliyun-tokenplan': 900 })
 
 export function createTts({ cacheDir, fetchImpl = globalThis.fetch, getSecret, limits = TTS_LIMITS }) {
   if (typeof getSecret !== 'function') throw new TypeError('createTts needs getSecret')

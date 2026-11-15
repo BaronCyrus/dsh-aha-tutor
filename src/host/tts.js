@@ -1,8 +1,10 @@
 // Cloud text-to-speech, host-side only: keys never reach the browser. Each
-// provider turns one narration into MP3 bytes. Long text is split at sentence
-// boundaries to respect per-request limits, and MP3 parts are concatenated
-// (frame streams join cleanly). Synthesized audio is cached on disk by a hash
-// of everything that affects the sound, so replaying a lesson costs nothing.
+// provider turns one narration into MP3 bytes, except DeepSeek, which speaks
+// PCM and gets a WAV container host-side. Long text is split at sentence
+// boundaries to respect per-request limits, and the parts are concatenated
+// (MP3 frame streams and raw PCM both join cleanly). Synthesized audio is
+// cached on disk by a hash of everything that affects the sound, so replaying
+// a lesson costs nothing.
 
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, stat, unlink } from 'node:fs/promises'
@@ -11,7 +13,10 @@ import { join } from 'node:path'
 import { estimateSpeechMs } from '../core/board-script.js'
 import { writeFileAtomic } from './store.js'
 
-export const TTS_PROVIDERS = Object.freeze(['openai', 'volcengine', 'minimax', 'azure', 'aliyun-tokenplan'])
+export const TTS_PROVIDERS = Object.freeze(['deepseek', 'openai', 'volcengine', 'minimax', 'azure', 'aliyun-tokenplan'])
+// DeepSeek's two voices (the service takes no speed parameter, so the player's
+// own rate is what changes it).
+export const DEEPSEEK_VOICES = Object.freeze(['stella', 'tide'])
 // One request ends within totalMs. A service that sends nothing for quietMs
 // has stalled, and a lesson should not wait out totalMs for it.
 export const TTS_LIMITS = Object.freeze({ totalMs: 45_000, quietMs: 10_000 })
@@ -33,6 +38,14 @@ export class TtsError extends Error {
 // Field descriptions drive the settings form; `secret` fields are stored
 // with DSH credentials, the rest in plugin preferences.
 export const PROVIDER_FIELDS = Object.freeze({
+  // DeepSeek's own voice, from the app API suite it released with search, OCR
+  // and ASR. It speaks the language it finds in the text; `voice` is one of
+  // DEEPSEEK_VOICES, which the settings form offers as a list.
+  deepseek: [
+    { key: 'baseUrl', default: 'https://api.deepseek.com' },
+    { key: 'voice', default: 'stella', options: [{ value: 'stella', label: 'deepseekVoiceStella' }, { value: 'tide', label: 'deepseekVoiceTide' }] },
+    { key: 'apiKey', secret: true },
+  ],
   openai: [
     { key: 'baseUrl', default: 'https://api.openai.com/v1' },
     { key: 'model', default: 'gpt-4o-mini-tts' },
@@ -241,9 +254,57 @@ function audioLink(value) {
   return url
 }
 
+// The audio each provider answers with: DeepSeek speaks PCM, which gets a WAV
+// header once its parts are joined; every other service sends MP3. The cache
+// extension, the HTTP route's content type and the container wrapping come
+// from this.
+const WAV_SAMPLE_RATE = 24_000
+const WAV_CHANNELS = 1
+const WAV_BITS = 16
+
+// Raw PCM has no header, so a player cannot read it; a 44-byte WAV header
+// makes the joined parts of one narration a file the browser plays as-is.
+function wavFromPcm(pcm) {
+  const blockAlign = (WAV_CHANNELS * WAV_BITS) / 8
+  const header = Buffer.alloc(44)
+  header.write('RIFF', 0)
+  header.writeUInt32LE(36 + pcm.length, 4)
+  header.write('WAVE', 8)
+  header.write('fmt ', 12)
+  header.writeUInt32LE(16, 16)
+  header.writeUInt16LE(1, 20)
+  header.writeUInt16LE(WAV_CHANNELS, 22)
+  header.writeUInt32LE(WAV_SAMPLE_RATE, 24)
+  header.writeUInt32LE(WAV_SAMPLE_RATE * blockAlign, 28)
+  header.writeUInt16LE(blockAlign, 32)
+  header.writeUInt16LE(WAV_BITS, 34)
+  header.write('data', 36)
+  header.writeUInt32LE(pcm.length, 40)
+  return Buffer.concat([header, pcm])
+}
+
+const AUDIO_FORMATS = Object.freeze({ deepseek: { extension: 'wav', mime: 'audio/wav', wrap: wavFromPcm } })
+const audioFormat = provider => AUDIO_FORMATS[provider] ?? { extension: 'mp3', mime: 'audio/mpeg' }
+
 // Each synthesizer sends its request with send(url, init, maxBytes), which
 // bounds it in time and size and returns the body of a successful response.
 const synthesizers = {
+  // DeepSeek's own voice takes no speed parameter (the player's own rate is
+  // what changes it) and no model. Its PCM at 24 kHz, 16-bit mono is the one
+  // format it can send without a container.
+  async deepseek({ text, config, secret, send }) {
+    const base = checkEndpoint(config.baseUrl || 'https://api.deepseek.com')
+    // The endpoint sits under /v1, which an address may already carry.
+    const root = base.pathname.replace(/\/+$/u, '').replace(/\/v1$/u, '')
+    const url = new URL(`${root}/v1/tools/tts`, base)
+    const voice = DEEPSEEK_VOICES.includes(config.voice) ? config.voice : DEEPSEEK_VOICES[0]
+    return send(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json', Accept: 'audio/pcm' },
+      body: JSON.stringify({ text, voice_id: voice, format: 'pcm', filter_markdown: true }),
+    }, MAX_AUDIO_BYTES)
+  },
+
   async openai({ text, config, secret, rate, send }) {
     const base = checkEndpoint(config.baseUrl || 'https://api.openai.com/v1')
     const path = base.pathname.replace(/\/+$/u, '')
@@ -344,11 +405,13 @@ const synthesizers = {
 }
 
 // Request size limits in "units" (ASCII = 1, other = 3, roughly UTF-8 bytes).
+// DeepSeek bills 10,000 characters a request (a Chinese character is two) and
+// sends audio only as it synthesizes, so its text goes in short pieces too.
 // Alibaba documents no limit for Token Plan's speech model. Its non-streaming
 // call answers only once the whole text is synthesized, so long text goes in
 // pieces of about 300 Chinese characters, like Volcengine's, to keep each
 // wait short.
-const CHUNK_UNITS = Object.freeze({ openai: 3800, volcengine: 900, minimax: 9000, azure: 6000, 'aliyun-tokenplan': 900 })
+const CHUNK_UNITS = Object.freeze({ deepseek: 900, openai: 3800, volcengine: 900, minimax: 9000, azure: 6000, 'aliyun-tokenplan': 900 })
 
 export function createTts({ cacheDir, fetchImpl = globalThis.fetch, getSecret, limits = TTS_LIMITS }) {
   if (typeof getSecret !== 'function') throw new TypeError('createTts needs getSecret')
@@ -364,12 +427,13 @@ export function createTts({ cacheDir, fetchImpl = globalThis.fetch, getSecret, l
     const content = String(text ?? '').trim().slice(0, 4000)
     if (!content) throw new TtsError('empty', 'Nothing to speak')
     const merged = { ...providerDefaults(provider), ...config }
+    const format = audioFormat(provider)
     const key = cacheKey(provider, merged, rate, content)
-    const file = cacheDir ? join(cacheDir, `${key}.mp3`) : null
+    const file = cacheDir ? join(cacheDir, `${key}.${format.extension}`) : null
     if (file) {
       try {
         const cached = await readFile(file)
-        if (cached.length > 0) return { audio: cached, mime: 'audio/mpeg', cached: true }
+        if (cached.length > 0) return { audio: cached, mime: format.mime, cached: true }
       } catch {
         // not cached yet
       }
@@ -381,15 +445,18 @@ export function createTts({ cacheDir, fetchImpl = globalThis.fetch, getSecret, l
       const send = (url, init, maxBytes) => boundedFetch(fetchImpl, url, init, { text: chunk, signal, limits, maxBytes })
       parts.push(await synthesizers[provider]({ text: chunk, config: merged, secret, rate, send }))
     }
-    const audio = Buffer.concat(parts)
-    if (!audio.length) throw new TtsError('response', 'The TTS service returned no audio')
+    // The pieces join into one stream first: a WAV header covers the whole
+    // narration, not each piece of it.
+    const joined = Buffer.concat(parts)
+    if (!joined.length) throw new TtsError('response', 'The TTS service returned no audio')
+    const audio = format.wrap ? format.wrap(joined) : joined
     if (file) {
       // The folder appears with the first audio; a cache that cannot be
       // written only costs the next request.
       await mkdir(cacheDir, { recursive: true }).then(() => writeFileAtomic(file, audio)).catch(() => undefined)
       pruning ??= prune().finally(() => { pruning = undefined })
     }
-    return { audio, mime: 'audio/mpeg', cached: false }
+    return { audio, mime: format.mime, cached: false }
   }
 
   // Keep the cache under its size budget, oldest files first.
@@ -403,7 +470,7 @@ export function createTts({ cacheDir, fetchImpl = globalThis.fetch, getSecret, l
     }
     const files = []
     for (const name of names) {
-      if (!name.endsWith('.mp3')) continue
+      if (!name.endsWith('.mp3') && !name.endsWith('.wav')) continue
       try {
         const info = await stat(join(cacheDir, name))
         files.push({ name, size: info.size, time: info.mtimeMs })

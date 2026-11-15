@@ -6,7 +6,7 @@ import { useApp, useLoad } from '../hooks.js'
 import { browserSpeechAvailable, listVoices, onVoicesChanged, pickVoice } from '../speech.js'
 import { BOARD_FONT } from '../styles.js'
 
-const PROVIDERS = [['openai', 'providerOpenai'], ['volcengine', 'providerVolcengine'], ['minimax', 'providerMinimax'], ['azure', 'providerAzure'], ['aliyun-tokenplan', 'providerAliyunTokenPlan']]
+const PROVIDERS = [['deepseek', 'providerDeepseek'], ['openai', 'providerOpenai'], ['volcengine', 'providerVolcengine'], ['minimax', 'providerMinimax'], ['azure', 'providerAzure'], ['aliyun-tokenplan', 'providerAliyunTokenPlan']]
 const TEXT_SIZES = [['standard', 'textStandard'], ['large', 'textLarge'], ['larger', 'textLarger']]
 
 export function SettingsScreen() {
@@ -54,6 +54,12 @@ export function SettingsScreen() {
   const provider = settings.ttsProvider ?? 'openai'
   const fields = (settings.fields?.[provider] ?? []).filter(field => !field.secret)
   const providerConfig = settings.tts?.[provider] ?? {}
+  // A field that lists its values (DeepSeek's two voices) shows a list; the
+  // rest are free text, saved when left. A saved value outside the list falls
+  // back to the default, which is what the host speaks with anyway.
+  const fieldValue = field => (field.options.some(option => option.value === providerConfig[field.key])
+    ? providerConfig[field.key]
+    : (field.default ?? field.options[0].value))
 
   async function test() {
     setError(null)
@@ -120,10 +126,15 @@ export function SettingsScreen() {
           </select>
         </label>
         {fields.map(field => <label key={field.key} className="aha-label">{t(`field_${field.key}`)}
-          <input className="aha-input" defaultValue={providerConfig[field.key] ?? ''} key={`${provider}:${field.key}:${providerConfig[field.key] ?? ''}`} onBlur={event => {
-            const value = event.currentTarget.value.trim()
-            if (value !== (providerConfig[field.key] ?? '')) save('cloud', { tts: { [provider]: { [field.key]: value } } })
-          }} />
+          {field.options
+            ? <select className="aha-select" value={fieldValue(field)} onChange={event => {
+              const value = event.currentTarget.value
+              if (value !== (providerConfig[field.key] ?? '')) save('cloud', { tts: { [provider]: { [field.key]: value } } })
+            }}>{field.options.map(option => <option key={option.value} value={option.value}>{t(option.label)}</option>)}</select>
+            : <input className="aha-input" defaultValue={providerConfig[field.key] ?? ''} key={`${provider}:${field.key}:${providerConfig[field.key] ?? ''}`} onBlur={event => {
+              const value = event.currentTarget.value.trim()
+              if (value !== (providerConfig[field.key] ?? '')) save('cloud', { tts: { [provider]: { [field.key]: value } } })
+            }} />}
         </label>)}
         <ErrorLine error={errorIn('cloud')} reveal />
         <label className="aha-label">{t('field_apiKey')} · <span className={settings.keys?.[provider] ? 'aha-ok' : 'aha-hint'}>{settings.keys?.[provider] ? t('keySaved') : t('keyMissing')}</span>

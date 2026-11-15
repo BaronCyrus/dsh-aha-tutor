@@ -13,7 +13,7 @@ import { blueprintPrompt, correctionPrompt, gradePrompt, lessonPrompt, STEP_SPEC
 import { generateSteps, streamCounter, writingHint } from '../src/host/generate.js'
 import { compareSemver, createPluginManager, findInstall, releaseAgeRefusal, resolveLauncher } from '../src/host/plugin-version.js'
 import { createStore, resolveDshHome } from '../src/host/store.js'
-import { checkEndpoint, createTts, firstByteMs, splitForTts, TTS_LIMITS, TtsError } from '../src/host/tts.js'
+import { checkEndpoint, createTts, DEEPSEEK_VOICES, firstByteMs, PROVIDER_FIELDS, splitForTts, TTS_LIMITS, TtsError } from '../src/host/tts.js'
 
 const temp = () => mkdtemp(join(tmpdir(), 'aha-tutor-test-'))
 
@@ -147,6 +147,60 @@ test('TTS splits long text, calls each provider correctly and caches audio', asy
     await assert.rejects(tts.synthesize({ provider: 'volcengine', config: {}, text: 'x' }), /App ID/)
     const noKey = createTts({ cacheDir: null, fetchImpl, getSecret: async () => undefined })
     await assert.rejects(noKey.synthesize({ provider: 'azure', text: 'x' }), /No key/)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('DeepSeek speaks PCM that is served and cached as one WAV file', async () => {
+  // The settings form offers exactly the voices the service accepts.
+  assert.deepEqual(PROVIDER_FIELDS.deepseek.find(field => field.key === 'voice').options.map(option => option.value), [...DEEPSEEK_VOICES])
+  const root = await temp()
+  const calls = []
+  const pcm = Buffer.from([1, 0, 2, 0, 3, 0, 4, 0])
+  const fetchImpl = async (url, init) => {
+    calls.push({ url: String(url), init })
+    return new Response(pcm, { status: 200, headers: { 'content-type': 'audio/pcm' } })
+  }
+  try {
+    const cacheDir = join(root, 'tts-cache')
+    const tts = createTts({ cacheDir, fetchImpl, getSecret: async () => 'sk-test' })
+    const spoken = await tts.synthesize({ provider: 'deepseek', config: {}, text: '你好' })
+    assert.equal(calls[0].url, 'https://api.deepseek.com/v1/tools/tts')
+    assert.equal(calls[0].init.headers.Authorization, 'Bearer sk-test')
+    assert.deepEqual(JSON.parse(calls[0].init.body), { text: '你好', voice_id: 'stella', format: 'pcm', filter_markdown: true })
+    assert.equal(spoken.mime, 'audio/wav')
+    // A WAV header over the PCM: browsers and decodeAudioData play that as-is.
+    assert.equal(spoken.audio.toString('ascii', 0, 4), 'RIFF')
+    assert.equal(spoken.audio.toString('ascii', 8, 12), 'WAVE')
+    assert.equal(spoken.audio.readUInt32LE(4), spoken.audio.length - 8, 'RIFF size')
+    assert.equal(spoken.audio.readUInt16LE(20), 1, 'integer PCM')
+    assert.equal(spoken.audio.readUInt16LE(22), 1, 'mono')
+    assert.equal(spoken.audio.readUInt32LE(24), 24_000, '24 kHz')
+    assert.equal(spoken.audio.readUInt16LE(34), 16, '16-bit')
+    assert.equal(spoken.audio.readUInt32LE(40), pcm.length)
+    assert.deepEqual(spoken.audio.subarray(44), pcm)
+    const again = await tts.synthesize({ provider: 'deepseek', config: {}, text: '你好' })
+    assert.equal(again.cached, true)
+    assert.equal(again.mime, 'audio/wav')
+    assert.equal(calls.length, 1)
+    assert.equal((await readdir(cacheDir)).filter(name => name.endsWith('.wav')).length, 1, 'kept on disk for the next lesson')
+
+    // Long text goes in pieces, each under DeepSeek's billed-character limit,
+    // and the pieces join into one file with a single header.
+    const long = await tts.synthesize({ provider: 'deepseek', config: { voice: 'tide' }, text: '很长的一句话。'.repeat(60) })
+    assert.equal(calls.length, 3)
+    assert.equal(JSON.parse(calls[1].init.body).voice_id, 'tide')
+    assert.equal(long.audio.readUInt32LE(40), 2 * pcm.length)
+    assert.equal(long.audio.indexOf('RIFF', 1), -1)
+    assert.deepEqual(long.audio.subarray(44), Buffer.concat([pcm, pcm]))
+
+    // The address may already carry /v1, and a voice outside the two falls
+    // back to the default rather than failing the lesson.
+    const custom = createTts({ cacheDir: null, fetchImpl, getSecret: async () => 'sk-test' })
+    await custom.synthesize({ provider: 'deepseek', config: { baseUrl: 'https://api.deepseek.com/v1', voice: 'bogus' }, text: '你好' })
+    assert.equal(calls.at(-1).url, 'https://api.deepseek.com/v1/tools/tts')
+    assert.equal(JSON.parse(calls.at(-1).init.body).voice_id, 'stella')
   } finally {
     await rm(root, { recursive: true, force: true })
   }

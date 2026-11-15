@@ -6,6 +6,7 @@ All notable changes to this plugin are recorded here. Versions follow [SemVer](h
 
 ### Added
 
+- **DeepSeek voice**: **Settings → Narration → Cloud voice** offers DeepSeek's own TTS, first in the list, from its app API suite. It speaks with **Stella** (female, the default) or **Tide** (male), picked from a list, names no model and recognizes the language from the text. Its key is kept in DSH's credential store like the others'. The service answers raw PCM at 24 kHz, 16-bit mono; the host wraps the joined parts of a narration in a WAV file, so it plays in the classroom, in an exported video and from the local cache like the other services' MP3. It takes no speed parameter: the player's own rate applies.
 - **Alibaba Cloud Token Plan voice**: **Settings → Narration → Cloud voice** has a fifth service, **Alibaba Cloud Token Plan**, last in the list. It speaks with Token Plan's one speech model, qwen-audio-3.0-tts-plus, in the Plus voice longanlingxin unless another is entered (longanlufeng is the other Plus voice), and its key is kept in DSH's credential store like the others. Token Plan answers with a link to the audio, which is downloaded only from Alibaba Cloud, over https and without the key. Alibaba Cloud allows Token Plan only for interactive use inside AI coding and agent tools; the README says so. Thanks to moore-hemw, who wrote the first version in [#1](https://github.com/BaronCyrus/dsh-aha-tutor/pull/1).
 
 ## 1.15.0 - 2026-11-07

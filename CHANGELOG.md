@@ -2,6 +2,12 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## 1.17.0 - 2026-11-15
+
+### Added
+
+- **Feedback QQ group**: the last section of both READMEs and the plugin's **About the author** page now show the QR code of the 开窍AI教师交流群 QQ group, with the group name and a clickable invite link. Learners without a GitHub account can scan it to report a problem, suggest something or talk to the author. The code was decoded to its qm.qq.com invite to check it; the READMEs link the invite too, and the image is bundled into the client for the About page.
+
 ## 1.16.0 - 2026-11-15
 
 ### Added

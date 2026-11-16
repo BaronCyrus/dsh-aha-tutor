@@ -73,6 +73,12 @@ a.aha-btn{text-decoration:none}
 .aha-sponsors figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:8px}
 .aha-sponsors img{width:180px;height:180px;padding:8px;border-radius:14px;background:#fff;box-sizing:content-box}
 .aha-sponsors figcaption{font-weight:600;font-size:${px(14)}}
+.aha-community{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:20px;padding:2px 0}
+.aha-communityText{flex:1 1 280px;min-width:0;display:flex;flex-direction:column;gap:10px}
+.aha-communityText .aha-aboutIntro{margin:0}
+.aha-qqGroup{margin:0 auto;display:flex;flex-direction:column;align-items:center;gap:8px;flex:0 0 auto}
+.aha-qqGroup img{display:block;width:240px;height:auto;border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,.16)}
+.aha-qqGroup figcaption{font-weight:600;font-size:${px(14)};text-align:center}
 .aha-error{color:var(--aha-bad);font-size:${px(14)}}
 .aha-ok{color:var(--aha-ok)}
 .aha-tag{display:inline-flex;align-items:center;gap:4px;padding:1px 8px;border-radius:999px;background:var(--aha-soft);color:var(--aha-muted);font-size:${px(13)};line-height:${px(21.5)};white-space:nowrap}

@@ -14,7 +14,7 @@
 [![GitHub Star 数](https://img.shields.io/github/stars/BaronCyrus/dsh-aha-tutor?style=flat&logo=github&label=Star%20%E6%95%B0)](https://github.com/BaronCyrus/dsh-aha-tutor/stargazers)
 [![MIT](https://img.shields.io/badge/license-MIT-111111.svg)](LICENSE)
 
-[能做什么](#能做什么) · [安装](#安装) · [三分钟上手](#三分钟上手) · [界面预览](#界面预览) · [使用指南](docs/guide.zh-CN.md) · [隐私](#隐私与数据) · [常见问题](#常见问题) · [支持作者](#支持作者)
+[能做什么](#能做什么) · [安装](#安装) · [三分钟上手](#三分钟上手) · [界面预览](#界面预览) · [使用指南](docs/guide.zh-CN.md) · [隐私](#隐私与数据) · [常见问题](#常见问题) · [支持作者](#支持作者) · [反馈](#反馈与交流)
 
 </div>
 
@@ -145,3 +145,9 @@ pnpm run check
     <td align="center"><img src="docs/assets/sponsor-alipay.png" width="200" alt="支付宝收款码"><br><b>支付宝</b></td>
   </tr>
 </table>
+
+## 反馈与交流
+
+遇到问题、想提建议，或者想聊聊怎么用开窍讲课，欢迎在 [GitHub Issues](https://github.com/BaronCyrus/dsh-aha-tutor/issues) 留言，也可以扫码加入 QQ 群，直接和作者交流。
+
+<p align="center"><a href="https://qm.qq.com/q/WAlhIlHswo"><img src="docs/assets/qq-group.png" width="320" alt="开窍AI教师交流群 QQ 群二维码"></a><br><b>开窍AI教师交流群</b>（QQ）· <a href="https://qm.qq.com/q/WAlhIlHswo">直接打开群邀请</a></p>

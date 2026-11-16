@@ -54,6 +54,17 @@ test('the plugin page can read the icon and the display text in both languages',
   assert.ok(manifest.files.includes('locale/*.json') && manifest.exports['./locale/*.json'] === './locale/*.json')
 })
 
+test('the READMEs show the feedback QR code that ships with them', () => {
+  const qr = readFileSync(join(root, 'docs', 'assets', 'qq-group.png'))
+  assert.ok(qr.length < 150 * 1024, `the feedback QR code is ${qr.length} bytes`)
+  assert.ok(manifest.files.includes('docs/assets/*.png'), 'docs images are packaged')
+  for (const name of ['README.md', 'README.en.md']) {
+    const readme = readFileSync(join(root, name), 'utf8')
+    assert.ok(readme.includes('docs/assets/qq-group.png'), `${name} shows the QQ group QR code`)
+    assert.ok(readme.includes('https://qm.qq.com/'), `${name} links to the QQ group invite`)
+  }
+})
+
 test('every runtime-imported @deepseek-ai package is a peer, never a bundled copy', () => {
   const sources = walk(join(root, 'src'), /\.(js|jsx)$/u).map(file => readFileSync(file, 'utf8')).join('\n')
   const imported = new Set([...sources.matchAll(/from '(@deepseek-ai\/[^'/]+)/gu)].map(match => match[1]))

@@ -14,7 +14,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/BaronCyrus/dsh-aha-tutor?style=flat&logo=github&label=stars)](https://github.com/BaronCyrus/dsh-aha-tutor/stargazers)
 [![MIT](https://img.shields.io/badge/license-MIT-111111.svg)](LICENSE)
 
-[What it does](#what-it-does) · [Install](#install) · [Quick start](#quick-start) · [Voices](#voices) · [Privacy](#privacy-and-data) · [FAQ](#faq) · [Support](#support-the-author)
+[What it does](#what-it-does) · [Install](#install) · [Quick start](#quick-start) · [Voices](#voices) · [Privacy](#privacy-and-data) · [FAQ](#faq) · [Support](#support-the-author) · [Feedback](#feedback-and-community)
 
 </div>
 
@@ -115,3 +115,9 @@ Aha Tutor is free and open source, and tips are entirely optional. If it helped 
     <td align="center"><img src="docs/assets/sponsor-alipay.png" width="200" alt="Alipay payment code"><br><b>Alipay</b></td>
   </tr>
 </table>
+
+## Feedback and community
+
+Found a problem, have an idea, or want to talk about teaching with Aha Tutor? Open a [GitHub issue](https://github.com/BaronCyrus/dsh-aha-tutor/issues) or scan the QR code to join the **开窍AI教师交流群** QQ group and talk to the author.
+
+<p align="center"><a href="https://qm.qq.com/q/WAlhIlHswo"><img src="docs/assets/qq-group.png" width="320" alt="QR code for the 开窍AI教师交流群 QQ group"></a><br><b>开窍AI教师交流群</b> (QQ group) · <a href="https://qm.qq.com/q/WAlhIlHswo">Open the group invite</a></p>

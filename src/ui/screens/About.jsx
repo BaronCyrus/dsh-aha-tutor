@@ -3,11 +3,13 @@
 // offline and needs no host route.
 import alipay from '../assets/sponsor-alipay.png'
 import wechat from '../assets/sponsor-wechat.png'
+import qqGroup from '../assets/qq-group.png'
 import { useApp } from '../hooks.js'
 import { Icon } from '../icons.jsx'
 
 export const AUTHOR = 'BaronCyrus'
 export const REPOSITORY = 'https://github.com/BaronCyrus/dsh-aha-tutor'
+export const QQ_GROUP = 'https://qm.qq.com/q/WAlhIlHswo'
 
 export function AboutScreen() {
   const { t } = useApp()
@@ -25,6 +27,22 @@ export function AboutScreen() {
       <div className="aha-row">
         <a className="aha-btn" href={REPOSITORY} target="_blank" rel="noopener noreferrer">{t('aboutRepo')}</a>
         <a className="aha-btn" href={`${REPOSITORY}/issues`} target="_blank" rel="noopener noreferrer">{t('aboutIssues')}</a>
+      </div>
+    </section>
+    <section className="aha-card">
+      <div className="aha-cardTitle">{t('aboutCommunity')}</div>
+      <div className="aha-community">
+        <div className="aha-communityText">
+          <p className="aha-aboutIntro">{t('aboutCommunityIntro')}</p>
+          <div className="aha-row">
+            <a className="aha-btn" href={QQ_GROUP} target="_blank" rel="noopener noreferrer">{t('aboutQqJoin')}</a>
+          </div>
+          <p className="aha-hint">{t('aboutCommunityScan')}</p>
+        </div>
+        <figure className="aha-qqGroup">
+          <img src={qqGroup} width="240" height="299" alt={t('aboutQqGroupAlt')} />
+          <figcaption>{t('aboutQqGroup')}</figcaption>
+        </figure>
       </div>
     </section>
     <section className="aha-card">

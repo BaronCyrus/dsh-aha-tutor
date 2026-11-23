@@ -2,6 +2,17 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## 1.17.1 - 2026-11-23
+
+### Fixed
+
+- **Board and narration in step**: a synced step wrote at one speed for the whole step, so a figure drawn during a short sentence held back the sentences after it, sometimes by several seconds. Each sentence's ops now get the time until the next sentence that writes, and a board that falls behind the voice catches up.
+- **Cloud voices**: the board followed a cloud voice by an estimate that started with the step, before the audio had arrived and at a speed the voice did not keep, so it ran one to three seconds ahead. It now waits until the audio is heard and follows where the audio actually is.
+- **No rewriting**: a system voice that started late let the board guess ahead and then take back what it had written. A voice that reports its sentences is waited for (up to 3 s) and never guessed ahead of, and writing never goes back.
+- **Sentence lengths**: sentences were timed by their number of characters, so an English word counted like several Chinese characters. They are now timed by how long they take to say.
+- **Exported videos**: an exported video timed its board and captions the old way. It now uses the same timing as the classroom, with each sentence stretched to the real narration, and a sentence's caption and its ops start together.
+- **Sample courses**: both sample courses now write each item with the sentence it belongs to; before, they used the whole-step timing.
+
 ## 1.17.0 - 2026-11-15
 
 ### Added

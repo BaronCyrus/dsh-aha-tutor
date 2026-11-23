@@ -164,3 +164,64 @@ test('pausing and resuming speaks the sentence again, and the old one\'s events 
   assert.deepEqual(spoken.result, { completed: true })
   assert.deepEqual(synth.heard, [SENTENCES[0], ...SENTENCES])
 })
+
+test('a system voice says it reports sentences when asked to', async t => {
+  const { speech, run } = setup(t)
+  assert.equal(speech.speak(NARRATION, { sentences: SENTENCES, onSentence() {} }).tracked, true)
+  assert.equal(speech.speak(NARRATION).tracked, false)
+  speech.cancel()
+  await run(50)
+})
+
+// An <audio> element whose position the test sets.
+class FakeAudio {
+  constructor() {
+    this.currentTime = 0
+    this.duration = Number.NaN
+    FakeAudio.last = this
+  }
+
+  play() {
+    this.duration = 4
+    queueMicrotask(() => this.onplaying?.())
+    return Promise.resolve()
+  }
+
+  pause() {
+    this.onpause?.()
+  }
+}
+
+test('a cloud voice reports each sentence from where its audio is', async t => {
+  globalThis.Audio = FakeAudio
+  t.after(() => { delete globalThis.Audio })
+  const flush = () => new Promise(resolve => setImmediate(resolve))
+  const speech = createSpeech({ fetchAudio: async () => ({ blob: new Blob(['wav'], { type: 'audio/wav' }) }) })
+  speech.configure({ engine: 'cloud' })
+  // Shares of the audio by how long each should take: 6, 12 and 4 characters.
+  const sentences = ['先看这个公式。', '它说明力与位移的方向相反。', '记住负号。']
+  const heard = []
+  const spoken = speech.speak(sentences.join(''), { sentences, onSentence: (index, total) => heard.push([index, total]) })
+  assert.equal(spoken.tracked, true)
+  spoken.poll()
+  assert.deepEqual(heard, [], 'not while the audio is being fetched')
+  await flush()
+  assert.deepEqual(heard, [[0, 3]], 'the first sentence once the audio is heard')
+  const audio = FakeAudio.last
+  audio.currentTime = 1
+  spoken.poll()
+  assert.deepEqual(heard, [[0, 3]], 'each sentence once')
+  audio.currentTime = 2
+  spoken.poll()
+  assert.deepEqual(heard.at(-1), [1, 3])
+  audio.currentTime = 3.5
+  spoken.poll()
+  assert.deepEqual(heard.map(([index]) => index), [0, 1, 2])
+  audio.onended()
+  assert.deepEqual(await spoken.done, { completed: true })
+  audio.currentTime = 0
+  spoken.poll()
+  assert.equal(heard.length, 3, 'nothing is reported after the end')
+  assert.equal(speech.speak('你好').tracked, false, 'without sentences to follow')
+  speech.cancel()
+})

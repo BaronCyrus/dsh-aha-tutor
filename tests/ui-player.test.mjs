@@ -334,6 +334,127 @@ test('in a synced step each op waits for its sentence, and the board highlights 
   assert.deepEqual(plain.player.state.now, [])
 })
 
+// A voice that reports each sentence it starts, as the classroom's engines do.
+function trackedVoice() {
+  const calls = []
+  return {
+    calls,
+    speak(textValue, options) {
+      let resolve
+      const done = new Promise(r => { resolve = r })
+      calls.push({ options, resolve })
+      return { done, tracked: true }
+    },
+    cancel() {},
+    pause() {},
+    resume() {},
+    setRate() {},
+    prefetch() {},
+  }
+}
+
+// "看这张图。" is short; the figure and formula written with it are not.
+const figureStep = { id: 's1', say: '看这张图。横轴是时间，纵轴是位移。曲线越陡，速度越大。', ops: [
+  { id: 'o1', t: 'svg', svg: '<svg/>', at: 0 },
+  { id: 'o2', t: 'math', tex: 'x(t)=A\\sin(\\omega t)', at: 0 },
+  { id: 'o3', t: 'p', text: '横轴 t，纵轴 x', at: 1 },
+  { id: 'o4', t: 'note', text: '斜率 = 速度', at: 2 },
+] }
+
+test('a figure written with a short sentence does not hold back the next one, and a board behind the voice catches up', async () => {
+  const { player, advance, options } = harness()
+  player.setSteps([figureStep], { done: true })
+  player.play()
+  options[0].onSentence(0, 3)
+  await advance(estimateSpeechMs('看这张图。'))
+  assert.deepEqual([player.state.op, player.state.progress], [2, 0], 'the figure and the formula fit in their sentence; the next op waits for its own')
+  options[0].onSentence(1, 3)
+  await advance(100)
+  assert.ok(player.state.progress > 0)
+
+  // A voice faster than the estimate: the formula, planned to end 1155 ms in,
+  // is written faster once the second sentence has started at 800 ms.
+  const fast = harness()
+  fast.player.setSteps([figureStep], { done: true })
+  fast.player.play()
+  fast.options[0].onSentence(0, 3)
+  await fast.advance(800)
+  assert.equal(fast.player.state.op, 1)
+  fast.options[0].onSentence(1, 3)
+  await fast.advance(250)
+  assert.equal(fast.player.state.op, 2, 'what the board owed was written faster once the voice moved on')
+  assert.ok(fast.player.state.progress > 0, 'and the second sentence\'s op is being written while it is spoken')
+})
+
+test('the board waits for a voice that reports its sentences and never guesses ahead of it', async () => {
+  const voice = trackedVoice()
+  const { player, advance } = harness(voice)
+  player.setSteps([figureStep], { done: true })
+  player.play()
+  await advance(1000)
+  assert.deepEqual([player.state.op, player.state.progress], [0, 0], 'nothing is written before the voice is heard')
+  voice.calls[0].options.onSentence(0, 3)
+  await advance(5000)
+  assert.deepEqual([player.state.op, player.state.progress, player.state.sentence], [2, 0, 0], 'only the first sentence\'s ops, however long it takes')
+
+  // A voice that does not start: after a while the board starts on the first
+  // sentence alone; once the voice gives up, the estimate takes over.
+  const late = trackedVoice()
+  const held = harness(late)
+  held.player.setSteps([figureStep], { done: true })
+  held.player.play()
+  await held.advance(2900)
+  assert.deepEqual([held.player.state.op, held.player.state.progress], [0, 0])
+  await held.advance(4000)
+  assert.deepEqual([held.player.state.op, held.player.state.progress], [2, 0])
+  late.calls[0].resolve({ completed: false, error: 'The system voice did not start speaking', code: 'speech-stalled' })
+  await held.advance(10_000)
+  assert.equal(held.player.state.status, 'ended')
+})
+
+test('the player asks a voice that can be polled where it is on every frame', async () => {
+  const voice = trackedVoice()
+  let polls = 0
+  const speak = voice.speak
+  voice.speak = (textValue, options) => ({ ...speak(textValue, options), poll: () => { polls += 1 } })
+  const { player, advance } = harness(voice)
+  player.setSteps([figureStep], { done: true })
+  player.play()
+  await advance(160)
+  assert.ok(polls >= 9, `polled ${polls} times in 10 frames`)
+  voice.calls[0].options.onSentence(1, 3)
+  await advance(16)
+  assert.equal(player.state.sentence, 1)
+})
+
+test('writing never goes back when a voice reports a sentence behind the estimate', async () => {
+  const say = '先看这个公式。它说明力与位移的方向相反。所以弹簧总把物体往回拉。最后我们记住这个负号。'
+  const step = { id: 's1', say, ops: [
+    { id: 'o1', t: 'math', tex: 'F=-kx', at: 0 }, { id: 'o2', t: 'p', text: '负号 = 方向相反', at: 1 },
+    { id: 'o3', t: 'p', text: '回复力指向平衡位置', at: 2 }, { id: 'o4', t: 'note', text: '记住负号', at: 3 },
+  ] }
+  // A voice that does not say it reports sentences, heard only at 3 s.
+  const { player, advance, options, snapshots } = harness()
+  player.setSteps([step], { done: true })
+  player.play()
+  await advance(3000)
+  const before = player.state.op + player.state.progress
+  options[0].onSentence(0, 3)
+  await advance(100)
+  assert.ok(player.state.op + player.state.progress >= before, 'what is on the board stays')
+  const written = snapshots.filter(snapshot => snapshot.index === 0).map(snapshot => snapshot.op + snapshot.progress)
+  assert.ok(written.every((value, index) => index === 0 || value >= written[index - 1]))
+})
+
+test('an English word and a Chinese character weigh what they take to say', async () => {
+  const say = 'Photosynthesis。光合作用把光能变成化学能，储存在有机物里。'
+  const timed = harness()
+  timed.player.setSteps([{ id: 's1', say, ops: [] }], { done: true })
+  timed.player.play()
+  await timed.advance(estimateSpeechMs('Photosynthesis。') + 100)
+  assert.equal(timed.player.state.sentence, 1, 'one long word is said quickly, however many letters it has')
+})
+
 test('the side panel tracks goals and lists what was said, with questions', () => {
   const main = [{ id: 's1', say: '开场' }, { id: 's2', say: '讲 A', goal: 0 }, { id: 's3', say: '再讲 A', goal: 0 }, { id: 's4', say: '讲 B', goal: 1 }, { id: 's5', say: '总结' }]
   assert.deepEqual(goalStates(main, 0, 3), ['todo', 'todo', 'todo'])

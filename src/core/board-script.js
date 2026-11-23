@@ -282,17 +282,70 @@ export function estimateWriteMs(op) {
   return Math.min(7000, Math.max(450, opVisibleLength(op) * 55))
 }
 
-export function stepTiming(step, { rate = 1, speechMs } = {}) {
-  const speak = speechMs ?? estimateSpeechMs(step.say, rate)
+const sum = values => values.reduce((total, value) => total + value, 0)
+
+// Writing should finish a little before the narration it goes with, so the
+// last words land on a complete board. It speeds up at most to 0.35 of its
+// natural time and slows down at most to 1.6 times it.
+const WRITE_LEAD = 0.85
+const writeScale = (target, total) => (total > 0 ? Math.min(1.6, Math.max(0.35, target / total)) : 1)
+
+// The sentence of the narration each op of a synced step is written during,
+// given how many sentences there are; null for an unsynced step.
+export function opSentences(step, count) {
+  if (!step?.say || !step.ops?.some(op => Number.isInteger(op.at))) return null
+  const last = Math.max(0, count - 1)
+  return step.ops.map(op => Math.min(Number.isInteger(op.at) ? op.at : 0, last))
+}
+
+// The sentence being spoken a fraction (0–1) of the way through a narration,
+// given how long each sentence takes.
+export function sentenceAtFraction(lengths, fraction) {
+  const total = sum(lengths)
+  if (lengths.length < 2 || !(total > 0)) return 0
+  let passed = 0
+  for (let index = 0; index < lengths.length; index += 1) {
+    passed += lengths[index]
+    if (fraction * total < passed) return index
+  }
+  return lengths.length - 1
+}
+
+// sentenceMs: how long each spoken sentence takes (at this rate). With it, a
+// synced step gives each sentence's ops the time until the next sentence
+// that has ops of its own, so a figure drawn during a short sentence does not
+// hold back the sentences after it. speechMs, when also given (the length of
+// real audio), stretches the sentences to it.
+export function stepTiming(step, { rate = 1, speechMs, sentenceMs } = {}) {
+  const sentences = Array.isArray(sentenceMs) && sentenceMs.length ? sentenceMs : null
+  const speak = speechMs ?? (sentences ? sum(sentences) : estimateSpeechMs(step.say, rate))
   const writes = step.ops.map(estimateWriteMs)
-  const writeTotal = writes.reduce((sum, value) => sum + value, 0)
-  // Writing should finish a little before the narration so the last words
-  // land on a complete board; if there is more to write than to say, write
-  // at natural speed and let the step run longer.
-  const target = speak > 0 ? speak * 0.85 : writeTotal
-  const scale = writeTotal > 0 && target > 0 ? Math.min(1.6, Math.max(0.35, target / writeTotal)) : 1
-  const scaled = writes.map(value => Math.round(value * scale))
-  return { speechMs: speak, writeMs: scaled, durationMs: Math.max(speak, scaled.reduce((sum, value) => sum + value, 0)) + 350 }
+  const owners = sentences ? opSentences(step, sentences.length) : null
+  let scaled
+  if (owners) {
+    const stretch = sum(sentences) > 0 ? speak / sum(sentences) : 1
+    const starts = []
+    let passed = 0
+    for (const length of sentences) {
+      starts.push(passed * stretch)
+      passed += length
+    }
+    scaled = writes.slice()
+    for (let first = 0; first < owners.length;) {
+      let end = first
+      while (end < owners.length && owners[end] === owners[first]) end += 1
+      const until = end < owners.length ? starts[owners[end]] : speak
+      const scale = writeScale(Math.max(1, until - starts[owners[first]]) * WRITE_LEAD, sum(writes.slice(first, end)))
+      for (let index = first; index < end; index += 1) scaled[index] = Math.round(writes[index] * scale)
+      first = end
+    }
+  } else {
+    const writeTotal = sum(writes)
+    const target = speak > 0 ? speak * WRITE_LEAD : writeTotal
+    const scale = target > 0 ? writeScale(target, writeTotal) : 1
+    scaled = writes.map(value => Math.round(value * scale))
+  }
+  return { speechMs: speak, writeMs: scaled, durationMs: Math.max(speak, sum(scaled)) + 350 }
 }
 
 // Plain text of a script for prompts (Q&A context) and notes export.

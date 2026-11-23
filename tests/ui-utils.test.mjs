@@ -3,6 +3,8 @@ import { test } from 'node:test'
 
 import { DOMParser } from 'linkedom'
 
+import { estimateSpeechMs, stepTiming } from '../src/core/board-script.js'
+
 import { boardScope, createApi } from '../src/ui/api.js'
 import { chartSvg, escapeXml, niceTicks } from '../src/ui/charts.js'
 import { en, format, zh } from '../src/ui/i18n.js'
@@ -495,14 +497,38 @@ test('exported videos write synced ops when their sentence starts', () => {
   assert.deepEqual(syncedStarts(step, [500, 500], 8000), [0, 4000])
   assert.deepEqual(syncedStarts(step, [6000, 500], 8000), [0, 6000], 'an op never starts before the one before it is done')
   assert.equal(syncedStarts({ say: '一。', ops: [{ t: 'p', text: 'a' }] }, [500], 1000), null)
+
+  // Sentences are placed by how long they take to say: one English word is
+  // said quickly, however many letters it has.
+  const word = { say: 'Photosynthesis。光合作用把光能变成化学能。', ops: [{ t: 'p', text: 'a', at: 0 }, { t: 'p', text: 'b', at: 1 }] }
+  const first = estimateSpeechMs('Photosynthesis。')
+  const second = estimateSpeechMs('光合作用把光能变成化学能。')
+  assert.equal(syncedStarts(word, [100, 100], 6000)[1], (first / (first + second)) * 6000)
+
+  // A figure for a short sentence fits in it, with the real audio's length.
+  const figure = { say: '看这张图。横轴是时间，纵轴是位移。曲线越陡，速度越大。', ops: [
+    { t: 'svg', svg: '<svg/>', at: 0 }, { t: 'math', tex: 'x(t)=A\\sin(\\omega t)', at: 0 }, { t: 'p', text: '横轴 t，纵轴 x', at: 1 }, { t: 'note', text: '斜率 = 速度', at: 2 },
+  ] }
+  const sentenceMs = captionSentences(figure.say).map(sentence => estimateSpeechMs(spokenText(sentence)))
+  const { writeMs } = stepTiming(figure, { speechMs: 9000, sentenceMs })
+  const starts = syncedStarts(figure, writeMs, 9000)
+  const secondStart = (sentenceMs[0] / sentenceMs.reduce((a, b) => a + b)) * 9000
+  assert.equal(starts[2], secondStart, 'the second sentence\'s op starts with its sentence')
 })
 
 test('a video caption shows the sentence being spoken, two lines at a time', () => {
   // Lines of at most four characters.
   const lines = value => value.match(/.{1,4}/gu) ?? []
-  const cues = captionCues(['一二三四。', '五六七八九十一二三四五六'], 17_000, lines)
+  const sentences = ['一二三四。', '五六七八九十一二三四五六']
+  const cues = captionCues(sentences, 17_000, lines)
   assert.deepEqual(cues.map(cue => cue.lines), [['一二三四', '。'], ['五六七八', '九十一二'], ['三四五六']])
-  assert.deepEqual(cues.map(cue => cue.start), [0, 5000, 13_000], 'each page for its share of the speech: 5, 8 and 4 characters')
+  // Each sentence for its share of the speech, by how long it takes to say,
+  // and within it each page for its own share.
+  const [a, b] = sentences.map(sentence => estimateSpeechMs(sentence))
+  const secondStart = (a / (a + b)) * 17_000
+  assert.deepEqual(cues.map(cue => Math.round(cue.start)), [0, Math.round(secondStart), Math.round(secondStart + (estimateSpeechMs('五六七八九十一二') / (a + b)) * 17_000)])
+  const step = { say: sentences.join(''), ops: [{ t: 'p', text: 'x', at: 0 }, { t: 'p', text: 'y', at: 1 }] }
+  assert.equal(syncedStarts(step, [100, 100], 17_000)[1], cues[1].start, 'a sentence\'s caption and its ops start together')
   assert.equal(cueAt(cues, -1), null, 'nothing before the step starts')
   assert.deepEqual(cueAt(cues, 0).lines, ['一二三四', '。'])
   assert.deepEqual(cueAt(cues, 6000).lines, ['五六七八', '九十一二'])

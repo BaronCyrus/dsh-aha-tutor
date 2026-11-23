@@ -1,7 +1,7 @@
 {
  "format": "aha-tutor.coursepack",
  "version": 1,
- "exportedAt": "2026-11-05T02:41:57.393Z",
+ "exportedAt": "2026-11-23T16:06:06.759Z",
  "app": {
   "name": "dsh-aha-tutor",
   "version": "sample"
@@ -16,7 +16,7 @@
   "goal": "适合高中到大一的学习者。从“为什么会来回振动”出发，建立回复力、周期、相位的直觉，再推出单摆公式，最后用自己测的数据验证它。",
   "units": [
    {
-    "id": "unt_mw2xwfbbi2navy",
+    "id": "unt_mwtgjwrhrq8tj7",
     "title": "振动从哪里来",
     "summary": "回复力让物体来回运动；一个旋转的圆告诉我们它的样子。",
     "objectives": [
@@ -25,12 +25,12 @@
     ],
     "lectures": [
      {
-      "id": "lec_mw2xwfbbsd93o8",
+      "id": "lec_mwtgjwrh6e2c7l",
       "title": "回复力",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mw2xwfb5laew17",
+        "id": "les_mwtgjwrdmvvx4n",
         "title": "回复力：为什么会来回振动",
         "summary": "从弹簧振子出发认识回复力与胡克定律。",
         "objectives": [
@@ -39,11 +39,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mw2xwfbbvauad0",
+          "id": "cpt_mwtgjwrh8oj6cj",
           "name": "回复力"
          },
          {
-          "id": "cpt_mw2xwfbbes0rs8",
+          "id": "cpt_mwtgjwrh6yi2ml",
           "name": "胡克定律"
          }
         ],
@@ -52,7 +52,7 @@
         "depth": "intuition"
        },
        {
-        "id": "les_mw2xwfbbujsbzp",
+        "id": "les_mwtgjwrhegbwm0",
         "title": "振幅、周期与频率",
         "summary": "描述振动的三个基本量。",
         "objectives": [
@@ -61,11 +61,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mw2xwfbbhzo1xp",
+          "id": "cpt_mwtgjwrh2gdhbt",
           "name": "振幅"
          },
          {
-          "id": "cpt_mw2xwfbb6q9vc6",
+          "id": "cpt_mwtgjwrh4k5ucd",
           "name": "周期与频率"
          }
         ],
@@ -76,12 +76,12 @@
       ]
      },
      {
-      "id": "lec_mw2xwfbb2tf15h",
+      "id": "lec_mwtgjwrhxs5cku",
       "title": "运动的样子",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mw2xwfbbvfuj0a",
+        "id": "les_mwtgjwrhqhqxjd",
         "title": "从圆周运动看简谐运动",
         "summary": "简谐运动是匀速圆周运动的“影子”。",
         "objectives": [
@@ -90,11 +90,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mw2xwfbb56si3o",
+          "id": "cpt_mwtgjwrhd76fhk",
           "name": "参考圆"
          },
          {
-          "id": "cpt_mw2xwfbbqi4q0i",
+          "id": "cpt_mwtgjwrh8es1jd",
           "name": "角频率"
          }
         ],
@@ -103,7 +103,7 @@
         "depth": "intuition"
        },
        {
-        "id": "les_mw2xwfbbtd8eii",
+        "id": "les_mwtgjwrhwlr2wj",
         "title": "位移、速度与加速度的相位关系",
         "summary": "三个量依次相差四分之一个周期。",
         "objectives": [
@@ -112,11 +112,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mw2xwfbbmkn3uc",
+          "id": "cpt_mwtgjwrhtiytvk",
           "name": "相位"
          },
          {
-          "id": "cpt_mw2xwfbbqdj06r",
+          "id": "cpt_mwtgjwrh7gqf40",
           "name": "速度与加速度"
          }
         ],
@@ -129,7 +129,7 @@
     ]
    },
    {
-    "id": "unt_mw2xwfbcyefs2u",
+    "id": "unt_mwtgjwrhgsx4zc",
     "title": "单摆与能量",
     "summary": "把方法用到单摆上，并从能量的角度再看一次振动。",
     "objectives": [
@@ -138,12 +138,12 @@
     ],
     "lectures": [
      {
-      "id": "lec_mw2xwfbclq7h2h",
+      "id": "lec_mwtgjwrhnlv5kr",
       "title": "单摆",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mw2xwfbbp0wl7p",
+        "id": "les_mwtgjwrhhux9n4",
         "title": "小角度近似：单摆为什么是简谐运动",
         "summary": "sin θ ≈ θ 让单摆满足回复力的形式。",
         "objectives": [
@@ -152,11 +152,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mw2xwfbbg5cdgw",
+          "id": "cpt_mwtgjwrhjdrc1z",
           "name": "小角度近似"
          },
          {
-          "id": "cpt_mw2xwfbbt0hlwj",
+          "id": "cpt_mwtgjwrh7mtvbz",
           "name": "单摆的回复力"
          }
         ],
@@ -165,7 +165,7 @@
         "depth": "derivation"
        },
        {
-        "id": "les_mw2xwfbb35l7zg",
+        "id": "les_mwtgjwrhf29ndj",
         "title": "周期公式与测量重力加速度",
         "summary": "T = 2π√(L/g)，以及如何用它测出 g。",
         "objectives": [
@@ -174,11 +174,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mw2xwfbb2ewrxt",
+          "id": "cpt_mwtgjwrhhprscf",
           "name": "单摆周期"
          },
          {
-          "id": "cpt_mw2xwfbbcfibet",
+          "id": "cpt_mwtgjwrhr57g4o",
           "name": "重力加速度"
          }
         ],
@@ -189,12 +189,12 @@
       ]
      },
      {
-      "id": "lec_mw2xwfbc7c9j82",
+      "id": "lec_mwtgjwrhzehru1",
       "title": "能量视角",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mw2xwfbc3xy52c",
+        "id": "les_mwtgjwrhjt7iyr",
         "title": "动能与势能的来回交换",
         "summary": "振动的过程就是能量在两种形式之间流动。",
         "objectives": [
@@ -203,11 +203,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mw2xwfbcposui6",
+          "id": "cpt_mwtgjwrhihpssc",
           "name": "机械能守恒"
          },
          {
-          "id": "cpt_mw2xwfbcl8urxg",
+          "id": "cpt_mwtgjwrh1qkhed",
           "name": "振动的能量"
          }
         ],
@@ -222,7 +222,7 @@
   ],
   "projects": [
    {
-    "id": "prj_mw2xwfbcwd2f30",
+    "id": "prj_mwtgjwrhl56k63",
     "title": "用一根绳子测出重力加速度",
     "kind": "code",
     "brief": "用手机秒表和一根绳子做一个单摆，测出不同摆长下的周期，再用 Python 画出 T² 与 L 的关系，从直线斜率求出你所在地的重力加速度 g，并和 9.8 m/s² 比较、分析误差来源。",
@@ -293,12 +293,12 @@
       "content": "import csv\nimport math\n\n# 读取数据\nrows = list(csv.DictReader(open(\"data.csv\", encoding=\"utf-8\")))\nL = [float(r[\"length_m\"]) for r in rows]\nT = [float(r[\"time_10_s\"]) / 10 for r in rows]\n\n# TODO 1：计算每个摆长对应的 T 的平方\nT2 = []\n\n# TODO 2：对 T2 关于 L 做最小二乘线性拟合，求斜率 k\n# 提示：k = Σ(L - L̄)(T2 - T̄2) / Σ(L - L̄)²\nk = None\n\n# TODO 3：由 T² = (4π²/g)·L 求 g\ng = None\n\nprint(\"g =\", g)\n"
      }
     ],
-    "unitId": "unt_mw2xwfbcyefs2u"
+    "unitId": "unt_mwtgjwrhgsx4zc"
    }
   ]
  },
  "boards": {
-  "les_mw2xwfb5laew17": {
+  "les_mwtgjwrdmvvx4n": {
    "title": "回复力：为什么会来回振动",
    "steps": [
     {
@@ -308,17 +308,20 @@
       {
        "id": "o1",
        "t": "title",
-       "text": "回复力：为什么会来回振动"
+       "text": "回复力：为什么会来回振动",
+       "at": 0
       },
       {
        "id": "o2",
        "t": "h",
-       "text": "一个熟悉的现象"
+       "text": "一个熟悉的现象",
+       "at": 0
       },
       {
        "id": "o3",
        "t": "p",
-       "text": "拉开 → 松手 → ==来回振动=="
+       "text": "拉开 → 松手 → ==来回振动==",
+       "at": 1
       }
      ]
     },
@@ -331,7 +334,8 @@
        "t": "svg",
        "svg": "<svg viewBox=\"0 0 480 220\" xmlns=\"http://www.w3.org/2000/svg\">\n<line x1=\"34\" y1=\"40\" x2=\"34\" y2=\"150\" stroke=\"#2b2b2b\" stroke-width=\"4\" stroke-linecap=\"round\"/>\n<line x1=\"34\" y1=\"60\" x2=\"20\" y2=\"74\" stroke=\"#2b2b2b\" stroke-width=\"2\"/><line x1=\"34\" y1=\"85\" x2=\"20\" y2=\"99\" stroke=\"#2b2b2b\" stroke-width=\"2\"/><line x1=\"34\" y1=\"110\" x2=\"20\" y2=\"124\" stroke=\"#2b2b2b\" stroke-width=\"2\"/><line x1=\"34\" y1=\"135\" x2=\"20\" y2=\"149\" stroke=\"#2b2b2b\" stroke-width=\"2\"/>\n<polyline points=\"34,120 62,120 74,98 98,142 122,98 146,142 170,98 194,142 206,120 232,120\" fill=\"none\" stroke=\"#2f6fde\" stroke-width=\"3\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>\n<rect x=\"232\" y=\"90\" width=\"72\" height=\"60\" rx=\"8\" fill=\"#ffe7a3\" stroke=\"#2b2b2b\" stroke-width=\"2.5\"/>\n<text x=\"268\" y=\"126\" font-size=\"18\" text-anchor=\"middle\" fill=\"#2b2b2b\">m</text>\n<line x1=\"20\" y1=\"150\" x2=\"460\" y2=\"150\" stroke=\"#2b2b2b\" stroke-width=\"2.4\" stroke-linecap=\"round\"/>\n<line x1=\"268\" y1=\"58\" x2=\"268\" y2=\"182\" stroke=\"#7a4fd6\" stroke-width=\"2\" stroke-dasharray=\"6 5\"/>\n<text x=\"268\" y=\"204\" font-size=\"16\" text-anchor=\"middle\" fill=\"#7a4fd6\">平衡位置 O</text>\n<line x1=\"320\" y1=\"70\" x2=\"420\" y2=\"70\" stroke=\"#d64545\" stroke-width=\"2.6\" stroke-linecap=\"round\"/>\n<polyline points=\"410,63 420,70 410,77\" fill=\"none\" stroke=\"#d64545\" stroke-width=\"2.6\" stroke-linecap=\"round\"/>\n<text x=\"370\" y=\"58\" font-size=\"15\" text-anchor=\"middle\" fill=\"#d64545\">向右拉开 x</text>\n</svg>",
        "caption": "弹簧振子：光滑水平面上的木块和弹簧",
-       "wide": false
+       "wide": false,
+       "at": 0
       }
      ]
     },
@@ -342,19 +346,22 @@
       {
        "id": "o5",
        "t": "h",
-       "text": "回复力的方向"
+       "text": "回复力的方向",
+       "at": 0
       },
       {
        "id": "o6",
-       "t": "p",
-       "text": "力总是**指向平衡位置**"
-      },
-      {
-       "id": "o7",
        "t": "svg",
        "svg": "<svg viewBox=\"0 0 480 200\" xmlns=\"http://www.w3.org/2000/svg\">\n<line x1=\"20\" y1=\"120\" x2=\"460\" y2=\"120\" stroke=\"#2b2b2b\" stroke-width=\"2.2\" stroke-linecap=\"round\"/>\n<line x1=\"240\" y1=\"70\" x2=\"240\" y2=\"150\" stroke=\"#7a4fd6\" stroke-width=\"2\" stroke-dasharray=\"6 5\"/>\n<text x=\"240\" y=\"172\" font-size=\"15\" text-anchor=\"middle\" fill=\"#7a4fd6\">O</text>\n<rect x=\"330\" y=\"88\" width=\"50\" height=\"32\" rx=\"6\" fill=\"#ffe7a3\" stroke=\"#2b2b2b\" stroke-width=\"2\"/>\n<line x1=\"330\" y1=\"76\" x2=\"270\" y2=\"76\" stroke=\"#d64545\" stroke-width=\"3\" stroke-linecap=\"round\"/>\n<polyline points=\"280,69 270,76 280,83\" fill=\"none\" stroke=\"#d64545\" stroke-width=\"3\" stroke-linecap=\"round\"/>\n<text x=\"355\" y=\"150\" font-size=\"15\" text-anchor=\"middle\" fill=\"#2b2b2b\">x &gt; 0</text>\n<text x=\"300\" y=\"64\" font-size=\"15\" text-anchor=\"middle\" fill=\"#d64545\">F &lt; 0</text>\n<rect x=\"100\" y=\"88\" width=\"50\" height=\"32\" rx=\"6\" fill=\"#ffe7a3\" stroke=\"#2b2b2b\" stroke-width=\"2\"/>\n<line x1=\"150\" y1=\"76\" x2=\"210\" y2=\"76\" stroke=\"#d64545\" stroke-width=\"3\" stroke-linecap=\"round\"/>\n<polyline points=\"200,69 210,76 200,83\" fill=\"none\" stroke=\"#d64545\" stroke-width=\"3\" stroke-linecap=\"round\"/>\n<text x=\"125\" y=\"150\" font-size=\"15\" text-anchor=\"middle\" fill=\"#2b2b2b\">x &lt; 0</text>\n<text x=\"180\" y=\"64\" font-size=\"15\" text-anchor=\"middle\" fill=\"#d64545\">F &gt; 0</text>\n</svg>",
        "caption": "两侧的回复力都指向 O",
-       "wide": false
+       "wide": false,
+       "at": 0
+      },
+      {
+       "id": "o7",
+       "t": "p",
+       "text": "力总是**指向平衡位置**",
+       "at": 2
       }
      ]
     },
@@ -364,23 +371,27 @@
      "ops": [
       {
        "id": "o8",
-       "t": "col"
+       "t": "col",
+       "at": 0
       },
       {
        "id": "o9",
        "t": "h",
-       "text": "胡克定律"
+       "text": "胡克定律",
+       "at": 1
       },
       {
        "id": "o10",
        "t": "math",
        "tex": "F=-kx",
-       "text": "F = −kx"
+       "text": "F = −kx",
+       "at": 2
       },
       {
        "id": "o11",
        "t": "p",
-       "text": "$k$：劲度系数，单位 N/m"
+       "text": "$k$：劲度系数，单位 N/m",
+       "at": 2
       }
      ]
     },
@@ -392,13 +403,15 @@
        "id": "o12",
        "t": "mark",
        "ref": "o10",
-       "style": "circle"
+       "style": "circle",
+       "at": 0
       },
       {
        "id": "o13",
        "t": "note",
        "text": "负号 = 方向相反 = 拉回平衡位置",
-       "tone": "key"
+       "tone": "key",
+       "at": 1
       }
      ],
      "check": {
@@ -409,7 +422,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mw2xwfbbvauad0"
+       "cpt_mwtgjwrh8oj6cj"
       ],
       "options": [
        {
@@ -439,7 +452,8 @@
       {
        "id": "o14",
        "t": "h",
-       "text": "为什么会冲过头？"
+       "text": "为什么会冲过头？",
+       "at": 0
       },
       {
        "id": "o15",
@@ -449,7 +463,8 @@
         "惯性让它冲过 O 点",
         "另一侧的回复力把它减速、拉回"
        ],
-       "ordered": false
+       "ordered": false,
+       "at": 1
       }
      ]
     },
@@ -460,7 +475,8 @@
       {
        "id": "o16",
        "t": "page",
-       "title": "振动的图像"
+       "title": "振动的图像",
+       "at": 0
       },
       {
        "id": "o17",
@@ -504,7 +520,8 @@
        "points": [],
        "lines": [],
        "shades": [],
-       "tangents": []
+       "tangents": [],
+       "at": 0
       }
      ]
     },
@@ -515,18 +532,21 @@
       {
        "id": "o18",
        "t": "h",
-       "text": "算一算"
+       "text": "算一算",
+       "at": 0
       },
       {
        "id": "o19",
        "t": "p",
-       "text": "$k = 200$ N/m，$x = 5$ cm $= 0.05$ m"
+       "text": "$k = 200$ N/m，$x = 5$ cm $= 0.05$ m",
+       "at": 1
       },
       {
        "id": "o20",
        "t": "math",
        "tex": "|F| = kx = 200 \\times 0.05 = 10\\ \\text{N}",
-       "text": "|F| = kx = 200 × 0.05 = 10 N"
+       "text": "|F| = kx = 200 × 0.05 = 10 N",
+       "at": 2
       }
      ],
      "check": {
@@ -537,7 +557,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mw2xwfbbes0rs8"
+       "cpt_mwtgjwrh6yi2ml"
       ],
       "answer": 4,
       "tolerance": 0.01,
@@ -550,13 +570,15 @@
      "ops": [
       {
        "id": "o21",
-       "t": "col"
+       "t": "col",
+       "at": 0
       },
       {
        "id": "o22",
        "t": "note",
        "text": "① 回复力总指向平衡位置\n② $F=-kx$：离得越远，拉得越用力\n③ 惯性让它冲过头 → 来回振动",
-       "tone": "key"
+       "tone": "key",
+       "at": 1
       }
      ],
      "check": {
@@ -567,8 +589,8 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mw2xwfbbvauad0",
-       "cpt_mw2xwfbbes0rs8"
+       "cpt_mwtgjwrh8oj6cj",
+       "cpt_mwtgjwrh6yi2ml"
       ],
       "options": [
        {
@@ -592,9 +614,9 @@
      }
     }
    ],
-   "lessonId": "les_mw2xwfb5laew17"
+   "lessonId": "les_mwtgjwrdmvvx4n"
   },
-  "les_mw2xwfbbvfuj0a": {
+  "les_mwtgjwrhqhqxjd": {
    "title": "从圆周运动看简谐运动",
    "steps": [
     {
@@ -604,17 +626,20 @@
       {
        "id": "o1",
        "t": "title",
-       "text": "从圆周运动看简谐运动"
+       "text": "从圆周运动看简谐运动",
+       "at": 0
       },
       {
        "id": "o2",
        "t": "h",
-       "text": "一个关键的想象"
+       "text": "一个关键的想象",
+       "at": 1
       },
       {
        "id": "o3",
        "t": "p",
-       "text": "圆周运动的**影子**会怎样运动？"
+       "text": "圆周运动的**影子**会怎样运动？",
+       "at": 2
       }
      ]
     },
@@ -628,7 +653,8 @@
        "html": "<!doctype html><html><head><style>html,body{margin:0;background:transparent}canvas{display:block;width:100%;height:auto}</style></head><body><canvas id=\"c\" width=\"600\" height=\"280\"></canvas><script>\nconst c=document.getElementById('c'),g=c.getContext('2d');const R=92,cx=130,cy=140,X0=290;let t=0;const trail=[];\nfunction frame(){g.clearRect(0,0,600,280);g.lineWidth=1.6;g.strokeStyle='rgba(120,120,130,.6)';g.beginPath();g.arc(cx,cy,R,0,Math.PI*2);g.stroke();\ng.beginPath();g.moveTo(cx-R-14,cy);g.lineTo(cx+R+14,cy);g.moveTo(X0,cy);g.lineTo(590,cy);g.stroke();\nconst px=cx+R*Math.cos(t),py=cy-R*Math.sin(t);g.strokeStyle='#2f6fde';g.beginPath();g.moveTo(cx,cy);g.lineTo(px,py);g.stroke();\ng.fillStyle='#2f6fde';g.beginPath();g.arc(px,py,7,0,7);g.fill();g.setLineDash([5,5]);g.strokeStyle='#e08a1e';g.beginPath();g.moveTo(px,py);g.lineTo(X0,py);g.stroke();g.setLineDash([]);\ng.strokeStyle='rgba(120,120,130,.9)';g.beginPath();g.moveTo(X0,40);g.lineTo(X0,240);g.stroke();g.fillStyle='#d64545';g.beginPath();g.arc(X0,py,7,0,7);g.fill();\ntrail.unshift(py);if(trail.length>290)trail.pop();g.strokeStyle='#d64545';g.lineWidth=2.4;g.beginPath();trail.forEach((y,i)=>{const x=X0+i;i?g.lineTo(x,y):g.moveTo(x,y)});g.stroke();\nt+=0.028;requestAnimationFrame(frame)}frame();\n</script></body></html>",
        "height": 280,
        "caption": "蓝点匀速转圈，红点是它在竖直方向上的“影子”",
-       "poster": "<svg viewBox=\"0 0 600 280\" width=\"600\" height=\"280\" xmlns=\"http://www.w3.org/2000/svg\">\n<circle cx=\"130\" cy=\"140\" r=\"92\" fill=\"none\" stroke=\"#787882\" stroke-opacity=\"0.6\" stroke-width=\"1.6\"/>\n<line x1=\"24\" y1=\"140\" x2=\"236\" y2=\"140\" stroke=\"#787882\" stroke-opacity=\"0.6\" stroke-width=\"1.6\"/>\n<line x1=\"290\" y1=\"140\" x2=\"590\" y2=\"140\" stroke=\"#787882\" stroke-opacity=\"0.6\" stroke-width=\"1.6\"/>\n<line x1=\"290\" y1=\"40\" x2=\"290\" y2=\"240\" stroke=\"#787882\" stroke-opacity=\"0.9\" stroke-width=\"1.6\"/>\n<polyline points=\"290,60.6 292,58.1 294,55.9 296,53.9 298,52.3 300,50.8 302,49.7 304,48.9 306,48.3 308,48.0 310,48.0 312,48.3 314,48.9 316,49.8 318,51.0 320,52.4 322,54.1 324,56.1 326,58.3 328,60.8 330,63.6 332,66.6 334,69.8 336,73.2 338,76.9 340,80.7 342,84.8 344,89.0 346,93.3 348,97.8 350,102.5 352,107.2 354,112.1 356,117.1 358,122.1 360,127.2 362,132.3 364,137.4 366,142.6 368,147.7 370,152.8 372,157.9 374,162.9 376,167.9 378,172.8 380,177.5 382,182.2 384,186.7 386,191.0 388,195.2 390,199.3 392,203.1 394,206.8 396,210.2 398,213.4 400,216.4 402,219.2 404,221.7 406,223.9 408,225.9 410,227.6 412,229.0 414,230.2 416,231.1 418,231.7 420,232.0 422,232.0 424,231.7 426,231.1 428,230.3 430,229.2 432,227.7 434,226.1 436,224.1 438,221.9 440,219.4 442,216.7 444,213.7 446,210.5 448,207.1 450,203.5 452,199.7 454,195.6 456,191.5 458,187.1 460,182.6 462,178.0 464,173.2 466,168.4 468,163.4 470,158.4 472,153.3 474,148.2 476,143.1 478,137.9 480,132.8 482,127.7 484,122.6 486,117.6 488,112.6 490,107.7 492,103.0 494,98.3 496,93.8 498,89.4 500,85.2 502,81.1 504,77.3 506,73.6 508,70.1 510,66.9 512,63.9 514,61.1 516,58.6 518,56.3 520,54.3 522,52.6 524,51.1 526,49.9 528,49.0 530,48.4 532,48.1 534,48.0 536,48.3 538,48.8 540,49.6 542,50.7 544,52.1 546,53.8 548,55.7 550,57.9 552,60.3 554,63.0 556,66.0 558,69.1 560,72.5 562,76.1 564,79.9 566,83.9 568,88.1 570,92.4 572,96.9 574,101.5 576,106.3 578,111.1 580,116.1\" fill=\"none\" stroke=\"#d64545\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n<line x1=\"130\" y1=\"140\" x2=\"83.6\" y2=\"60.6\" stroke=\"#2f6fde\" stroke-width=\"1.6\"/>\n<line x1=\"83.6\" y1=\"60.6\" x2=\"290\" y2=\"60.6\" stroke=\"#e08a1e\" stroke-width=\"1.6\" stroke-dasharray=\"5 5\"/>\n<circle cx=\"83.6\" cy=\"60.6\" r=\"7\" fill=\"#2f6fde\"/>\n<circle cx=\"290\" cy=\"60.6\" r=\"7\" fill=\"#d64545\"/>\n</svg>"
+       "poster": "<svg viewBox=\"0 0 600 280\" width=\"600\" height=\"280\" xmlns=\"http://www.w3.org/2000/svg\">\n<circle cx=\"130\" cy=\"140\" r=\"92\" fill=\"none\" stroke=\"#787882\" stroke-opacity=\"0.6\" stroke-width=\"1.6\"/>\n<line x1=\"24\" y1=\"140\" x2=\"236\" y2=\"140\" stroke=\"#787882\" stroke-opacity=\"0.6\" stroke-width=\"1.6\"/>\n<line x1=\"290\" y1=\"140\" x2=\"590\" y2=\"140\" stroke=\"#787882\" stroke-opacity=\"0.6\" stroke-width=\"1.6\"/>\n<line x1=\"290\" y1=\"40\" x2=\"290\" y2=\"240\" stroke=\"#787882\" stroke-opacity=\"0.9\" stroke-width=\"1.6\"/>\n<polyline points=\"290,60.6 292,58.1 294,55.9 296,53.9 298,52.3 300,50.8 302,49.7 304,48.9 306,48.3 308,48.0 310,48.0 312,48.3 314,48.9 316,49.8 318,51.0 320,52.4 322,54.1 324,56.1 326,58.3 328,60.8 330,63.6 332,66.6 334,69.8 336,73.2 338,76.9 340,80.7 342,84.8 344,89.0 346,93.3 348,97.8 350,102.5 352,107.2 354,112.1 356,117.1 358,122.1 360,127.2 362,132.3 364,137.4 366,142.6 368,147.7 370,152.8 372,157.9 374,162.9 376,167.9 378,172.8 380,177.5 382,182.2 384,186.7 386,191.0 388,195.2 390,199.3 392,203.1 394,206.8 396,210.2 398,213.4 400,216.4 402,219.2 404,221.7 406,223.9 408,225.9 410,227.6 412,229.0 414,230.2 416,231.1 418,231.7 420,232.0 422,232.0 424,231.7 426,231.1 428,230.3 430,229.2 432,227.7 434,226.1 436,224.1 438,221.9 440,219.4 442,216.7 444,213.7 446,210.5 448,207.1 450,203.5 452,199.7 454,195.6 456,191.5 458,187.1 460,182.6 462,178.0 464,173.2 466,168.4 468,163.4 470,158.4 472,153.3 474,148.2 476,143.1 478,137.9 480,132.8 482,127.7 484,122.6 486,117.6 488,112.6 490,107.7 492,103.0 494,98.3 496,93.8 498,89.4 500,85.2 502,81.1 504,77.3 506,73.6 508,70.1 510,66.9 512,63.9 514,61.1 516,58.6 518,56.3 520,54.3 522,52.6 524,51.1 526,49.9 528,49.0 530,48.4 532,48.1 534,48.0 536,48.3 538,48.8 540,49.6 542,50.7 544,52.1 546,53.8 548,55.7 550,57.9 552,60.3 554,63.0 556,66.0 558,69.1 560,72.5 562,76.1 564,79.9 566,83.9 568,88.1 570,92.4 572,96.9 574,101.5 576,106.3 578,111.1 580,116.1\" fill=\"none\" stroke=\"#d64545\" stroke-width=\"2.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>\n<line x1=\"130\" y1=\"140\" x2=\"83.6\" y2=\"60.6\" stroke=\"#2f6fde\" stroke-width=\"1.6\"/>\n<line x1=\"83.6\" y1=\"60.6\" x2=\"290\" y2=\"60.6\" stroke=\"#e08a1e\" stroke-width=\"1.6\" stroke-dasharray=\"5 5\"/>\n<circle cx=\"83.6\" cy=\"60.6\" r=\"7\" fill=\"#2f6fde\"/>\n<circle cx=\"290\" cy=\"60.6\" r=\"7\" fill=\"#d64545\"/>\n</svg>",
+       "at": 0
       }
      ]
     },
@@ -640,7 +666,8 @@
        "id": "o5",
        "t": "math",
        "tex": "x(t)=A\\cos(\\omega t+\\varphi)",
-       "text": "x(t) = A·cos(ωt + φ)"
+       "text": "x(t) = A·cos(ωt + φ)",
+       "at": 0
       },
       {
        "id": "o6",
@@ -650,7 +677,8 @@
         "$\\omega$：角频率，转得有多快",
         "$\\varphi$：初相位，从哪里开始转"
        ],
-       "ordered": false
+       "ordered": false,
+       "at": 0
       }
      ],
      "check": {
@@ -661,7 +689,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mw2xwfbb56si3o"
+       "cpt_mwtgjwrhd76fhk"
       ],
       "options": [
        {
@@ -690,23 +718,27 @@
      "ops": [
       {
        "id": "o7",
-       "t": "col"
+       "t": "col",
+       "at": 0
       },
       {
        "id": "o8",
        "t": "h",
-       "text": "周期与角频率"
+       "text": "周期与角频率",
+       "at": 0
       },
       {
        "id": "o9",
        "t": "math",
        "tex": "\\omega=\\frac{2\\pi}{T}=2\\pi f",
-       "text": "ω = 2π/T = 2πf"
+       "text": "ω = 2π/T = 2πf",
+       "at": 1
       },
       {
        "id": "o10",
        "t": "p",
-       "text": "转得越快 → $\\omega$ 越大 → 周期越短"
+       "text": "转得越快 → $\\omega$ 越大 → 周期越短",
+       "at": 1
       }
      ]
     },
@@ -718,13 +750,15 @@
        "id": "o11",
        "t": "math",
        "tex": "\\omega=\\sqrt{\\frac{k}{m}},\\qquad T=2\\pi\\sqrt{\\frac{m}{k}}",
-       "text": "ω = √(k/m)，T = 2π√(m/k)"
+       "text": "ω = √(k/m)，T = 2π√(m/k)",
+       "at": 1
       },
       {
        "id": "o12",
        "t": "note",
        "text": "周期和振幅无关！拉得远一点，跑得也快一点，用时刚好一样。",
-       "tone": "tip"
+       "tone": "tip",
+       "at": 3
       }
      ],
      "check": {
@@ -735,7 +769,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mw2xwfbbqi4q0i"
+       "cpt_mwtgjwrh8es1jd"
       ],
       "answer": 10,
       "tolerance": 0.01,
@@ -749,7 +783,8 @@
       {
        "id": "o13",
        "t": "page",
-       "title": "比较不同的周期"
+       "title": "比较不同的周期",
+       "at": 0
       },
       {
        "id": "o14",
@@ -1418,7 +1453,8 @@
          ]
         }
        ],
-       "data": []
+       "data": [],
+       "at": 0
       }
      ]
     },
@@ -1430,7 +1466,8 @@
        "id": "o15",
        "t": "note",
        "text": "① 简谐运动 = 匀速圆周运动的“影子”\n② $x = A\\cos(\\omega t+\\varphi)$\n③ $T = 2\\pi\\sqrt{m/k}$，与振幅无关",
-       "tone": "key"
+       "tone": "key",
+       "at": 1
       }
      ],
      "check": {
@@ -1441,8 +1478,8 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mw2xwfbbqi4q0i",
-       "cpt_mw2xwfbb56si3o"
+       "cpt_mwtgjwrh8es1jd",
+       "cpt_mwtgjwrhd76fhk"
       ],
       "options": [
        {
@@ -1466,12 +1503,12 @@
      }
     }
    ],
-   "lessonId": "les_mw2xwfbbvfuj0a"
+   "lessonId": "les_mwtgjwrhqhqxjd"
   }
  },
  "practice": {
-  "les_mw2xwfb5laew17": {
-   "lessonId": "les_mw2xwfb5laew17",
+  "les_mwtgjwrdmvvx4n": {
+   "lessonId": "les_mwtgjwrdmvvx4n",
    "items": [
     {
      "id": "i1",
@@ -1483,7 +1520,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mw2xwfbbvauad0"
+      "cpt_mwtgjwrh8oj6cj"
      ],
      "options": [
       {
@@ -1515,7 +1552,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mw2xwfbbes0rs8"
+      "cpt_mwtgjwrh6yi2ml"
      ],
      "answer": 5,
      "tolerance": 0.01,
@@ -1531,7 +1568,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mw2xwfbbes0rs8"
+      "cpt_mwtgjwrh6yi2ml"
      ],
      "answer": [
       "-kx",
@@ -1551,7 +1588,7 @@
      ],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mw2xwfbbvauad0"
+      "cpt_mwtgjwrh8oj6cj"
      ],
      "options": [
       {
@@ -1581,7 +1618,7 @@
      "hints": [],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mw2xwfbbvauad0"
+      "cpt_mwtgjwrh8oj6cj"
      ],
      "answer": "到达平衡位置时回复力为零但速度最大，由于惯性会冲过平衡位置；冲过之后回复力反向，使它减速并被拉回，如此往复。",
      "rubric": [
@@ -1592,8 +1629,8 @@
     }
    ]
   },
-  "les_mw2xwfbbvfuj0a": {
-   "lessonId": "les_mw2xwfbbvfuj0a",
+  "les_mwtgjwrhqhqxjd": {
+   "lessonId": "les_mwtgjwrhqhqxjd",
    "items": [
     {
      "id": "i1",
@@ -1603,7 +1640,7 @@
      "hints": [],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mw2xwfbb56si3o"
+      "cpt_mwtgjwrhd76fhk"
      ],
      "options": [
       {
@@ -1635,7 +1672,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mw2xwfbbqi4q0i"
+      "cpt_mwtgjwrh8es1jd"
      ],
      "answer": 12.566,
      "tolerance": 0.06,
@@ -1649,7 +1686,7 @@
      "hints": [],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mw2xwfbb56si3o"
+      "cpt_mwtgjwrhd76fhk"
      ],
      "options": [
       {
@@ -1681,7 +1718,7 @@
      ],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mw2xwfbbqi4q0i"
+      "cpt_mwtgjwrh8es1jd"
      ],
      "answer": 1.2566,
      "tolerance": 0.01,
@@ -1695,7 +1732,7 @@
      "hints": [],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mw2xwfbbqi4q0i"
+      "cpt_mwtgjwrh8es1jd"
      ],
      "options": [
       {

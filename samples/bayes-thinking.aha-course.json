@@ -1,7 +1,7 @@
 {
  "format": "aha-tutor.coursepack",
  "version": 1,
- "exportedAt": "2026-11-05T02:41:57.403Z",
+ "exportedAt": "2026-11-23T16:06:06.768Z",
  "app": {
   "name": "dsh-aha-tutor",
   "version": "sample"
@@ -16,7 +16,7 @@
   "goal": "不需要高深数学，从掷骰子和人数表格出发，理解条件概率、基础比率和贝叶斯公式，最后亲手写一个会“学习”的垃圾短信过滤器。",
   "units": [
    {
-    "id": "unt_mw2xwfbtky9kvg",
+    "id": "unt_mwtgjwrzt3qdpv",
     "title": "条件概率的直觉",
     "summary": "新信息会把世界变小，概率要在小世界里重新计算。",
     "objectives": [
@@ -25,12 +25,12 @@
     ],
     "lectures": [
      {
-      "id": "lec_mw2xwfbt80i1d6",
+      "id": "lec_mwtgjwrzyrehit",
       "title": "条件概率",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mw2xwfbtkyjb0h",
+        "id": "les_mwtgjwrz5udje3",
         "title": "条件概率：知道一点之后",
         "summary": "在信息划定的小世界里重新数一遍。",
         "objectives": [
@@ -39,11 +39,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mw2xwfbtpj96o7",
+          "id": "cpt_mwtgjwrzr96509",
           "name": "条件概率"
          },
          {
-          "id": "cpt_mw2xwfbt0emah8",
+          "id": "cpt_mwtgjwrzri9sjh",
           "name": "P(A|B) 与 P(B|A)"
          }
         ],
@@ -52,7 +52,7 @@
         "depth": "intuition"
        },
        {
-        "id": "les_mw2xwfbtc7pnm8",
+        "id": "les_mwtgjwrzzfnqze",
         "title": "独立与不独立",
         "summary": "什么时候一个信息完全不改变另一个事件的概率。",
         "objectives": [
@@ -61,7 +61,7 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mw2xwfbtls11gx",
+          "id": "cpt_mwtgjwrz7q5y3t",
           "name": "独立事件"
          }
         ],
@@ -72,12 +72,12 @@
       ]
      },
      {
-      "id": "lec_mw2xwfbto8epri",
+      "id": "lec_mwtgjwrz7q5wob",
       "title": "全概率",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mw2xwfbt4175zy",
+        "id": "les_mwtgjwrzculw1t",
         "title": "把世界切成几块：全概率公式",
         "summary": "分情况讨论，再把各部分加起来。",
         "objectives": [
@@ -86,7 +86,7 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mw2xwfbt734bnx",
+          "id": "cpt_mwtgjwrzetuskq",
           "name": "全概率公式"
          }
         ],
@@ -99,7 +99,7 @@
     ]
    },
    {
-    "id": "unt_mw2xwfbtdzhsk5",
+    "id": "unt_mwtgjwrzx622tr",
     "title": "贝叶斯公式",
     "summary": "从结果反推原因，用证据更新信念。",
     "objectives": [
@@ -108,12 +108,12 @@
     ],
     "lectures": [
      {
-      "id": "lec_mw2xwfbtxzwl86",
+      "id": "lec_mwtgjwrz7o4dd4",
       "title": "贝叶斯",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mw2xwfbtwyc7oh",
+        "id": "les_mwtgjwrzxo24ee",
         "title": "医学检测悖论：基础比率的力量",
         "summary": "准确率 99% 的检测，阳性也未必意味着得病。",
         "objectives": [
@@ -122,11 +122,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mw2xwfbtgknsql",
+          "id": "cpt_mwtgjwrzwo2r4r",
           "name": "基础比率"
          },
          {
-          "id": "cpt_mw2xwfbtp8uyk9",
+          "id": "cpt_mwtgjwrz1lh57g",
           "name": "贝叶斯公式"
          }
         ],
@@ -135,7 +135,7 @@
         "depth": "application"
        },
        {
-        "id": "les_mw2xwfbt7cl8wi",
+        "id": "les_mwtgjwrz8ypu7a",
         "title": "先验、似然与后验",
         "summary": "贝叶斯公式里每一项的含义。",
         "objectives": [
@@ -144,11 +144,11 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mw2xwfbtk729hf",
+          "id": "cpt_mwtgjwrz86g98z",
           "name": "先验与后验"
          },
          {
-          "id": "cpt_mw2xwfbtifksk1",
+          "id": "cpt_mwtgjwrzkyex0g",
           "name": "似然"
          }
         ],
@@ -159,12 +159,12 @@
       ]
      },
      {
-      "id": "lec_mw2xwfbtggd1jj",
+      "id": "lec_mwtgjwrz667j7j",
       "title": "用起来",
       "summary": "",
       "lessons": [
        {
-        "id": "les_mw2xwfbt4q01rs",
+        "id": "les_mwtgjwrzha1ssj",
         "title": "一次次更新你的判断",
         "summary": "每一个新证据，都让昨天的后验变成今天的先验。",
         "objectives": [
@@ -173,7 +173,7 @@
         ],
         "concepts": [
          {
-          "id": "cpt_mw2xwfbtd0yvaq",
+          "id": "cpt_mwtgjwrzg9dmyx",
           "name": "贝叶斯更新"
          }
         ],
@@ -188,7 +188,7 @@
   ],
   "projects": [
    {
-    "id": "prj_mw2xwfbtsup3f4",
+    "id": "prj_mwtgjwrzu4pjg0",
     "title": "写一个会学习的垃圾短信过滤器",
     "kind": "code",
     "brief": "用朴素贝叶斯的思路，统计正常短信和垃圾短信里各个词出现的频率，对一条新短信计算它是垃圾短信的后验概率。完成后，试着输入几条你自己的短信，看看过滤器的判断是否合理。",
@@ -259,12 +259,12 @@
       "content": "import csv\nimport math\nfrom collections import Counter\n\nrows = list(csv.DictReader(open(\"messages.csv\", encoding=\"utf-8\")))\n\n# TODO 1：分别统计 spam 和 ham 中每个词出现的次数\nspam_words, ham_words = Counter(), Counter()\n\n# TODO 2：计算先验 P(spam) 和 P(ham)\np_spam = None\np_ham = None\n\ndef score(text):\n    \"\"\"返回 log P(spam|text) - log P(ham|text)。大于 0 判为垃圾短信。\"\"\"\n    # TODO 3：对每个词累加 log 似然，记得做拉普拉斯平滑（每个词的计数 +1）\n    return 0.0\n\nfor text in [\"恭喜 中奖 点击 领取\", \"明天 一起 吃饭\"]:\n    print(text, \"->\", \"垃圾\" if score(text) > 0 else \"正常\")\n"
      }
     ],
-    "unitId": "unt_mw2xwfbtdzhsk5"
+    "unitId": "unt_mwtgjwrzx622tr"
    }
   ]
  },
  "boards": {
-  "les_mw2xwfbtkyjb0h": {
+  "les_mwtgjwrz5udje3": {
    "title": "条件概率：知道一点之后",
    "steps": [
     {
@@ -274,17 +274,20 @@
       {
        "id": "o1",
        "t": "title",
-       "text": "条件概率：知道一点之后"
+       "text": "条件概率：知道一点之后",
+       "at": 0
       },
       {
        "id": "o2",
        "t": "h",
-       "text": "一个小谜题"
+       "text": "一个小谜题",
+       "at": 0
       },
       {
        "id": "o3",
        "t": "p",
-       "text": "掷骰子 → 朋友说“是偶数” → 是 6 的概率？"
+       "text": "掷骰子 → 朋友说“是偶数” → 是 6 的概率？",
+       "at": 1
       }
      ]
     },
@@ -314,12 +317,14 @@
          "✗",
          "✓"
         ]
-       ]
+       ],
+       "at": 0
       },
       {
        "id": "o5",
        "t": "p",
-       "text": "新的“世界”只剩下 ==$\\{2, 4, 6\\}$=="
+       "text": "新的“世界”只剩下 ==$\\{2, 4, 6\\}$==",
+       "at": 1
       }
      ]
     },
@@ -331,13 +336,15 @@
        "id": "o6",
        "t": "math",
        "tex": "P(6\\mid \\text{偶数})=\\frac{1}{3}",
-       "text": "P(6 | 偶数) = 1/3"
+       "text": "P(6 | 偶数) = 1/3",
+       "at": 0
       },
       {
        "id": "o7",
        "t": "note",
        "text": "条件概率 = 在缩小后的世界里重新计算",
-       "tone": "key"
+       "tone": "key",
+       "at": 1
       }
      ],
      "check": {
@@ -348,7 +355,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mw2xwfbtpj96o7"
+       "cpt_mwtgjwrzr96509"
       ],
       "options": [
        {
@@ -377,18 +384,21 @@
      "ops": [
       {
        "id": "o8",
-       "t": "col"
+       "t": "col",
+       "at": 0
       },
       {
        "id": "o9",
        "t": "h",
-       "text": "条件概率公式"
+       "text": "条件概率公式",
+       "at": 0
       },
       {
        "id": "o10",
        "t": "math",
        "tex": "P(A\\mid B)=\\frac{P(A\\cap B)}{P(B)}",
-       "text": "P(A|B) = P(A∩B) / P(B)"
+       "text": "P(A|B) = P(A∩B) / P(B)",
+       "at": 0
       },
       {
        "id": "o11",
@@ -397,7 +407,8 @@
         "分母：新世界有多大",
         "分子：新世界里我们关心的部分"
        ],
-       "ordered": false
+       "ordered": false,
+       "at": 1
       }
      ]
     },
@@ -408,7 +419,8 @@
       {
        "id": "o12",
        "t": "page",
-       "title": "用人数来想"
+       "title": "用人数来想",
+       "at": 0
       },
       {
        "id": "o13",
@@ -438,7 +450,8 @@
          "84",
          "100"
         ]
-       ]
+       ],
+       "at": 1
       }
      ]
     },
@@ -450,7 +463,8 @@
        "id": "o14",
        "t": "math",
        "tex": "P(\\text{戴眼镜}\\mid\\text{左撇子})=\\frac{10}{16}=62.5\\%",
-       "text": "P(戴眼镜 | 左撇子) = 10/16 = 62.5%"
+       "text": "P(戴眼镜 | 左撇子) = 10/16 = 62.5%",
+       "at": 1
       }
      ],
      "check": {
@@ -461,7 +475,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mw2xwfbtpj96o7"
+       "cpt_mwtgjwrzr96509"
       ],
       "answer": 0.25,
       "tolerance": 0.005,
@@ -474,16 +488,11 @@
      "ops": [
       {
        "id": "o15",
-       "t": "col"
+       "t": "col",
+       "at": 0
       },
       {
        "id": "o16",
-       "t": "note",
-       "text": "$P(A\\mid B) \\neq P(B\\mid A)$！",
-       "tone": "warn"
-      },
-      {
-       "id": "o17",
        "t": "chart",
        "kind": "bar",
        "title": "方向不同，结果不同",
@@ -499,7 +508,15 @@
          "label": "P(戴眼镜|左撇子)",
          "value": 62.5
         }
-       ]
+       ],
+       "at": 0
+      },
+      {
+       "id": "o17",
+       "t": "note",
+       "text": "$P(A\\mid B) \\neq P(B\\mid A)$！",
+       "tone": "warn",
+       "at": 1
       }
      ]
     },
@@ -511,7 +528,8 @@
        "id": "o18",
        "t": "note",
        "text": "① 新信息 → 世界变小 → 重新数\n② $P(A\\mid B)=P(A\\cap B)/P(B)$\n③ 分清方向：$P(A\\mid B)$ 与 $P(B\\mid A)$",
-       "tone": "key"
+       "tone": "key",
+       "at": 0
       }
      ],
      "check": {
@@ -522,7 +540,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mw2xwfbt0emah8"
+       "cpt_mwtgjwrzri9sjh"
       ],
       "options": [
        {
@@ -546,9 +564,9 @@
      }
     }
    ],
-   "lessonId": "les_mw2xwfbtkyjb0h"
+   "lessonId": "les_mwtgjwrz5udje3"
   },
-  "les_mw2xwfbtwyc7oh": {
+  "les_mwtgjwrzxo24ee": {
    "title": "医学检测悖论：基础比率的力量",
    "steps": [
     {
@@ -558,12 +576,14 @@
       {
        "id": "o1",
        "t": "title",
-       "text": "医学检测悖论"
+       "text": "医学检测悖论",
+       "at": 0
       },
       {
        "id": "o2",
        "t": "h",
-       "text": "你会怎么猜？"
+       "text": "你会怎么猜？",
+       "at": 0
       },
       {
        "id": "o3",
@@ -573,7 +593,8 @@
         "病人测出阳性：99%",
         "健康人被误报阳性：1%"
        ],
-       "ordered": false
+       "ordered": false,
+       "at": 0
       }
      ],
      "check": {
@@ -584,7 +605,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mw2xwfbtgknsql"
+       "cpt_mwtgjwrzwo2r4r"
       ],
       "options": [
        {
@@ -614,12 +635,14 @@
       {
        "id": "o4",
        "t": "h",
-       "text": "用 10 万人来想"
+       "text": "用 10 万人来想",
+       "at": 1
       },
       {
        "id": "o5",
        "t": "p",
-       "text": "患病：**100** 人　　健康：**99,900** 人"
+       "text": "患病：**100** 人　　健康：**99,900** 人",
+       "at": 2
       }
      ]
     },
@@ -655,7 +678,8 @@
          "98,902",
          "100,000"
         ]
-       ]
+       ],
+       "at": 0
       }
      ]
     },
@@ -665,13 +689,15 @@
      "ops": [
       {
        "id": "o7",
-       "t": "col"
+       "t": "col",
+       "at": 0
       },
       {
        "id": "o8",
        "t": "math",
        "tex": "P(\\text{患病}\\mid\\text{阳性})=\\frac{99}{1098}\\approx 9\\%",
-       "text": "P(患病 | 阳性) = 99/1098 ≈ 9%"
+       "text": "P(患病 | 阳性) = 99/1098 ≈ 9%",
+       "at": 1
       },
       {
        "id": "o9",
@@ -690,7 +716,8 @@
          "label": "假阳性",
          "value": 999
         }
-       ]
+       ],
+       "at": 2
       }
      ]
     },
@@ -701,13 +728,15 @@
       {
        "id": "o10",
        "t": "h",
-       "text": "基础比率"
+       "text": "基础比率",
+       "at": 0
       },
       {
        "id": "o11",
        "t": "note",
        "text": "忽略发病率 → 被大量的误报淹没",
-       "tone": "warn"
+       "tone": "warn",
+       "at": 2
       }
      ]
     },
@@ -718,13 +747,15 @@
       {
        "id": "o12",
        "t": "page",
-       "title": "贝叶斯公式"
+       "title": "贝叶斯公式",
+       "at": 0
       },
       {
        "id": "o13",
        "t": "math",
        "tex": "P(D\\mid +)=\\frac{P(+\\mid D)\\,P(D)}{P(+\\mid D)\\,P(D)+P(+\\mid \\bar D)\\,P(\\bar D)}",
-       "text": "P(D|+) = P(+|D)P(D) / [P(+|D)P(D) + P(+|¬D)P(¬D)]"
+       "text": "P(D|+) = P(+|D)P(D) / [P(+|D)P(D) + P(+|¬D)P(¬D)]",
+       "at": 0
       },
       {
        "id": "o14",
@@ -734,7 +765,8 @@
         "$P(+\\mid D)$：似然，病人测出阳性的概率",
         "$P(D\\mid +)$：后验，看到阳性之后的患病概率"
        ],
-       "ordered": false
+       "ordered": false,
+       "at": 1
       }
      ],
      "check": {
@@ -745,8 +777,8 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mw2xwfbtp8uyk9",
-       "cpt_mw2xwfbtgknsql"
+       "cpt_mwtgjwrz1lh57g",
+       "cpt_mwtgjwrzwo2r4r"
       ],
       "answer": 50,
       "tolerance": 1,
@@ -759,12 +791,14 @@
      "ops": [
       {
        "id": "o15",
-       "t": "col"
+       "t": "col",
+       "at": 0
       },
       {
        "id": "o16",
        "t": "h",
-       "text": "复查的力量"
+       "text": "复查的力量",
+       "at": 0
       },
       {
        "id": "o17",
@@ -787,7 +821,8 @@
          "label": "两次阳性",
          "value": 90.7
         }
-       ]
+       ],
+       "at": 1
       }
      ]
     },
@@ -799,7 +834,8 @@
        "id": "o18",
        "t": "note",
        "text": "① 先问基础比率\n② 后验 = 真阳性 ÷ 所有阳性\n③ 今天的后验 = 明天的先验",
-       "tone": "key"
+       "tone": "key",
+       "at": 0
       }
      ],
      "check": {
@@ -810,7 +846,7 @@
       "hints": [],
       "difficulty": 2,
       "conceptIds": [
-       "cpt_mw2xwfbtp8uyk9"
+       "cpt_mwtgjwrz1lh57g"
       ],
       "options": [
        {
@@ -834,12 +870,12 @@
      }
     }
    ],
-   "lessonId": "les_mw2xwfbtwyc7oh"
+   "lessonId": "les_mwtgjwrzxo24ee"
   }
  },
  "practice": {
-  "les_mw2xwfbtkyjb0h": {
-   "lessonId": "les_mw2xwfbtkyjb0h",
+  "les_mwtgjwrz5udje3": {
+   "lessonId": "les_mwtgjwrz5udje3",
    "items": [
     {
      "id": "i1",
@@ -851,7 +887,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mw2xwfbtpj96o7"
+      "cpt_mwtgjwrzr96509"
      ],
      "options": [
       {
@@ -883,7 +919,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mw2xwfbtpj96o7"
+      "cpt_mwtgjwrzr96509"
      ],
      "answer": 0.3,
      "tolerance": 0.001,
@@ -899,7 +935,7 @@
      ],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mw2xwfbt0emah8"
+      "cpt_mwtgjwrzri9sjh"
      ],
      "options": [
       {
@@ -929,7 +965,7 @@
      "hints": [],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mw2xwfbtpj96o7"
+      "cpt_mwtgjwrzr96509"
      ],
      "answer": [
       "P(B)",
@@ -945,7 +981,7 @@
      "hints": [],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mw2xwfbt0emah8"
+      "cpt_mwtgjwrzri9sjh"
      ],
      "answer": "例如：P(会游泳 | 是游泳运动员) 接近 100%，但 P(是游泳运动员 | 会游泳) 很小，因为会游泳的人里只有极少数是运动员。",
      "rubric": [
@@ -956,8 +992,8 @@
     }
    ]
   },
-  "les_mw2xwfbtwyc7oh": {
-   "lessonId": "les_mw2xwfbtwyc7oh",
+  "les_mwtgjwrzxo24ee": {
+   "lessonId": "les_mwtgjwrzxo24ee",
    "items": [
     {
      "id": "i1",
@@ -969,7 +1005,7 @@
      ],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mw2xwfbtgknsql"
+      "cpt_mwtgjwrzwo2r4r"
      ],
      "answer": 999,
      "tolerance": 1,
@@ -985,7 +1021,7 @@
      ],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mw2xwfbtgknsql"
+      "cpt_mwtgjwrzwo2r4r"
      ],
      "options": [
       {
@@ -1017,7 +1053,7 @@
      ],
      "difficulty": 2,
      "conceptIds": [
-      "cpt_mw2xwfbtp8uyk9"
+      "cpt_mwtgjwrz1lh57g"
      ],
      "answer": 0.2687,
      "tolerance": 0.01,
@@ -1031,7 +1067,7 @@
      "hints": [],
      "difficulty": 1,
      "conceptIds": [
-      "cpt_mw2xwfbtp8uyk9"
+      "cpt_mwtgjwrz1lh57g"
      ],
      "options": [
       {
@@ -1061,8 +1097,8 @@
      "hints": [],
      "difficulty": 3,
      "conceptIds": [
-      "cpt_mw2xwfbtp8uyk9",
-      "cpt_mw2xwfbtgknsql"
+      "cpt_mwtgjwrz1lh57g",
+      "cpt_mwtgjwrzwo2r4r"
      ],
      "answer": "一次阳性后，患病的后验概率从很低升到较高（如从 0.1% 到约 9%）；复查时这个后验成为新的先验，若再次阳性，患病概率会大幅提高（约 91%），判断更可靠。",
      "rubric": [

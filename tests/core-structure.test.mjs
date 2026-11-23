@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { boardToMarkdown, boardToPlainText, estimateSpeechMs, normalizeBoard, stepTiming } from '../src/core/board-script.js'
+import { boardToMarkdown, boardToPlainText, estimateSpeechMs, estimateWriteMs, normalizeBoard, opSentences, sentenceAtFraction, stepTiming } from '../src/core/board-script.js'
 import { exportCoursePack, importCoursePack, parseCoursePack } from '../src/core/coursepack.js'
 import {
   blueprintDiff,
@@ -214,6 +214,42 @@ test('board normalization maps aliases, renumbers ops and repoints marks', () =>
   assert.ok(estimateSpeechMs('这是一个测试句子') > 1000)
   assert.match(boardToPlainText(board), /F=-kx/)
   assert.match(boardToMarkdown(board), /### 回复力/)
+})
+
+test('a synced step gives each sentence\'s ops the time until the next sentence that writes', () => {
+  // "看这张图。" is short, the figure and formula written with it are not.
+  const step = { say: '看这张图。横轴是时间，纵轴是位移。曲线越陡，速度越大。', ops: [
+    { t: 'svg', svg: '<svg/>', at: 0 }, { t: 'math', tex: 'x(t)=A\\sin(\\omega t)', at: 0 }, { t: 'p', text: '横轴 t，纵轴 x', at: 1 }, { t: 'note', text: '斜率 = 速度', at: 2 },
+  ] }
+  const sentenceMs = [1300, 3000, 2600]
+  const { writeMs, speechMs } = stepTiming(step, { sentenceMs })
+  assert.equal(speechMs, 6900)
+  assert.ok(writeMs[0] + writeMs[1] <= 1300, `the first sentence's ops fit in it (${writeMs})`)
+  assert.ok(writeMs[2] <= 3000 * 0.85 && writeMs[3] <= 2600 * 0.85)
+  const whole = stepTiming(step)
+  assert.ok(whole.writeMs[0] > 1300, 'a step-wide speed would draw the figure past its sentence')
+
+  // A sentence that writes nothing lends its time to the ops before it.
+  const roomy = stepTiming({ say: step.say, ops: [{ t: 'svg', svg: '<svg/>', at: 0 }, { t: 'note', text: '斜率 = 速度', at: 2 }] }, { sentenceMs })
+  assert.equal(roomy.writeMs[0], Math.round(2200 * Math.min(1.6, (4300 * 0.85) / 2200)))
+
+  // Real audio stretches the sentences; unsynced steps keep one speed.
+  const stretched = stepTiming(step, { sentenceMs, speechMs: 13800 })
+  assert.ok(stretched.writeMs[0] > writeMs[0])
+  const plain = { say: step.say, ops: step.ops.map(({ at, ...op }) => op) }
+  assert.equal(opSentences(plain, 3), null)
+  assert.deepEqual(opSentences(step, 2), [0, 0, 1, 1], 'an "at" past the last sentence is the last one')
+  const flat = stepTiming(plain, { sentenceMs }).writeMs
+  const natural = plain.ops.map(estimateWriteMs)
+  assert.ok(Math.abs(flat[0] / flat[2] - natural[0] / natural[2]) < 0.05, 'one speed for the whole step')
+})
+
+test('the sentence being spoken is found by how long each sentence takes', () => {
+  assert.equal(sentenceAtFraction([1000, 3000], 0.2), 0)
+  assert.equal(sentenceAtFraction([1000, 3000], 0.3), 1)
+  assert.equal(sentenceAtFraction([1000, 3000], 1.5), 1)
+  assert.equal(sentenceAtFraction([1000], 0.9), 0)
+  assert.equal(sentenceAtFraction([], 0.5), 0)
 })
 
 test('animations keep an SVG poster for places scripts cannot run', () => {

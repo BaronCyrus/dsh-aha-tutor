@@ -1,12 +1,15 @@
 // Narration for the whiteboard. Two engines share one interface:
 //   browser — the OS voices behind window.speechSynthesis (free, offline)
 //   cloud   — MP3 from the host's TTS proxy, played with an <audio> element
-// speak() resolves when the narration ends (or is cancelled). Browser speech
-// is queued sentence by sentence: Chromium stops long utterances after ~15 s
-// on some voices, and pause/resume is unreliable on Windows, so pausing
-// cancels the current sentence and resuming restarts it.
+// speak() returns { done, tracked, poll }: done resolves when the narration
+// ends (or is cancelled); tracked says onSentence will report each sentence
+// as it starts, the first one included; poll(), where given, reports a
+// sentence that has started since, and the player calls it on every frame.
+// Browser speech is queued sentence by sentence: Chromium stops long
+// utterances after ~15 s on some voices, and pause/resume is unreliable on
+// Windows, so pausing cancels the current sentence and resuming restarts it.
 
-import { estimateSpeechMs } from '../core/board-script.js'
+import { estimateSpeechMs, sentenceAtFraction } from '../core/board-script.js'
 
 const SENTENCE = /[^。！？!?；;\n]+[。！？!?；;]*\s*|\n+/gu
 
@@ -101,7 +104,7 @@ function browserEngine() {
     const state = { sentences: pieces.map(piece => piece.text), owners: pieces.map(piece => piece.owner), total, index: 0, paused: false, cancelled: false, rate, language, voiceId, resolveDone, onSentence, utterance: null, timer: null, retried: -1 }
     session = state
     playFrom(state)
-    return { done }
+    return { done, tracked: typeof onSentence === 'function' }
   }
 
   function finish(state, result) {
@@ -244,15 +247,31 @@ function cloudEngine({ fetchAudio }) {
     if (textValue) load(textValue, voice).catch(() => undefined)
   }
 
-  function speak(textValue, { rate = 1, cloudVoice } = {}) {
+  // `sentences` (optional) is the narration as captions split it; with
+  // onSentence, positions in that list are reported from where the audio is:
+  // the first when the audio is heard, the others when poll() finds them.
+  function speak(textValue, { rate = 1, cloudVoice, sentences, onSentence } = {}) {
     cancel()
     if (!String(textValue ?? '').trim()) return { done: Promise.resolve({ completed: true }) }
     let resolveDone
     const done = new Promise(resolve => { resolveDone = resolve })
     const audio = new Audio()
     audio.preservesPitch = true
-    const state = { audio, cancelled: false, resolveDone, rate }
+    // Each sentence's share of the audio: how long it should take to say.
+    const lengths = typeof onSentence === 'function' && Array.isArray(sentences) && sentences.length ? sentences.map(sentence => Math.max(1, estimateSpeechMs(sentence))) : null
+    const state = { audio, cancelled: false, resolveDone, rate, playing: false, reported: -1 }
     session = state
+    // The sentence the audio is in, by its share of the audio's length, or by
+    // how long the sentences should take while that length is unknown.
+    const report = () => {
+      if (!lengths || session !== state || !state.playing) return
+      const length = audio.duration
+      const fraction = Number.isFinite(length) && length > 0 ? audio.currentTime / length : (audio.currentTime * 1000) / lengths.reduce((sum, value) => sum + value, 0)
+      const index = sentenceAtFraction(lengths, fraction)
+      if (index <= state.reported) return
+      state.reported = index
+      onSentence(index, lengths.length)
+    }
     // The host's failures carry their code (tts-no-key, …). A browser that
     // will not play the audio, one not clicked yet for instance, gives only a
     // DOMException, whose numeric code means nothing to the learner.
@@ -265,11 +284,17 @@ function cloudEngine({ fetchAudio }) {
       if (state.cancelled) return
       audio.src = url
       audio.playbackRate = Math.min(2, Math.max(0.5, rate))
+      // The first sentence is reported when the audio is heard, not when it
+      // was asked for.
+      audio.onplaying = () => {
+        state.playing = true
+        report()
+      }
       audio.onended = () => { if (session === state) session = null; resolveDone({ completed: true }) }
       audio.onerror = () => fail(null, { code: 'playback' })
       return audio.play().catch(error => fail(error, { code: 'playback' }))
     }).catch(error => fail(error, { code: 'tts-failed' }))
-    return { done }
+    return { done, tracked: Boolean(lengths), poll: report }
   }
 
   function cancel() {

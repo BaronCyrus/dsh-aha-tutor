@@ -4,7 +4,7 @@
 // Narration is mixed in through WebAudio when it comes from a cloud voice;
 // system voices cannot be recorded, so those videos carry captions only.
 
-import { estimateSpeechMs, stepTiming } from '../core/board-script.js'
+import { estimateSpeechMs, opSentences, stepTiming } from '../core/board-script.js'
 import { captionSentences, spokenText, texToText } from './board/inline.js'
 import { boardText } from './board/layout.js'
 import { chartSvg } from './charts.js'
@@ -296,26 +296,45 @@ function drawItem(ctx, item, progress, palette) {
 const captionFont = () => `500 25px ${family}`
 const CAPTION_W = W - 200
 
+const sum = values => values.reduce((total, value) => total + value, 0)
+
+// Where each sentence starts (ms into the step): lengths are how long each
+// should take to say, stretched to the step's speech.
+function sentenceStarts(lengths, speechMs) {
+  const total = sum(lengths) || 1
+  let passed = 0
+  return lengths.map(length => {
+    const start = (passed / total) * speechMs
+    passed += length
+    return start
+  })
+}
+
 // The captions of a step: its sentences, as read aloud, in pages of at most
-// two lines, each shown for its share of the step's speech (by length, as
-// syncedStarts times the sentences). lines(text) wraps a sentence.
+// two lines. Each sentence starts where syncedStarts starts its ops, and its
+// pages share its time by how long each takes to say. lines(text) wraps a
+// sentence.
 export function captionCues(sentences, speechMs, lines) {
-  const pages = []
-  for (const sentence of sentences) {
+  const lengths = sentences.map(sentence => estimateSpeechMs(sentence))
+  const starts = sentenceStarts(lengths, speechMs)
+  const total = sum(lengths) || 1
+  const cues = []
+  sentences.forEach((sentence, index) => {
     const wrapped = lines(sentence)
+    const pages = []
     for (let at = 0; at < wrapped.length; at += 2) {
       const page = wrapped.slice(at, at + 2)
-      const length = [...page.join('')].length
-      if (length) pages.push({ lines: page, length })
+      if ([...page.join('')].length) pages.push(page)
     }
-  }
-  const total = pages.reduce((sum, page) => sum + page.length, 0) || 1
-  let passed = 0
-  return pages.map(page => {
-    const start = (passed / total) * speechMs
-    passed += page.length
-    return { start, lines: page.lines }
+    const weights = pages.map(page => Math.max(1, estimateSpeechMs(page.join(''))))
+    const span = (lengths[index] / total) * speechMs
+    let passed = 0
+    pages.forEach((page, pageIndex) => {
+      cues.push({ start: starts[index] + (passed / (sum(weights) || 1)) * span, lines: page })
+      passed += weights[pageIndex]
+    })
   })
+  return cues
 }
 
 // The caption at a time into the step: the last one started, kept while the
@@ -353,22 +372,17 @@ function drawWatermark(ctx, label, palette) {
 }
 
 // A synced step's op start times (ms into the step): each op starts when its
-// sentence does, estimated from the sentences' spoken lengths, or when the op
-// before it is done. Null for unsynced steps.
+// sentence does, placed by how long each sentence takes to say and stretched
+// to the step's speech, or when the op before it is done. Null for unsynced
+// steps.
 export function syncedStarts(step, writes, speechMs) {
-  if (!step.say || !step.ops.length || !step.ops.some(op => Number.isInteger(op.at))) return null
-  const lengths = captionSentences(step.say).map(sentence => [...spokenText(sentence)].length)
-  const total = lengths.reduce((sum, value) => sum + value, 0) || 1
-  let passed = 0
-  const sentenceStart = lengths.map(length => {
-    const start = (passed / total) * speechMs
-    passed += length
-    return start
-  })
-  const last = Math.max(0, lengths.length - 1)
+  const sentences = captionSentences(step.say).map(spokenText)
+  const owners = opSentences(step, sentences.length)
+  if (!owners) return null
+  const starts = sentenceStarts(sentences.map(sentence => estimateSpeechMs(sentence)), speechMs)
   let end = 0
-  return step.ops.map((op, index) => {
-    const start = Math.max(end, sentenceStart[Math.min(op.at ?? 0, last)] ?? 0)
+  return owners.map((owner, index) => {
+    const start = Math.max(end, starts[owner] ?? 0)
     end = start + writes[index]
     return start
   })
@@ -419,11 +433,15 @@ export async function exportVideo({ steps, title, fetchAudio, watermark, theme =
   let cursor = 700
   ctx.font = captionFont()
   for (const [index, step] of steps.entries()) {
-    const speechMs = buffers[index] ? buffers[index].duration * 1000 : estimateSpeechMs(step.say)
-    const timing = stepTiming(step, { speechMs })
+    // Each sentence's ops get the time until the next sentence that writes,
+    // stretched to the real narration when there is one.
+    const sentences = captionSentences(step.say).map(spokenText)
+    const sentenceMs = sentences.map(sentence => estimateSpeechMs(sentence))
+    const speechMs = buffers[index] ? buffers[index].duration * 1000 : sum(sentenceMs)
+    const timing = stepTiming(step, { speechMs, sentenceMs })
     const starts = syncedStarts(step, timing.writeMs, speechMs)
     const durationMs = starts ? Math.max(timing.durationMs, starts.at(-1) + timing.writeMs.at(-1) + 350) : timing.durationMs
-    const captions = captionCues(captionSentences(step.say).map(spokenText), speechMs, sentence => wrap(ctx, sentence, CAPTION_W))
+    const captions = captionCues(sentences, speechMs, sentence => wrap(ctx, sentence, CAPTION_W))
     timeline.push({ start: cursor, end: cursor + durationMs, writes: timing.writeMs, starts, captions })
     cursor += durationMs
   }

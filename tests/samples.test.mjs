@@ -48,3 +48,11 @@ test('sample boards keep TeX inside formulas, and every formula renders', () => 
     }
   }
 })
+
+test('sample boards write in time with the voice', () => {
+  for (const { name, pack } of packs) {
+    for (const board of Object.values(pack.boards)) {
+      for (const step of board.steps) assert.ok(step.ops.every(op => Number.isInteger(op.at)), `${name}: "${step.say.slice(0, 20)}…" has an op without "at"`)
+    }
+  }
+})

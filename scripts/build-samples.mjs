@@ -12,6 +12,7 @@ import { normalizeBoard } from '../src/core/board-script.js'
 import { orderBoardOptions, orderOptions } from '../src/core/choice-order.js'
 import { exportCoursePack } from '../src/core/coursepack.js'
 import { flattenLessons, normalizeBlueprint, normalizePractice } from '../src/core/course-model.js'
+import { captionSentences } from '../src/ui/board/inline.js'
 
 const INK = '#2b2b2b'
 const range = (from, to, step) => Array.from({ length: Math.round((to - from) / step) + 1 }, (_, index) => Number((from + index * step).toFixed(4)))
@@ -154,7 +155,7 @@ const SHM_BOARDS = {
   '回复力：为什么会来回振动': [
     { say: '想象你拉开一根弹簧，再松手。它不会乖乖停在原地，而是来回振动。今天我们就来弄清楚：到底是什么力在一直把它往回拉？', ops: [{ t: 'title', text: '回复力：为什么会来回振动' }, { t: 'h', text: '一个熟悉的现象' }, { t: 'p', text: '拉开 → 松手 → ==来回振动==' }] },
     { say: '先画一个最简单的模型：一个木块连着弹簧，放在光滑的桌面上。木块静止时的位置，我们叫它平衡位置，记作 O。', ops: [{ t: 'svg', svg: SPRING_SVG, caption: '弹簧振子：光滑水平面上的木块和弹簧' }] },
-    { say: '把木块往右拉开，弹簧被拉长，就会把木块往左拉；往左压缩，弹簧又会往右推。不管在哪一边，力的方向总是指向平衡位置。', ops: [{ t: 'h', text: '回复力的方向' }, { t: 'p', text: '力总是**指向平衡位置**' }, { t: 'svg', svg: FORCE_SVG, caption: '两侧的回复力都指向 O' }] },
+    { say: '把木块往右拉开，弹簧被拉长，就会把木块往左拉；往左压缩，弹簧又会往右推。不管在哪一边，力的方向总是指向平衡位置。', ops: [{ t: 'h', text: '回复力的方向' }, { t: 'svg', svg: FORCE_SVG, caption: '两侧的回复力都指向 O' }, { t: 'p', text: '力总是**指向平衡位置**' }] },
     { say: '而且拉得越远，力越大。胡克发现，在弹性限度内，弹簧的力和形变量成正比。写成公式，就是 F 等于负 k 乘 x。', ops: [{ t: 'col' }, { t: 'h', text: '胡克定律' }, { t: 'math', id: 'hooke', tex: 'F=-kx', text: 'F = −kx' }, { t: 'p', text: '$k$：劲度系数，单位 N/m' }] },
     { say: '注意这个负号。它不是说力是负的，而是说力和位移的方向相反。这正是“往回拉”的数学写法。', ops: [{ t: 'mark', ref: 'hooke', style: 'circle' }, { t: 'note', tone: 'key', text: '负号 = 方向相反 = 拉回平衡位置' }], check: { kind: 'choice', prompt: '木块在平衡位置左边 3 cm 处（$x = -3$ cm），回复力的方向是？', options: ['向右', '向左', '为零', '取决于木块的质量'], answer: 0, explanation: '$x$ 为负，$F=-kx$ 为正，所以力向右，指向平衡位置。', concepts: ['回复力'] } },
     { say: '那为什么木块不会停在平衡位置呢？因为它回到 O 点时已经有了最大的速度，惯性让它冲过头；冲过头之后，另一侧的回复力又开始把它往回拉。', ops: [{ t: 'h', text: '为什么会冲过头？' }, { t: 'list', items: ['在 O 点：回复力为 0，但速度最大', '惯性让它冲过 O 点', '另一侧的回复力把它减速、拉回'] }] },
@@ -171,6 +172,13 @@ const SHM_BOARDS = {
     { say: '来比较两条曲线。它们的振幅一样，但周期不同。周期短的那条，波峰挨得更紧。', ops: [{ t: 'page', title: '比较不同的周期' }, { t: 'chart', kind: 'line', title: '振幅相同、周期不同', xLabel: 't / s', yLabel: 'x', series: [{ name: 'T = 2 s', points: wave(2) }, { name: 'T = 4 s', points: wave(4) }] }] },
     { say: '最后总结。简谐运动就是匀速圆周运动的投影；它的位置写成 A cos 括号 ω t 加 φ；周期只由质量和劲度系数决定，和振幅无关。下一讲，我们看速度和加速度又是什么样子。', ops: [{ t: 'note', tone: 'key', text: '① 简谐运动 = 匀速圆周运动的“影子”\n② $x = A\\cos(\\omega t+\\varphi)$\n③ $T = 2\\pi\\sqrt{m/k}$，与振幅无关' }], check: { kind: 'choice', prompt: '把弹簧振子的振幅从 2 cm 增大到 4 cm，周期会怎样？', options: ['不变', '变为原来的 2 倍', '变为原来的一半', '变为原来的 √2 倍'], answer: 0, explanation: '$T=2\\pi\\sqrt{m/k}$ 与振幅无关。', concepts: ['角频率', '参考圆'] } },
   ],
+}
+
+// For each step, the sentence of its narration each op is written during
+// (an op's "at", as prompts.js asks of generated boards).
+const SHM_SYNC = {
+  '回复力：为什么会来回振动': [[0, 0, 1], [0], [0, 0, 2], [0, 1, 2, 2], [0, 1], [0, 1], [0, 0], [0, 1, 2], [0, 1]],
+  '从圆周运动看简谐运动': [[0, 1, 2], [0], [0, 0], [0, 0, 1, 1], [1, 3], [0, 0], [1]],
 }
 
 const SHM_PRACTICE = {
@@ -263,7 +271,7 @@ const BAYES_BOARDS = {
     { say: '把它写成公式：在 B 发生的条件下 A 的概率，等于 A 和 B 同时发生的概率，除以 B 的概率。分母是新世界的大小，分子是新世界里我们关心的那部分。', ops: [{ t: 'col' }, { t: 'h', text: '条件概率公式' }, { t: 'math', id: 'cond', tex: 'P(A\\mid B)=\\frac{P(A\\cap B)}{P(B)}', text: 'P(A|B) = P(A∩B) / P(B)' }, { t: 'list', items: ['分母：新世界有多大', '分子：新世界里我们关心的部分'] }] },
     { say: '用一个班级的人数表来感受一下。一个班 100 人，40 人戴眼镜。戴眼镜的人里有 10 个左撇子，不戴眼镜的 60 人里有 6 个左撇子。', ops: [{ t: 'page', title: '用人数来想' }, { t: 'table', head: ['', '左撇子', '右撇子', '合计'], rows: [['戴眼镜', '10', '30', '40'], ['不戴眼镜', '6', '54', '60'], ['合计', '16', '84', '100']] }] },
     { say: '随机挑一个左撇子，他戴眼镜的概率是多少？新世界是 16 个左撇子，其中 10 个戴眼镜，所以是 16 分之 10，也就是 62.5%。', ops: [{ t: 'math', tex: 'P(\\text{戴眼镜}\\mid\\text{左撇子})=\\frac{10}{16}=62.5\\%', text: 'P(戴眼镜 | 左撇子) = 10/16 = 62.5%' }], check: { kind: 'number', prompt: '从这个班随机挑一个**戴眼镜**的人，他是左撇子的概率是多少？（填小数）', answer: 0.25, tolerance: 0.005, explanation: '新世界是 40 个戴眼镜的人，其中 10 个是左撇子：10/40 = 0.25。', concepts: ['条件概率'] } },
-    { say: '注意：戴眼镜的人里左撇子的比例只有 25%，而左撇子里戴眼镜的比例却有 62.5%。这两个方向完全不是一回事。把它们搞混，是生活中最常见的概率错误之一。', ops: [{ t: 'col' }, { t: 'note', tone: 'warn', text: '$P(A\\mid B) \\neq P(B\\mid A)$！' }, { t: 'chart', kind: 'bar', title: '方向不同，结果不同', yLabel: '%', data: [{ label: 'P(左撇子|戴眼镜)', value: 25 }, { label: 'P(戴眼镜|左撇子)', value: 62.5 }] }] },
+    { say: '注意：戴眼镜的人里左撇子的比例只有 25%，而左撇子里戴眼镜的比例却有 62.5%。这两个方向完全不是一回事。把它们搞混，是生活中最常见的概率错误之一。', ops: [{ t: 'col' }, { t: 'chart', kind: 'bar', title: '方向不同，结果不同', yLabel: '%', data: [{ label: 'P(左撇子|戴眼镜)', value: 25 }, { label: 'P(戴眼镜|左撇子)', value: 62.5 }] }, { t: 'note', tone: 'warn', text: '$P(A\\mid B) \\neq P(B\\mid A)$！' }] },
     { say: '总结一下：条件概率就是在新信息划出的小世界里重新计算；公式是交集除以条件；而两个方向的条件概率，千万不要混为一谈。下一讲，我们看看什么时候一个信息完全不影响另一个事件。', ops: [{ t: 'note', tone: 'key', text: '① 新信息 → 世界变小 → 重新数\n② $P(A\\mid B)=P(A\\cap B)/P(B)$\n③ 分清方向：$P(A\\mid B)$ 与 $P(B\\mid A)$' }], check: { kind: 'choice', prompt: '“大多数小偷都是男性”，能推出“大多数男性都是小偷”吗？', options: ['不能，P(男 | 小偷) 和 P(小偷 | 男) 是两回事', '能，两个说法是等价的', '只有在人口足够多时才能', '取决于调查的样本量'], answer: 0, explanation: '前者在“小偷”的世界里看男性比例，后者在“男性”的世界里看小偷比例，分母完全不同。', concepts: ['P(A|B) 与 P(B|A)'] } },
   ],
   '医学检测悖论：基础比率的力量': [
@@ -276,6 +284,11 @@ const BAYES_BOARDS = {
     { say: '这也是医生常常让你复查的原因。第一次阳性后，你的患病概率已经从千分之一升到了 9%。把 9% 当成新的先验再测一次，如果还是阳性，患病概率就会跳到九成以上。', ops: [{ t: 'col' }, { t: 'h', text: '复查的力量' }, { t: 'chart', kind: 'bar', title: '每一次证据都在更新判断', yLabel: '患病概率 %', data: [{ label: '检测前', value: 0.1 }, { label: '一次阳性', value: 9 }, { label: '两次阳性', value: 90.7 }] }] },
     { say: '总结一下：判断一个结果意味着什么，先问它的基础比率；贝叶斯公式就是“真阳性除以所有阳性”；而每一次新的证据，都会让后验变成下一次的先验。', ops: [{ t: 'note', tone: 'key', text: '① 先问基础比率\n② 后验 = 真阳性 ÷ 所有阳性\n③ 今天的后验 = 明天的先验' }], check: { kind: 'choice', prompt: '在贝叶斯公式里，“后验概率”指的是？', options: ['看到证据之后，对假设成立的概率', '看到证据之前的概率', '证据本身出现的概率', '检测的准确率'], answer: 0, explanation: '后验是结合了新证据之后的判断。', concepts: ['贝叶斯公式'] } },
   ],
+}
+
+const BAYES_SYNC = {
+  '条件概率：知道一点之后': [[0, 0, 1], [0, 1], [0, 1], [0, 0, 0, 1], [0, 1], [1], [0, 0, 1], [0]],
+  '医学检测悖论：基础比率的力量': [[0, 0, 0], [1, 2], [0], [0, 1, 2], [0, 2], [0, 0, 1], [0, 0, 1], [0]],
 }
 
 const BAYES_PRACTICE = {
@@ -309,7 +322,21 @@ function attachConcepts(item, lesson) {
   return { ...rest, conceptIds }
 }
 
-function build({ file, blueprint, boards, practice }) {
+// Steps with each op's "at" from the sync table, checked against the
+// narration's sentences.
+function synced(title, steps, sync) {
+  const ats = sync[title]
+  if (ats?.length !== steps.length) throw new Error(`"${title}" needs an "at" list for each of its ${steps.length} steps`)
+  return steps.map((step, index) => {
+    const count = captionSentences(step.say).length
+    const at = ats[index]
+    if (at.length !== step.ops.length) throw new Error(`"${title}" step ${index + 1} has ${step.ops.length} ops and ${at.length} "at"s`)
+    if (at.some((value, k) => !Number.isInteger(value) || value < 0 || value >= count || value < (at[k - 1] ?? 0))) throw new Error(`"${title}" step ${index + 1}: each "at" is a sentence (0–${count - 1}) and never goes down`)
+    return { ...step, ops: step.ops.map((op, k) => ({ ...op, at: at[k] })) }
+  })
+}
+
+function build({ file, blueprint, boards, sync, practice }) {
   const normalized = normalizeBlueprint(blueprint, { language: blueprint.language })
   normalized.projects = normalized.projects.map(project => ({ ...project, unitId: normalized.units[1].id }))
   const course = { id: 'crs_sample000', ...normalized, goal: blueprint.summary }
@@ -322,7 +349,7 @@ function build({ file, blueprint, boards, practice }) {
   const packBoards = {}
   for (const [title, steps] of Object.entries(boards)) {
     const lesson = byTitle(title)
-    const raw = steps.map(step => (step.check ? { ...step, check: attachConcepts(step.check, lesson) } : step))
+    const raw = synced(title, steps, sync).map(step => (step.check ? { ...step, check: attachConcepts(step.check, lesson) } : step))
     // Options in the order a generated board shows them.
     const board = orderBoardOptions(normalizeBoard({ title, steps: raw }, { conceptIds: lesson.concepts.map(concept => concept.id) }))
     if (board.steps.length !== steps.length) throw new Error(`a step of "${title}" was dropped by normalization`)
@@ -346,6 +373,6 @@ function build({ file, blueprint, boards, practice }) {
   console.log(`samples/${file}.aha-course.json: ${rows.length} lessons, ${Object.keys(packBoards).length} boards, ${Object.keys(packPractice).length} practice sets`)
 }
 
-build({ file: 'harmonic-motion', blueprint: SHM_BLUEPRINT, boards: SHM_BOARDS, practice: SHM_PRACTICE })
-build({ file: 'bayes-thinking', blueprint: BAYES_BLUEPRINT, boards: BAYES_BOARDS, practice: BAYES_PRACTICE })
+build({ file: 'harmonic-motion', blueprint: SHM_BLUEPRINT, boards: SHM_BOARDS, sync: SHM_SYNC, practice: SHM_PRACTICE })
+build({ file: 'bayes-thinking', blueprint: BAYES_BLUEPRINT, boards: BAYES_BOARDS, sync: BAYES_SYNC, practice: BAYES_PRACTICE })
 void conceptRef

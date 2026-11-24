@@ -4,6 +4,7 @@
 // instead (see animationDocument).
 
 import { repairSvg } from '../core/svg-check.js'
+import { figureText } from './board/inline.js'
 
 const ELEMENTS = new Set([
   'svg', 'g', 'path', 'line', 'polyline', 'polygon', 'rect', 'circle', 'ellipse', 'text', 'tspan', 'textPath',
@@ -49,6 +50,8 @@ function clean(node) {
       child.remove()
       continue
     }
+    // SVG text cannot typeset LaTeX: a formula in a label reads as Unicode.
+    if (child.nodeType === 3 && child.nodeValue.includes('$')) child.nodeValue = figureText(child.nodeValue)
     if (child.nodeType !== 1) continue
     const tag = String(child.localName || child.nodeName).toLowerCase()
     if (!ELEMENTS.has(tag)) {

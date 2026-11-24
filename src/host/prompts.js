@@ -71,6 +71,10 @@ function learnerBlock({ profile, mastery } = {}) {
 // A question's options are reordered once it is written (core/choice-order.js),
 // so a letter in its text would name the wrong option.
 const OPTION_ORDER = 'Options are not shown in the order you write them: refer to an option by what it says, never by its letter or position, in the prompt, the explanation and the hints, and do not list the options in the prompt.'
+// Questions show their formulas typeset, but a blank is graded by comparing
+// what the learner typed.
+const BLANK_PLAIN = 'The accepted answers of a "blank" are plain text a learner can type, never LaTeX.'
+const ITEM_MATH = `Write every formula, variable and symbolic expression in "prompt", "options", "hints" and "explanation" as inline LaTeX $…$ (e.g. $F = -kx$, $v_0$; never F=-kx or v0); plain numbers and units may stay as text. ${BLANK_PLAIN}`
 
 // The pictures a board can hold, as the board prompt and the repair prompt
 // describe them.
@@ -99,6 +103,8 @@ Board operations (each is a JSON object with field "t"; give an op an "id" only 
 - {"t":"mark","ref":"<id of an earlier op>","style":"underline|circle|box"}  point back at something already written
 - ${FIGURE_FORMATS.anim}
 - {"t":"col"}  continue in the right column;  {"t":"page","title":"…"}  wipe the board and start a new page
+
+Formulas: write every formula, equation, variable and symbolic expression on the board in LaTeX. In titles, headings, paragraphs, list items, table cells, notes, figure captions and slider labels it is inline $…$ (e.g. $T = 2\\pi\\sqrt{m/k}$, $v_0$, $x^2$; never T=2π√(m/k), v0 or x^2); a formula that deserves its own line is a math op. Plain numbers and units may stay as text. Words drawn inside a picture (svg text, chart titles, axis and legend labels, plot curve, point and line names) cannot show LaTeX: write them in plain Unicode such as ω₀, x², √2. Plot formulas keep their calculator syntax.
 
 Fill the left column, then {"t":"col"}, then the right column; start a new page when both are full (roughly 8–12 ops per page).
 Only a plot with "params" has sliders: ask the learner to drag one only while such a plot is on the board. A chart, table or diagram has nothing to drag.`
@@ -130,13 +136,14 @@ export function figureRepairPrompt({ items }) {
 }
 
 export const STEP_SPEC = `Each output line is ONE teaching step:
-{"say":"what you say while writing — natural spoken sentences, 1–4 sentences, no markdown","ops":[ …board ops written during this step… ],"check":{ …optional quick question… }}
+{"say":"what you say while writing — natural spoken sentences, 1–4 sentences, no markdown or LaTeX: read formulas out in words, as a teacher does while writing them","ops":[ …board ops written during this step… ],"check":{ …optional quick question… }}
 
 Write the board in time with your voice: give every op "at", the 0-based index of the sentence in "say" during which you write it, so each item appears while the sentence about it is spoken (sentences end at 。！？；.!?;). "at" never goes down within a step: {"say":"先看这个公式。它说明力与位移方向相反。","ops":[{"t":"math","tex":"F=-kx","at":0},{"t":"p","text":"负号 = 方向相反","at":1}]}
 
 A check is a short question asked right after the step, to see whether the idea landed:
 {"kind":"choice|multi|blank|number|short|work","prompt":"…","options":["…","…"],"answer":<option index (0-based) for choice, list of indexes for multi, accepted strings for blank, a number for number, a model answer for short, the full model working for work>,"tolerance":<number, for number>,"rubric":["…"],"explanation":"why the answer is right, in one or two sentences","conceptIds":["<ids from the concept list>"]}
 A "choice" has exactly one right option. When two or more options are right, use "multi" and say in the prompt that several may be chosen.
+A check's prompt, options and explanation write math as inline $…$, like the board. ${BLANK_PLAIN}
 A "work" check has the learner write out a whole calculation or derivation: "answer" is the model working, one step per line with inline math $…$, and "rubric" lists the 2–4 steps a correct working must contain. Use "work" only where the instructions ask for it.
 Make wrong options plausible (common mistakes), never trick questions. ${OPTION_ORDER}`
 
@@ -246,9 +253,9 @@ export function revisePrompt({ blueprint, instruction, language, materials, sour
 
 // One practice or quiz item. Without the answer formats a model writes a
 // multi-select question as a choice, which then takes one answer.
-const ITEM_SHAPE = `Each item is {"kind":"choice|multi|blank|number|short","prompt":"…","options":["…","…"],"answer":<option index (0-based) for choice, list of option indexes for multi, list of accepted strings for blank, a number for number, a model answer for short>,"tolerance":<number, for number>,"rubric":["…" for short],"hints":["…"],"explanation":"…","difficulty":1,"conceptIds":["…"]}. A "choice" has exactly one right option. When two or more options are right, use "multi" and say in the prompt that several may be chosen. ${OPTION_ORDER}`
+const ITEM_SHAPE = `Each item is {"kind":"choice|multi|blank|number|short","prompt":"…","options":["…","…"],"answer":<option index (0-based) for choice, list of option indexes for multi, list of accepted strings for blank, a number for number, a model answer for short>,"tolerance":<number, for number>,"rubric":["…" for short],"hints":["…"],"explanation":"…","difficulty":1,"conceptIds":["…"]}. A "choice" has exactly one right option. When two or more options are right, use "multi" and say in the prompt that several may be chosen. ${OPTION_ORDER} ${ITEM_MATH}`
 
-const ITEM_FIGURE = 'When a figure makes a question clearer (a shape to measure, a graph to read, a circuit, a diagram to label), give the item "svg": a small diagram following the same rules as the board\'s svg op (viewBox at most 480×320). For the graph of a formula give "plot" instead: an object shaped like the board\'s plot op, without "params". Most items need no figure.'
+const ITEM_FIGURE = 'When a figure makes a question clearer (a shape to measure, a graph to read, a circuit, a diagram to label), give the item "svg": a small diagram following the same rules as the board\'s svg op (viewBox at most 480×320). For the graph of a formula give "plot" instead: an object shaped like the board\'s plot op, without "params". Words inside a figure are plain Unicode such as ω₀ or x², never LaTeX. Most items need no figure.'
 
 // Materials added to a course after it was designed: how the outline should
 // use them. `passages` are excerpts spread across each new material.

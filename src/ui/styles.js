@@ -64,6 +64,7 @@ export const STYLE = `${FONT_FACES}
 .aha-card[data-click=true]{cursor:pointer;transition:border-color .15s,transform .15s}.aha-card[data-click=true]:hover{border-color:var(--aha-brand)}
 .aha-cardTitle{font-weight:600;font-size:${px(16)};line-height:${px(23.5)}}
 .aha-hint{color:var(--aha-muted);font-size:${px(13.5)};line-height:${px(20.5)}}
+.aha-itemHint{display:flex;gap:6px;align-items:flex-start}
 .aha-readingNote{color:var(--aha-bad)}
 .aha-aboutHead{display:flex;align-items:center;gap:12px}
 .aha-aboutLogo{width:48px;height:48px;flex:0 0 auto;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--aha-soft)}

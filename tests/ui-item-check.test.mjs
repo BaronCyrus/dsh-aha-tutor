@@ -257,3 +257,13 @@ test('a question\'s prompt is set in the prompt type; its options take the text 
     ...PRIME.options.map(option => ['aha-markdown', option.text]),
   ])
 })
+
+test('a hint is Markdown, so its formulas are typeset like the question\'s', async () => {
+  const item = { ...PRIME, kind: 'number', prompt: '周期 $T = 0.5$ s，角频率 $\\omega$ 是多少？', options: [], answer: 12.57, tolerance: 0.1, hints: ['$\\omega = 2\\pi / T$', '代入 $T$'] }
+  const { renderer } = renderCard({ item, language: 'zh-CN', onResult: () => undefined })
+  await press(renderer, zh.hint)
+  const hint = renderer.root.find(node => node.props?.className === 'aha-hint aha-itemHint')
+  const markdown = hint.find(node => node.props?.className === 'markdown')
+  assert.equal(textOf(markdown), '$\\omega = 2\\pi / T$', 'DSH\'s Markdown renderer gets the formula')
+  assert.match(textOf(hint), /^💡/u)
+})

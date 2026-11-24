@@ -190,7 +190,7 @@ export function ItemCard({ item: asked, language, onResult, onContinue, continue
     </div> : null}
 
     {item.hints?.length && !result ? <div className="aha-col" style={{ gap: 4 }}>
-      {item.hints.slice(0, hints).map((hint, index) => <div key={index} className="aha-hint">💡 {hint}</div>)}
+      {item.hints.slice(0, hints).map((hint, index) => <div key={index} className="aha-hint aha-itemHint"><span aria-hidden="true">💡</span><RichText text={hint} compact /></div>)}
       {hints < item.hints.length ? <div><button type="button" className="aha-btn" data-size="sm" data-kind="ghost" onClick={() => setHints(count => count + 1)}>{t('hint')} ({hints + 1}/{item.hints.length})</button></div> : null}
     </div> : null}
 

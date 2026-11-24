@@ -183,4 +183,7 @@ test('objective grading handles choices, partial multi-select, numbers and blank
   assert.equal(gradeObjective({ kind: 'order', answer: ['a', 'b', 'c'] }, ['a', 'c', 'b']).score, 0.33)
   assert.equal(gradeObjective({ kind: 'short', answer: 'x' }, 'x').gradable, false)
   assert.equal(normalizeAnswerText('  Hello，World！ '), 'hello,world')
+  // An answer key written as a formula still matches what the learner types.
+  assert.equal(gradeObjective({ kind: 'blank', answer: ['$-kx$'] }, '-kx').correct, true)
+  assert.equal(gradeObjective({ kind: 'blank', answer: ['-kx'] }, '$-kx$').correct, true)
 })

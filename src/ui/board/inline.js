@@ -342,6 +342,13 @@ export function spokenText(value) {
   return parseInline(value).map(segment => (segment.kind === 'math' ? texToText(segment.tex) : segment.text)).join('')
 }
 
+// Words drawn inside a picture (SVG text, chart and plot labels), where
+// KaTeX cannot run: a formula written as $…$ reads as Unicode ("$\omega_0$"
+// → "ω₀"), and nothing else changes.
+export function figureText(value) {
+  return String(value ?? '').replace(MATH, match => texToText(match.slice(1, -1)))
+}
+
 const SENTENCE_END = new Set(['。', '！', '？', '!', '?', '；', ';'])
 const CLOSERS = new Set(['”', '’', '」', '』', '）', ')', '】', ']', '"', "'", '…'])
 

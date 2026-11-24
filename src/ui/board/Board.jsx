@@ -9,7 +9,7 @@ import { animationDocument, reportedAnimationError, reportedAnimationHeight, san
 import { fitSvgElement } from '../svg-fit.js'
 import { followShift, fitRect, keepInView, wheelPixels, wheelZoomFactor, zoomAt, ZOOM_STEP } from './camera.js'
 import { fitFormula, formulaLines, writtenPart } from './fit.js'
-import { inlineLength, parseInline, sliceInline } from './inline.js'
+import { inlineLength, parseInline, sliceInline, spokenText } from './inline.js'
 import { boardText, layoutBoard } from './layout.js'
 
 // position: { index, op, progress } from the player; null shows everything.
@@ -53,7 +53,7 @@ function MissingFigure({ op, labels = FIGURE_LABELS, reveal = 1, still = false }
       {redrawing ? <span className="aha-spinner" aria-hidden="true" /> : <span aria-hidden="true">⚠</span>}
       <span>{redrawing ? labels.redrawing : op.of === 'anim' ? labels.animation : labels.missing}</span>
     </div>
-    {op.caption ? <div className="aha-figCaption">{op.caption}</div> : null}
+    {op.caption ? <div className="aha-figCaption"><Inline text={op.caption} /></div> : null}
     {op.formula ? <code className="aha-op-missingFormula">{op.formula}</code> : null}
   </div>
 }
@@ -108,7 +108,7 @@ function DrawnSvg({ markup, reveal, caption, fit = false, fallback = null }) {
   if (!safe) return fallback
   return <div className="aha-op-figure">
     <div ref={host} dangerouslySetInnerHTML={{ __html: safe }} />
-    {caption ? <div className="aha-figCaption" style={{ opacity: reveal >= 1 ? 1 : 0.4 }}>{caption}</div> : null}
+    {caption ? <div className="aha-figCaption" style={{ opacity: reveal >= 1 ? 1 : 0.4 }}><Inline text={caption} /></div> : null}
   </div>
 }
 
@@ -132,13 +132,13 @@ function PlotFigure({ op, reveal, still, onInteract, labels }) {
     <DrawnSvg markup={markup} reveal={reveal} caption="" />
     {!still && op.params.length ? <div className="aha-plotSliders" data-written={written} aria-hidden={!written}>
       {op.params.map((param, index) => <label key={param.name} className="aha-plotSlider">
-        <span className="aha-plotName">{param.label || param.name}</span>
+        <span className="aha-plotName"><Inline text={param.label || param.name} /></span>
         <input type="range" min={param.min} max={param.max} step={param.step} value={values[index] ?? param.value} disabled={!written}
           onPointerDown={() => onInteract?.()} onChange={event => slide(index, Number(event.currentTarget.value))} />
         <span className="aha-plotValue">{formatPlotNumber(values[index] ?? param.value)}</span>
       </label>)}
     </div> : null}
-    {op.caption ? <div className="aha-figCaption" style={{ opacity: written ? 1 : 0.4 }}>{op.caption}</div> : null}
+    {op.caption ? <div className="aha-figCaption" style={{ opacity: written ? 1 : 0.4 }}><Inline text={op.caption} /></div> : null}
   </div>
 }
 
@@ -179,8 +179,8 @@ function Animation({ op, reveal, theme, labels }) {
   if (reveal <= 0) return null
   if (failed) return <AnimationStill op={op} labels={labels} failed />
   return <div className="aha-op-figure" style={{ opacity: Math.min(1, reveal * 3) }}>
-    <iframe ref={frame} className="aha-op-anim" title={op.caption || 'animation'} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={srcDoc} style={{ height: Math.max(height, content), colorScheme: theme === 'dark' ? 'dark' : 'light' }} />
-    {op.caption ? <div className="aha-figCaption">{op.caption}</div> : null}
+    <iframe ref={frame} className="aha-op-anim" title={spokenText(op.caption) || 'animation'} sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={srcDoc} style={{ height: Math.max(height, content), colorScheme: theme === 'dark' ? 'dark' : 'light' }} />
+    {op.caption ? <div className="aha-figCaption"><Inline text={op.caption} /></div> : null}
   </div>
 }
 
@@ -230,8 +230,8 @@ function Formula({ tex, reveal }) {
 // it could not play.
 function AnimationStill({ op, label = '', labels, failed = false }) {
   const missing = <MissingFigure op={{ of: 'anim', caption: op.caption }} labels={labels} still />
-  if (op.poster) return <DrawnSvg markup={op.poster} reveal={1} caption={op.caption} fit fallback={failed ? missing : <div className="aha-op-note" data-tone="tip">▶ {op.caption || label}</div>} />
-  return failed ? missing : <div className="aha-op-note" data-tone="tip">▶ {op.caption || label}</div>
+  if (op.poster) return <DrawnSvg markup={op.poster} reveal={1} caption={op.caption} fit fallback={failed ? missing : <div className="aha-op-note" data-tone="tip">▶ {op.caption ? <Inline text={op.caption} /> : label}</div>} />
+  return failed ? missing : <div className="aha-op-note" data-tone="tip">▶ {op.caption ? <Inline text={op.caption} /> : label}</div>
 }
 
 // fixedNote(op): the badge of an op corrected after the learner challenged
@@ -288,7 +288,7 @@ function OpView({ op, reveal, marks, aside, now, opRef, theme, still = false, an
     case 'code': {
       const lines = op.code.split('\n')
       const shown = reveal >= 1 ? lines : lines.slice(0, Math.ceil(lines.length * reveal))
-      body = <div><pre className="aha-op-code">{shown.join('\n')}</pre>{op.caption ? <div className="aha-figCaption">{op.caption}</div> : null}</div>
+      body = <div><pre className="aha-op-code">{shown.join('\n')}</pre>{op.caption ? <div className="aha-figCaption"><Inline text={op.caption} /></div> : null}</div>
       break
     }
     case 'anim':

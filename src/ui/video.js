@@ -157,13 +157,13 @@ async function layout(ctx, steps, palette, theme, labels = FIGURE_LABELS) {
         const ratio = image.naturalHeight / Math.max(1, image.naturalWidth) || 0.62
         const width = Math.min(COL_W, image.naturalWidth || COL_W)
         const height = Math.min(300, width * ratio)
-        place(height + (op.caption ? 30 : 0), { ...base, kind: 'image', image, w: height / ratio, imageH: height, caption: op.caption ?? '' })
+        place(height + (op.caption ? 30 : 0), { ...base, kind: 'image', image, w: height / ratio, imageH: height, caption: spokenText(op.caption) })
         continue
       }
       if (op.t === 'missing' || op.t === 'svg' || op.t === 'chart' || op.t === 'plot') {
         // A picture that could not be drawn says so, as on the board.
         ctx.font = font(22)
-        const lines = wrap(ctx, `⚠ ${op.t === 'missing' && op.of === 'anim' ? labels.animation : labels.missing}${op.caption ? ` · ${op.caption}` : ''}`, COL_W - 28)
+        const lines = wrap(ctx, `⚠ ${op.t === 'missing' && op.of === 'anim' ? labels.animation : labels.missing}${op.caption ? ` · ${spokenText(op.caption)}` : ''}`, COL_W - 28)
         place(lines.length * 32 + 22, { ...base, kind: 'text', size: 22, weight: 400, lines, lineHeight: 32, color: palette.soft, note: true })
         continue
       }
@@ -178,7 +178,7 @@ async function layout(ctx, steps, palette, theme, labels = FIGURE_LABELS) {
         continue
       }
       if (op.t === 'anim') {
-        place(90, { ...base, kind: 'text', size: 22, weight: 400, lines: [`▶ ${op.caption || 'animation'}`], lineHeight: 32, color: palette.soft, note: true })
+        place(90, { ...base, kind: 'text', size: 22, weight: 400, lines: [`▶ ${spokenText(op.caption) || 'animation'}`], lineHeight: 32, color: palette.soft, note: true })
       }
     }
   }

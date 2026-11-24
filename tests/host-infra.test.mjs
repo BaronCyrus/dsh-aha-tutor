@@ -9,7 +9,7 @@ import { BOARD_FONT_FILES } from '../src/core/board-fonts.js'
 import { FONT_PATH, fontRoute, ttsRoute } from '../src/host/http.js'
 import { createJobs } from '../src/host/jobs.js'
 import { createLlmPort, outputBudget, pickEffort } from '../src/host/llm.js'
-import { blueprintPrompt, correctionPrompt, gradePrompt, lessonPrompt, STEP_SPEC } from '../src/host/prompts.js'
+import { blueprintPrompt, BOARD_SPEC, correctionPrompt, drillPrompt, gradePrompt, lessonPrompt, practicePrompt, quizPrompt, STEP_SPEC } from '../src/host/prompts.js'
 import { generateSteps, streamCounter, writingHint } from '../src/host/generate.js'
 import { compareSemver, createPluginManager, findInstall, releaseAgeRefusal, resolveLauncher } from '../src/host/plugin-version.js'
 import { createStore, resolveDshHome } from '../src/host/store.js'
@@ -400,6 +400,26 @@ test('the font route serves only the bundled board fonts, cacheably', async () =
   assert.equal((await response.arrayBuffer()).byteLength, font.bytes)
   for (const name of ['../../package.json', 'OFL-Caveat.txt', '', 'wenkai-gb-0.woff2']) {
     assert.equal((await route.fetch(new Request(`http://dsh.local${FONT_PATH}?f=${encodeURIComponent(name)}`))).status, 404, name)
+  }
+})
+
+test('every learner-facing formula is asked for in LaTeX, except where it cannot show', () => {
+  // The board: inline $…$ in every text, LaTeX nowhere it cannot be typeset.
+  assert.match(BOARD_SPEC, /titles, headings, paragraphs, list items, table cells, notes, figure captions and slider labels it is inline \$…\$/u)
+  assert.match(BOARD_SPEC, /Words drawn inside a picture .* plain Unicode/u)
+  assert.match(BOARD_SPEC, /Plot formulas keep their calculator syntax/u)
+  assert.match(STEP_SPEC, /"say":"[^"]*no markdown or LaTeX: read formulas out in words/u, 'narration is read aloud')
+  assert.match(STEP_SPEC, /A check's prompt, options and explanation write math as inline \$…\$/u)
+  // Questions, wherever they are written; a blank's key stays typeable.
+  const prompts = [
+    practicePrompt({ course: { title: '简谐运动', summary: '' }, lecture: { title: '讲' }, lessons: [{ id: 'les_a', title: '回复力', objectives: ['会算回复力'], concepts: [{ id: 'cpt_a', name: '胡克定律' }] }], language: 'zh-CN' }),
+    quizPrompt({ scopeTitle: '简谐运动', outline: '', concepts: '', language: 'zh-CN' }),
+    drillPrompt({ scopeTitle: '简谐运动', lesson: { title: '回复力', objectives: [] }, concept: { id: 'cpt_a', name: '胡克定律' }, language: 'zh-CN' }),
+  ]
+  for (const { user } of prompts) {
+    assert.match(user, /"prompt", "options", "hints" and "explanation" as inline LaTeX \$…\$/u)
+    assert.match(user, /accepted answers of a "blank" are plain text a learner can type, never LaTeX/u)
+    assert.match(user, /Words inside a figure are plain Unicode/u)
   }
 })
 

@@ -398,3 +398,27 @@ test('the board says a picture is being redrawn, then that it could not be drawn
   act(() => { svg = TestRenderer.create(h(bundle.BoardSheets, { steps: [{ id: 's1', say: '', ops: [{ id: 'o1', t: 'svg', svg: '<svg><g></svg>', caption: '电路' }] }] })) })
   assert.match(textOf(svg.root.findByProps({ className: 'aha-op-missing' })), /^⚠This figure could not be drawn电路$/u)
 })
+
+test('figure captions and slider labels typeset their formulas', () => {
+  const t = (key, values) => format(zh[key] ?? key, values)
+  const plot = readOp({ t: 'plot', x: [0, 6], fns: [{ y: 'A*sin(x)' }], params: [{ name: 'A', value: 1, min: 0.5, max: 2, label: '振幅 $A$' }], caption: '$x = A\\sin t$ 的图像' }, 0).op
+  const steps = [{ id: 's1', say: '看图。', ops: [
+    { ...plot, id: 'o1' },
+    { id: 'o2', t: 'missing', of: 'svg', caption: '$F = -kx$ 的示意图' },
+    { id: 'o3', t: 'code', lang: 'python', code: 'print(1)', caption: '算出 $\\omega$' },
+  ] }]
+  let renderer
+  act(() => { renderer = TestRenderer.create(h(bundle.AppContext.Provider, { value: { t, settings: {} } }, h(bundle.Board, { steps, position: null, view: 'pages' }))) })
+  const formulas = node => node.findAll(child => child.props?.className === 'aha-tex').map(child => child.props.dangerouslySetInnerHTML.__html)
+  const captions = renderer.root.findAll(node => node.props?.className === 'aha-figCaption' && node.type === 'div')
+  assert.equal(captions.length, 3)
+  for (const caption of captions) {
+    assert.equal(formulas(caption).length, 1, 'the formula is typeset')
+    assert.match(formulas(caption)[0], /class="katex"/u)
+    assert.doesNotMatch(textOf(caption), /\$/u)
+  }
+  assert.match(textOf(captions[0]), /的图像$/u)
+  const slider = renderer.root.find(node => node.props?.className === 'aha-plotName')
+  assert.equal(textOf(slider), '振幅 ')
+  assert.equal(formulas(slider).length, 1)
+})

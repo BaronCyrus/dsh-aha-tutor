@@ -194,6 +194,13 @@ test('plots are drawn as SVG with textbook axes', () => {
   assert.ok(Math.abs(spanX - spanY) < 2, `${spanX} × ${spanY}`)
 })
 
+test('a plot writes a formula in its names and labels as Unicode, since SVG text cannot typeset LaTeX', () => {
+  const plot = normalizePlot({ title: '$x(t)$ 的图像', x: [0, 6], fns: [{ y: 'sin(x)', name: '$x_1$' }, { y: 'cos(x)', name: '$x_2$' }], points: [{ x: 1, fn: 0, label: '$t_0$' }], lines: [{ x: 3, label: '$t = T/2$' }] })
+  const svg = plotSvg(plot)
+  for (const label of ['>x(t) 的图像<', '>x₁<', '>x₂<', '>t₀<', '>t = T/2<']) assert.ok(svg.includes(label), label)
+  assert.doesNotMatch(svg, /\$/u)
+})
+
 test('the board takes plots under any name, and charts stay charts', () => {
   const board = normalizeBoard([{ say: '看图。', ops: [
     { t: 'plot', fns: [{ y: 'x^2' }], x: [-2, 2], caption: '抛物线' },

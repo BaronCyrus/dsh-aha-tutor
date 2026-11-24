@@ -15,7 +15,7 @@ import { STYLE } from '../src/ui/styles.js'
 import { ANIMATION_MAX_HEIGHT, animationDocument, reportedAnimationHeight, sanitizeSvg } from '../src/ui/sanitize.js'
 import { afterNarration, cloudVoiceOf, createSpeech, splitSentences } from '../src/ui/speech.js'
 import { captionCues, cueAt, syncedStarts, themedSvg, wrap } from '../src/ui/video.js'
-import { captionSentences, inlinePlain, parseInline, sliceInline, spokenText, texToText } from '../src/ui/board/inline.js'
+import { captionSentences, figureText, inlinePlain, parseInline, sliceInline, spokenText, texToText } from '../src/ui/board/inline.js'
 
 test('a practice round is summed up in stars, accuracy and streaks, with one next step', () => {
   const round = sessionStats([{ score: 1, correct: true }, { score: 1, correct: true }, { score: 0.5, correct: false }, { score: 1, correct: true }])
@@ -199,6 +199,24 @@ test('svg sanitizer keeps drawing markup and strips anything active or external'
   assert.match(clean, /marker-end="url\(#arrow\)"/u)
   assert.equal(sanitizeSvg('<div>no</div>', { DOMParserImpl: DOMParser }), null)
   assert.equal(sanitizeSvg(42, { DOMParserImpl: DOMParser }), null)
+})
+
+test('words inside a picture show a formula as Unicode, since SVG text cannot typeset LaTeX', () => {
+  assert.equal(figureText('$\\omega_0$ 越大'), 'ω₀ 越大')
+  assert.equal(figureText('振幅 A，**不变**'), '振幅 A，**不变**', 'only formulas change')
+  assert.equal(figureText(undefined), '')
+  const svg = sanitizeSvg('<svg viewBox="0 0 100 40"><text x="1" y="20">$T = 2\\pi\\sqrt{m/k}$ &amp; $x^2$</text><text x="1" y="30">平衡位置 O</text></svg>', { DOMParserImpl: DOMParser })
+  assert.match(svg, />T = 2π√\(m\/k\) &amp; x²</u)
+  assert.match(svg, />平衡位置 O</u)
+  assert.doesNotMatch(svg, /\$/u)
+  const line = chartSvg({ kind: 'line', title: '$x(t)$ 的图像', xLabel: '$t$ / s', yLabel: '$x$ / cm', series: [{ name: '$T_1$', points: [[0, 0], [1, 1]] }, { name: '$T_2$', points: [[0, 1], [1, 0]] }], data: [] })
+  for (const label of ['>x(t) 的图像<', '>t / s<', '>x / cm<', '>T₁<', '>T₂<']) assert.ok(line.includes(label), label)
+  assert.doesNotMatch(line, /\$/u)
+  const bar = chartSvg({ kind: 'bar', data: [{ label: '$\\alpha$', value: 1 }, { label: '$\\beta^2$ 很长很长很长的名字', value: 2 }], series: [] })
+  assert.ok(bar.includes('>α<'))
+  assert.ok(bar.includes('>β² 很长很长很长…<'), 'a long name is cut after the formula is read')
+  const pie = chartSvg({ kind: 'pie', data: [{ label: '$\\gamma$', value: 1 }, { label: 'y', value: 3 }], series: [] })
+  assert.ok(pie.includes('>γ 25%<'))
 })
 
 test('animation documents get a no-network CSP in their head', () => {

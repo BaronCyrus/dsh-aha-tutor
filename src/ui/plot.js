@@ -5,6 +5,7 @@
 // chart: the board renders it, exports and videos rasterize it.
 
 import { compilePlot, defaultValues, formatPlotNumber, plotBounds, plotCurveLabels, sampleCurves, slopeAt } from '../core/plot.js'
+import { figureText } from './board/inline.js'
 import { CHART_COLORS, CHART_FONT, CHART_INK, escapeXml, niceTicks } from './charts.js'
 
 const GUIDE = '#2b2b2b'
@@ -93,7 +94,7 @@ function piTicks(min, max) {
 const label = value => formatPlotNumber(Math.abs(value) < 1e-12 ? 0 : value)
 
 // About how wide a label is drawn, in the board's handwriting.
-const textWidth = (content, size) => [...String(content)].reduce((sum, char) => sum + (/[\u2E80-\uFFFF]/u.test(char) ? size * 1.05 : size * 0.58), 0)
+const textWidth = (content, size) => [...figureText(content)].reduce((sum, char) => sum + (/[\u2E80-\uFFFF]/u.test(char) ? size * 1.05 : size * 0.58), 0)
 
 // values: one per slider, in the plot's order (defaults when left out).
 // A board column is about 300 px wide at 100 %, so a plot is drawn small
@@ -103,7 +104,7 @@ export function plotSvg(op, values = defaultValues(op), { width = 420, height = 
   const params = op.params.map((param, index) => Math.min(param.max, Math.max(param.min, Number.isFinite(values[index]) ? values[index] : param.value)))
   let { x: { min: x0, max: x1 }, y: { min: y0, max: y1 } } = prepared.bounds
   // Several curves get a key above the plot, wrapped into rows.
-  const names = op.fns.map((fn, index) => fn.name || prepared.labels[index])
+  const names = op.fns.map((fn, index) => (fn.name ? figureText(fn.name) : prepared.labels[index]))
   const legend = []
   if (op.fns.length > 1) {
     let row = 0
@@ -141,7 +142,7 @@ export function plotSvg(op, values = defaultValues(op), { width = 420, height = 
   const shapes = []
   const texts = []
   const text = (x, y, content, { size = 13, anchor = 'middle', fill = CHART_INK, italic = false, weight } = {}) => {
-    texts.push(`<text x="${fixed(x)}" y="${fixed(y)}" font-size="${size}" text-anchor="${anchor}" fill="${fill}"${italic ? ' font-style="italic"' : ''}${weight ? ` font-weight="${weight}"` : ''}>${escapeXml(content)}</text>`)
+    texts.push(`<text x="${fixed(x)}" y="${fixed(y)}" font-size="${size}" text-anchor="${anchor}" fill="${fill}"${italic ? ' font-style="italic"' : ''}${weight ? ` font-weight="${weight}"` : ''}>${escapeXml(figureText(content))}</text>`)
   }
 
   // Axes through the origin, or along the edge the origin lies beyond.
@@ -273,6 +274,6 @@ export function plotSvg(op, values = defaultValues(op), { width = 420, height = 
     text(left ? Math.min(ex - 4, box.right - 2) : ex + 6, Math.max(box.top + 12, Math.min(box.bottom - 6, ey - 10)), names[0], { size: 14, anchor: left ? 'end' : 'start', fill: color(0) })
   }
 
-  const title = op.title ? `<text x="${width / 2}" y="20" font-size="15" text-anchor="middle" fill="${CHART_INK}" font-weight="600">${escapeXml(op.title)}</text>` : ''
+  const title = op.title ? `<text x="${width / 2}" y="20" font-size="15" text-anchor="middle" fill="${CHART_INK}" font-weight="600">${escapeXml(figureText(op.title))}</text>` : ''
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" font-family="${escapeXml(CHART_FONT)}">${shapes.join('')}${title}${texts.join('')}</svg>`
 }

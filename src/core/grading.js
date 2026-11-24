@@ -5,10 +5,13 @@ export const OBJECTIVE_KINDS = Object.freeze(['choice', 'multi', 'blank', 'numbe
 
 const FULLWIDTH = /[！-～]/gu
 
+// A blank's accepted answer written as a formula ("$-kx$") is still what the
+// learner types: the dollar signs never count.
 export function normalizeAnswerText(value) {
   return String(value ?? '')
     .normalize('NFKC')
     .replace(FULLWIDTH, char => String.fromCharCode(char.charCodeAt(0) - 0xfee0))
+    .replace(/\$/gu, '')
     .toLowerCase()
     .replace(/[\s　]+/gu, ' ')
     .replace(/^[\s.,;:!?'"`，。；：！？、“”‘’]+|[\s.,;:!?'"`，。；：！？、“”‘’]+$/gu, '')

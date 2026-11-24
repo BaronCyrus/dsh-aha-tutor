@@ -2,6 +2,19 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## 1.17.2 - 2026-11-23
+
+### Fixed
+
+- **Formulas in hints**: a practice hint was shown as plain text, so a formula in it showed its LaTeX source, such as `$\omega = 2\pi / T$`. Hints are now Markdown with typeset formulas, like the question above them.
+- **Formulas under pictures**: figure captions and the names of a plot's sliders are typeset like the rest of the board.
+- **Formulas inside pictures**: a diagram, chart or plot cannot typeset LaTeX, so a formula written in one of its labels showed its dollar signs. It is now drawn as readable text (ω₀, x², √(k/m)), on the board and in exported videos.
+- **Fill-in answers**: an answer key written as a formula (`$-kx$`) did not match the same answer typed without dollar signs. Dollar signs are now ignored when a blank is graded.
+
+### Changed
+
+- **LaTeX everywhere a learner reads**: the teacher is now asked to write every formula, variable and expression in LaTeX on the whole board (headings, lists, tables, notes, captions) and in every question, option, hint and explanation, not only in paragraphs. Narration stays in words, since it is read aloud; words inside a picture stay plain Unicode; plot formulas keep their calculator syntax; and a blank's accepted answers stay plain text a learner can type.
+
 ## 1.17.1 - 2026-11-23
 
 ### Fixed

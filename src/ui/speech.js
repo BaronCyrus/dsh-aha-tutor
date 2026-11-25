@@ -1,15 +1,15 @@
 // Narration for the whiteboard. Two engines share one interface:
 //   browser — the OS voices behind window.speechSynthesis (free, offline)
-//   cloud   — MP3 from the host's TTS proxy, played with an <audio> element
-// speak() returns { done, tracked, poll }: done resolves when the narration
-// ends (or is cancelled); tracked says onSentence will report each sentence
-// as it starts, the first one included; poll(), where given, reports a
-// sentence that has started since, and the player calls it on every frame.
+//   cloud   — MP3 from the host's TTS proxy, a sentence at a time, played
+//             with <audio> elements
+// speak() returns { done, tracked }: done resolves when the narration ends
+// (or is cancelled); tracked says onSentence will report each sentence as it
+// starts, the first one included.
 // Browser speech is queued sentence by sentence: Chromium stops long
 // utterances after ~15 s on some voices, and pause/resume is unreliable on
 // Windows, so pausing cancels the current sentence and resuming restarts it.
 
-import { estimateSpeechMs, sentenceAtFraction } from '../core/board-script.js'
+import { estimateSpeechMs } from '../core/board-script.js'
 
 const SENTENCE = /[^。！？!?；;\n]+[。！？!?；;]*\s*|\n+/gu
 
@@ -219,6 +219,27 @@ export function cloudVoiceOf(settings) {
   return JSON.stringify([provider, Object.keys(config).sort().map(key => [key, config[key]])])
 }
 
+// Sentences of a cloud narration asked for ahead of the one being said.
+const LOOKAHEAD = 2
+// A sentence after the first whose audio failed for a reason that may pass
+// (a rate limit, a server error, no connection) is asked for once more after
+// this long.
+const RETRY_MS = 1500
+const PASSING_FAILURES = new Set(['tts-rate-limit', 'tts-server', 'tts-network', 'tts-failed'])
+// Text with nothing to say ("……") is not sent to the service.
+const SPEAKABLE = /[\p{L}\p{N}]/u
+const playbackRate = rate => Math.min(2, Math.max(0.5, Number(rate) || 1))
+const failureCode = error => (typeof error?.code === 'string' && error.code ? error.code.replace(/^aha-tutor\//u, '') : '')
+
+// The pieces a narration is said in: the sentences the captions show, or the
+// whole narration when there are none.
+function piecesOf(textValue, sentences) {
+  const given = Array.isArray(sentences) ? sentences.map(sentence => String(sentence ?? '').trim()) : []
+  if (given.some(Boolean)) return given
+  const whole = String(textValue ?? '').trim()
+  return whole ? [whole] : []
+}
+
 function cloudEngine({ fetchAudio }) {
   let session = null
   // Audio by voice (cloudVoiceOf) and text: once the voice changes, a
@@ -235,7 +256,7 @@ function cloudEngine({ fetchAudio }) {
     })
     cache.set(key, promise)
     promise.catch(() => cache.delete(key))
-    if (cache.size > 40) {
+    if (cache.size > 120) {
       const [oldestKey, oldest] = cache.entries().next().value
       cache.delete(oldestKey)
       oldest.then(url => URL.revokeObjectURL(url)).catch(() => undefined)
@@ -243,58 +264,130 @@ function cloudEngine({ fetchAudio }) {
     return promise
   }
 
-  function prefetch(textValue, voice) {
-    if (textValue) load(textValue, voice).catch(() => undefined)
+  // The first sentence of a narration about to be spoken.
+  function prefetch(textValue, voice, sentences) {
+    const first = piecesOf(textValue, sentences).find(piece => SPEAKABLE.test(piece))
+    if (first) load(first, voice).catch(() => undefined)
   }
 
-  // `sentences` (optional) is the narration as captions split it; with
-  // onSentence, positions in that list are reported from where the audio is:
-  // the first when the audio is heard, the others when poll() finds them.
+  // `sentences` (optional) is the narration as captions split it. Each
+  // sentence is then its own audio, asked for a sentence or two ahead, and
+  // with onSentence each is reported as its audio starts.
   function speak(textValue, { rate = 1, cloudVoice, sentences, onSentence } = {}) {
     cancel()
-    if (!String(textValue ?? '').trim()) return { done: Promise.resolve({ completed: true }) }
+    const pieces = piecesOf(textValue, sentences)
+    if (!pieces.some(piece => SPEAKABLE.test(piece))) return { done: Promise.resolve({ completed: true }) }
+    const tracked = typeof onSentence === 'function' && Array.isArray(sentences) && sentences.length > 0
     let resolveDone
     const done = new Promise(resolve => { resolveDone = resolve })
-    const audio = new Audio()
-    audio.preservesPitch = true
-    // Each sentence's share of the audio: how long it should take to say.
-    const lengths = typeof onSentence === 'function' && Array.isArray(sentences) && sentences.length ? sentences.map(sentence => Math.max(1, estimateSpeechMs(sentence))) : null
-    const state = { audio, cancelled: false, resolveDone, rate, playing: false, reported: -1 }
+    // index: the piece being said. audio: its <audio>, once its audio came.
+    // waiting: a piece with nothing to say, shown for as long as it would take.
+    const state = { cancelled: false, paused: false, rate, resolveDone, index: -1, audio: null, waiting: null, waitTimer: null, retryTimer: null, reported: -1, retried: new Set() }
     session = state
-    // The sentence the audio is in, by its share of the audio's length, or by
-    // how long the sentences should take while that length is unknown.
-    const report = () => {
-      if (!lengths || session !== state || !state.playing) return
-      const length = audio.duration
-      const fraction = Number.isFinite(length) && length > 0 ? audio.currentTime / length : (audio.currentTime * 1000) / lengths.reduce((sum, value) => sum + value, 0)
-      const index = sentenceAtFraction(lengths, fraction)
-      if (index <= state.reported) return
+    const live = () => session === state && !state.cancelled
+    // Each piece is asked for once the one before it has come, so a
+    // narration has at most one request out at a time.
+    const requested = new Map()
+    let queue = Promise.resolve()
+    const request = index => {
+      if (index >= pieces.length || !SPEAKABLE.test(pieces[index])) return null
+      if (!requested.has(index)) {
+        const loading = queue.then(() => (live() ? load(pieces[index], cloudVoice) : null))
+        queue = loading.catch(() => undefined)
+        requested.set(index, loading)
+      }
+      return requested.get(index)
+    }
+    const heard = index => {
+      if (!tracked || index <= state.reported) return
       state.reported = index
-      onSentence(index, lengths.length)
+      onSentence(index, pieces.length)
+    }
+    const settle = result => {
+      clearTimeout(state.waitTimer)
+      clearTimeout(state.retryTimer)
+      if (session === state) session = null
+      resolveDone(result)
     }
     // The host's failures carry their code (tts-no-key, …). A browser that
     // will not play the audio, one not clicked yet for instance, gives only a
     // DOMException, whose numeric code means nothing to the learner.
     const fail = (error, fallback) => {
-      if (session === state) session = null
-      const code = typeof error?.code === 'string' && error.code ? error.code : fallback.code
-      resolveDone({ completed: false, error: error?.message ?? fallback.code, code })
+      state.audio?.pause()
+      settle({ completed: false, error: error?.message ?? fallback.code, code: typeof error?.code === 'string' && error.code ? error.code : fallback.code })
     }
-    load(textValue, cloudVoice).then(url => {
-      if (state.cancelled) return
-      audio.src = url
-      audio.playbackRate = Math.min(2, Math.max(0.5, rate))
-      // The first sentence is reported when the audio is heard, not when it
-      // was asked for.
-      audio.onplaying = () => {
-        state.playing = true
-        report()
+    const wait = index => {
+      state.waiting = index
+      if (state.paused) return
+      clearTimeout(state.waitTimer)
+      state.waitTimer = setTimeout(() => {
+        if (!live() || state.waiting !== index) return
+        state.waiting = null
+        play(index + 1)
+      }, Math.max(300, estimateSpeechMs(pieces[index], state.rate)))
+    }
+    const play = index => {
+      if (!live()) return
+      state.index = index
+      state.audio = null
+      state.waiting = null
+      if (index >= pieces.length) {
+        settle({ completed: true })
+        return
       }
-      audio.onended = () => { if (session === state) session = null; resolveDone({ completed: true }) }
-      audio.onerror = () => fail(null, { code: 'playback' })
-      return audio.play().catch(error => fail(error, { code: 'playback' }))
-    }).catch(error => fail(error, { code: 'tts-failed' }))
-    return { done, tracked: Boolean(lengths), poll: report }
+      for (let ahead = index; ahead <= index + LOOKAHEAD; ahead += 1) request(ahead)
+      const loading = request(index)
+      if (!loading) {
+        heard(index)
+        wait(index)
+        return
+      }
+      loading.then(url => {
+        if (!live() || state.index !== index || !url) return
+        // A page that cannot play audio fails like a voice that cannot
+        // speak, and the lesson goes on silently.
+        let audio
+        try {
+          audio = new Audio()
+        } catch (error) {
+          console.error(error)
+          fail(error, { code: 'speech' })
+          return
+        }
+        audio.preservesPitch = true
+        audio.src = url
+        audio.playbackRate = playbackRate(state.rate)
+        const current = () => live() && state.audio === audio
+        // A sentence is reported when its audio is heard, not when it was
+        // asked for.
+        audio.onplaying = () => { if (current()) heard(index) }
+        audio.onended = () => { if (current()) play(index + 1) }
+        audio.onerror = () => { if (current()) fail(null, { code: 'playback' }) }
+        state.audio = audio
+        if (!state.paused) audio.play().catch(error => { if (current()) fail(error, { code: 'playback' }) })
+      }, error => {
+        if (!live() || state.index !== index) return
+        if (index > 0 && !state.retried.has(index) && PASSING_FAILURES.has(failureCode(error) || 'tts-failed')) {
+          // Asked for straight away, not behind the sentences after it.
+          state.retried.add(index)
+          state.retryTimer = setTimeout(() => {
+            requested.set(index, load(pieces[index], cloudVoice))
+            play(index)
+          }, RETRY_MS)
+          return
+        }
+        fail(error, { code: 'tts-failed' })
+      })
+    }
+    // After a pause: the sentence being said goes on, a piece with nothing to
+    // say waits from its start, and a sentence whose audio has not come yet
+    // plays when it comes.
+    state.resumeWith = () => {
+      if (state.audio) state.audio.play().catch(() => undefined)
+      else if (state.waiting !== null) wait(state.waiting)
+    }
+    play(0)
+    return { done, tracked }
   }
 
   function cancel() {
@@ -302,16 +395,35 @@ function cloudEngine({ fetchAudio }) {
     const state = session
     session = null
     state.cancelled = true
-    state.audio.pause()
+    clearTimeout(state.waitTimer)
+    clearTimeout(state.retryTimer)
+    state.audio?.pause()
     state.resolveDone({ completed: false })
+  }
+
+  function pause() {
+    if (!session || session.paused) return
+    session.paused = true
+    clearTimeout(session.waitTimer)
+    session.audio?.pause()
+  }
+
+  function resume() {
+    if (!session || !session.paused) return
+    session.paused = false
+    session.resumeWith()
   }
 
   return {
     speak,
     prefetch,
-    pause: () => session?.audio.pause(),
-    resume: () => session?.audio.play().catch(() => undefined),
-    setRate: rate => { if (session) session.audio.playbackRate = Math.min(2, Math.max(0.5, rate)) },
+    pause,
+    resume,
+    setRate: rate => {
+      if (!session) return
+      session.rate = rate
+      if (session.audio) session.audio.playbackRate = playbackRate(rate)
+    },
     cancel,
     clear() {
       for (const promise of cache.values()) promise.then(url => URL.revokeObjectURL(url)).catch(() => undefined)
@@ -350,8 +462,9 @@ export function createSpeech({ fetchAudio }) {
         return { done: Promise.resolve({ completed: false, error: error?.message ?? 'speech' }) }
       }
     },
-    prefetch(textValue) {
-      if (settings.engine === 'cloud') engines.cloud.prefetch(textValue, settings.cloudVoice)
+    // The start of a narration about to be spoken; sentences as for speak().
+    prefetch(textValue, { sentences } = {}) {
+      if (settings.engine === 'cloud') engines.cloud.prefetch(textValue, settings.cloudVoice, sentences)
     },
     pause: () => active?.pause(),
     resume: () => active?.resume(),

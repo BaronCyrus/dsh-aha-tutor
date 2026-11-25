@@ -70,18 +70,20 @@ export function createPlayer({ speech, onChange, onNarration, now = () => perfor
     const owners = opSentences(step, sentences.length)
     // offset: time spent waiting for the voice to start, which the step's
     // clock leaves out. tracked: the voice reports each sentence it starts.
-    run = { step, timing, sentenceMs, owners, startedAt: now(), elapsedBefore: 0, offset: 0, speechDone: !step.say, silent: false, silentUntil: null, token: {}, sentences, exactSentence: false, tracked: false, poll: null, synced: Boolean(owners), written: 0, lastTime: 0, finishAt: null }
+    run = { step, timing, sentenceMs, owners, startedAt: now(), elapsedBefore: 0, offset: 0, speechDone: !step.say, silent: false, silentUntil: null, token: {}, sentences, exactSentence: false, heardSentence: 0, tracked: false, synced: Boolean(owners), written: 0, lastTime: 0, finishAt: null }
     const token = run.token
     if (step.say) {
       const spoken = speech?.speak(spokenText(step.say), {
         rate,
         sentences,
         // Voices report each sentence as it starts (a system voice from its
-        // events, a cloud voice from where its audio is); a voice that does
-        // not, or that fails, is followed by elapsed time (see sentenceAt).
+        // events, a cloud voice when its audio for that sentence starts); a
+        // voice that does not, or that fails, is followed by elapsed time
+        // (see sentenceAt).
         onSentence: index => {
           if (!run || run.token !== token) return
           run.exactSentence = true
+          run.heardSentence = index
           if (state.sentence !== index) {
             state.sentence = index
             emit()
@@ -89,17 +91,20 @@ export function createPlayer({ speech, onChange, onNarration, now = () => perfor
         },
       }) ?? { done: Promise.resolve({ silent: true }) }
       run.tracked = Boolean(spoken.tracked)
-      run.poll = typeof spoken.poll === 'function' ? spoken.poll : null
       spoken.done.then(result => {
         if (!run || run.token !== token) return
         if (result?.silent || result?.error) {
+          // A voice that stops partway hands over to the clock, which never
+          // takes the captions back to a sentence already heard.
           run.silent = true
           run.tracked = false
+          run.exactSentence = false
           run.silentUntil = total(run.sentenceMs) * 0.8
         } else run.speechDone = true
         onNarration?.(result)
       })
-      speech?.prefetch?.(spokenText(steps[state.index + 1]?.say ?? ''))
+      const nextSay = steps[state.index + 1]?.say ?? ''
+      speech?.prefetch?.(spokenText(nextSay), { sentences: captionSentences(nextSay).map(spokenText) })
     }
     emit()
     loop()
@@ -109,7 +114,7 @@ export function createPlayer({ speech, onChange, onNarration, now = () => perfor
   // long each sentence should take, when the voice does not report it.
   function sentenceAt(clock) {
     if (run.speechDone) return Math.max(0, run.sentences.length - 1)
-    return sentenceAtFraction(run.sentenceMs, clock / Math.max(1, total(run.sentenceMs)))
+    return Math.max(run.heardSentence, sentenceAtFraction(run.sentenceMs, clock / Math.max(1, total(run.sentenceMs))))
   }
 
   function elapsed() {
@@ -150,8 +155,6 @@ export function createPlayer({ speech, onChange, onNarration, now = () => perfor
   function tick() {
     handle = null
     if (state.status !== 'playing' || !run) return
-    // A voice that is asked where it is reports a sentence it has reached.
-    run.poll?.()
     const time = elapsed()
     // Until a voice that reports its sentences starts, the step's clock
     // waits for it, and the board never guesses ahead of such a voice.

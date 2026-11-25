@@ -216,6 +216,51 @@ test('board normalization maps aliases, renumbers ops and repoints marks', () =>
   assert.match(boardToMarkdown(board), /### 回复力/)
 })
 
+// Seconds the macOS voice Tingting took for each sentence (say -o, then
+// ffprobe), 2026-11-24.
+const MEASURED = [
+  ['这一步是整个推导的核心，符号和上下限都对好了。', 5.12],
+  ['套回刚才那道题：1 mol、298 K、1 L→10 L。', 6.54],
+  ['-1 × 8.314 × 298 × ln 10，ln10≈2.303，算出 w ≈ −5.71 kJ。', 11.17],
+  ['对比前面恒外压的 −0.9 kJ——可逆路径做了 5.71 kJ 的功，是外压一直顶满的 6 倍多！', 9.27],
+  ['代入 m = 0.5 kg，k = 200 N/m，得到 T ≈ 0.314 s。', 8.21],
+  ['所以 x = 3 或 x = −2，两个根都要检验。', 4.83],
+  ['2024 年的数据是 1350 万，比上一年多了 12.5%。', 6.67],
+  ['把 v₀ = 20 m/s 代进去，t = 2 s 时 h = 20 m。', 6.98],
+  ['P(A|B) = 0.8 × 0.01 ÷ 0.107 ≈ 0.075。', 5.97],
+  ['注意单位换算：1 kJ = 1000 J。', 3.81],
+  ['我们先把题目读一遍，看看它到底在问什么。', 4.30],
+  ['答案是 C。', 1.20],
+  ['好，下一步。', 1.45],
+  ['这里的 ω = √(k/m)，所以周期只和质量、劲度系数有关。', 5.93],
+  ['用 DNA 和 RNA 的区别来记：一个是双链，一个是单链。', 7.56],
+  ['如果 a > 0 且 b² − 4ac < 0，抛物线和 x 轴没有交点。', 6.57],
+]
+
+test('a sentence is timed by how it is read out: numbers, symbols, abbreviations and pauses', () => {
+  const digitMs = estimateSpeechMs('二百九十八') * 0.85
+  assert.ok(Math.abs(estimateSpeechMs('298') - digitMs) <= 1, '298 is read 二百九十八')
+  assert.ok(estimateSpeechMs('10') < estimateSpeechMs('12'), '十 is shorter than 十二')
+  assert.ok(Math.abs(estimateSpeechMs('2024') - estimateSpeechMs('二千零二十四') * 0.85) <= 1, '2024 is read 二千零二十四')
+  assert.ok(estimateSpeechMs('8.314') > estimateSpeechMs('8'), 'a decimal point and its digits are read')
+  assert.ok(estimateSpeechMs('ln10≈2.303') > estimateSpeechMs('ln 10') * 2, 'a formula without spaces is not one word')
+  assert.ok(estimateSpeechMs('x-1') > estimateSpeechMs('x 1'), 'the minus of x-1 is read out')
+  assert.ok(Math.abs(estimateSpeechMs('-1') - estimateSpeechMs('负一') * 0.85) <= 1, 'a sign is read with its number')
+  assert.ok(estimateSpeechMs('DNA') > estimateSpeechMs('Photosynthesis'), 'DNA is spelled out')
+  assert.ok(estimateSpeechMs('一，二，三。') > estimateSpeechMs('一二三') + 900, 'punctuation pauses')
+  assert.equal(estimateSpeechMs(''), 0)
+  assert.equal(estimateSpeechMs('一二三四', 2), Math.round(estimateSpeechMs('一二三四') / 2), 'faster speech takes less time')
+
+  // Against a real voice, after one overall speed: within a quarter for each
+  // sentence and about a twentieth on average (the character-count estimate
+  // was a quarter off on average and twice as long on the formula).
+  const logs = MEASURED.map(([text, seconds]) => Math.log((seconds * 1000) / estimateSpeechMs(text)))
+  const speed = Math.exp(logs.reduce((sum, value) => sum + value, 0) / logs.length)
+  const errors = MEASURED.map(([text, seconds]) => Math.abs((seconds * 1000) / (speed * estimateSpeechMs(text)) - 1))
+  assert.ok(Math.max(...errors) < 0.25, `worst ${Math.max(...errors)}`)
+  assert.ok(errors.reduce((sum, value) => sum + value, 0) / errors.length < 0.08, 'on average')
+})
+
 test('a synced step gives each sentence\'s ops the time until the next sentence that writes', () => {
   // "看这张图。" is short, the figure and formula written with it are not.
   const step = { say: '看这张图。横轴是时间，纵轴是位移。曲线越陡，速度越大。', ops: [

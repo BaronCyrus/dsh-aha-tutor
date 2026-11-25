@@ -245,13 +245,98 @@ export function normalizeBoard(raw, { conceptIds = [], problems } = {}) {
 // ── timing ──────────────────────────────────────────────────────────────────
 
 const CJK = /[぀-ヿ㐀-䶿一-鿿가-힯]/gu
+// A number as a voice reads it: digits with a decimal part, and a sign that
+// is not the minus of "x-1".
+const NUMBER = /(?:(?<![\p{L}\p{N}.])[-−])?\d+(?:\.\d+)?/gu
+// A hyphen standing alone ("x - 1", "1-2" once its numbers are read) is
+// read out; the one in "well-known" is not.
+const LONE_HYPHEN = /(?<=^|\s)-|-(?=\s|$)/gu
+// Symbols read out as words, by their syllables in Chinese: "×" 乘,
+// "≈" 约等于, "%" 百分之, "²" 的平方. Greek letters take two, other
+// superscripts and subscripts one.
+const SYMBOL_SYLLABLES = Object.freeze({
+  '×': 1, '·': 1, '⋅': 1, '÷': 2, '/': 1, '+': 1, '−': 1, '±': 2, '=': 2, '≈': 3, '≠': 3, '≡': 3, '∝': 3, '<': 2, '>': 2, '≤': 4, '≥': 4,
+  '→': 1, '←': 1, '⇒': 2, '↔': 2, '⇔': 2, '%': 3, '‰': 3, '°': 1, '√': 2, '∛': 3, '∞': 3, '∫': 2, '∑': 2, '∏': 2, '∂': 2, '∇': 2,
+  '∈': 2, '∉': 3, '⊂': 2, '∪': 1, '∩': 1, '∠': 1, '⊥': 2, '∥': 2, '△': 3, '′': 1, '″': 1, '²': 2, '³': 2,
+})
+const GREEK = /[Α-Ωα-ω]/u
+const SCRIPT = /[¹⁰-₟]/u
+// Pauses within a sentence (commas, colons, a dash) and at its end.
+const MID_PAUSE = /[，、：；,;:]|[—–]+|…+/gu
+const END_PAUSE = /[。！？!?]+|\.(?=\s|$)/gu
+// Weighed against system and cloud voices reading numbers, formulas, units
+// and the samples' narration.
+const SYLLABLE_MS = 1000 / 4.4
+// Digits are read a little quicker than other syllables.
+const DIGIT_MS = SYLLABLE_MS * 0.85
+const WORD_MS = 1000 / 2.6
+// Short capitals and words without a vowel are spelled out: DNA, kJ, ln.
+const LETTER_MS = 350
+const spelled = word => [...word].length <= 4 && (word === word.toUpperCase() || !/[aeiouy]/iu.test(word))
+const MID_PAUSE_MS = 300
+const END_PAUSE_MS = 400
 
+// An integer read the Chinese way: 298 is 二百九十八 (five syllables), 10 is
+// 十 and 2024 二千零二十四. Longer ones are mostly read digit by digit.
+function integerSyllables(digits) {
+  const value = digits.replace(/^0+(?=\d)/u, '')
+  if (value.length > 4) return value.length
+  let count = 0
+  let gap = false
+  for (let index = 0; index < value.length; index += 1) {
+    const place = value.length - 1 - index
+    if (value[index] === '0') {
+      gap = count > 0
+      continue
+    }
+    // 零 for the zeros before this digit.
+    if (gap) count += 1
+    gap = false
+    count += place === 0 || (place === 1 && index === 0 && value[index] === '1') ? 1 : 2
+  }
+  return Math.max(1, count)
+}
+
+// 负, the integer, 点 and one syllable for each decimal digit.
+function numberSyllables(token) {
+  const unsigned = token.replace(/^[-−]/u, '')
+  const [whole, fraction = ''] = unsigned.split('.')
+  return (unsigned === token ? 0 : 1) + integerSyllables(whole) + (fraction ? 1 + fraction.length : 0)
+}
+
+// How long a narration takes to say at this rate: Chinese characters, words
+// in other scripts, numbers, symbols and abbreviations as they are read out
+// ("298" is five syllables, "ln10≈2.303" is not one word, DNA is three
+// letters) and the pauses at punctuation.
 export function estimateSpeechMs(value, rate = 1) {
-  const content = String(value ?? '')
-  const cjk = (content.match(CJK) ?? []).length
-  const words = content.replace(CJK, ' ').split(/\s+/u).filter(Boolean).length
-  const seconds = cjk / 4.4 + words / 2.6
-  return Math.round((seconds * 1000) / Math.max(0.5, Math.min(2, rate || 1)))
+  let rest = String(value ?? '')
+  let digits = 0
+  rest = rest.replace(NUMBER, token => {
+    digits += numberSyllables(token)
+    return ' '
+  })
+  const pauses = (rest.match(MID_PAUSE) ?? []).length * MID_PAUSE_MS + (rest.match(END_PAUSE) ?? []).length * END_PAUSE_MS
+  const cjk = (rest.match(CJK) ?? []).length
+  let symbols = 0
+  rest = rest.replace(CJK, ' ').replace(LONE_HYPHEN, () => {
+    symbols += 1
+    return ' '
+  })
+  let others = ''
+  for (const char of rest) {
+    const spoken = SYMBOL_SYLLABLES[char] ?? (GREEK.test(char) ? 2 : SCRIPT.test(char) ? 1 : 0)
+    symbols += spoken
+    others += spoken ? ' ' : char
+  }
+  let words = 0
+  let letters = 0
+  for (const word of others.replace(/[^\p{L}\p{M}'’]+/gu, ' ').split(' ')) {
+    if (!word) continue
+    if (spelled(word)) letters += [...word].length
+    else words += 1
+  }
+  const ms = (cjk + symbols) * SYLLABLE_MS + digits * DIGIT_MS + words * WORD_MS + letters * LETTER_MS + pauses
+  return Math.round(ms / Math.max(0.5, Math.min(2, rate || 1)))
 }
 
 export function opVisibleLength(op) {

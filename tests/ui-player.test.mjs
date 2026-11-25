@@ -412,19 +412,36 @@ test('the board waits for a voice that reports its sentences and never guesses a
   assert.equal(held.player.state.status, 'ended')
 })
 
-test('the player asks a voice that can be polled where it is on every frame', async () => {
+test('a voice that stops partway hands the captions to the clock, never back to a sentence already heard', async () => {
   const voice = trackedVoice()
-  let polls = 0
-  const speak = voice.speak
-  voice.speak = (textValue, options) => ({ ...speak(textValue, options), poll: () => { polls += 1 } })
   const { player, advance } = harness(voice)
   player.setSteps([figureStep], { done: true })
   player.play()
-  await advance(160)
-  assert.ok(polls >= 9, `polled ${polls} times in 10 frames`)
+  voice.calls[0].options.onSentence(0, 3)
+  await advance(200)
   voice.calls[0].options.onSentence(1, 3)
-  await advance(16)
+  await advance(100)
   assert.equal(player.state.sentence, 1)
+  voice.calls[0].resolve({ completed: false, error: 'failed', code: 'aha-tutor/tts-server' })
+  await advance(16)
+  assert.equal(player.state.sentence, 1, 'the clock is behind the voice: the caption stays')
+  const seen = new Set()
+  for (let passed = 0; passed < 15_000 && player.state.status !== 'ended'; passed += 100) {
+    await advance(100)
+    seen.add(player.state.sentence)
+  }
+  assert.ok(seen.has(2), 'the last sentence\'s caption shows once the clock reaches it')
+  assert.ok(![...seen].includes(0))
+  assert.equal(player.state.status, 'ended', 'and the step ends with its board written')
+})
+
+test('the player fetches the first sentence of the next step ahead of it', async () => {
+  const prefetched = []
+  const voice = { ...trackedVoice(), prefetch: (textValue, options) => prefetched.push([textValue, options]) }
+  const { player } = harness(voice)
+  player.setSteps([figureStep, { id: 's2', say: '再看 $F = -kx$。负号很关键。', ops: [] }], { done: true })
+  player.play()
+  assert.deepEqual(prefetched, [['再看 F = -kx。负号很关键。', { sentences: ['再看 F = -kx。', '负号很关键。'] }]])
 })
 
 test('writing never goes back when a voice reports a sentence behind the estimate', async () => {

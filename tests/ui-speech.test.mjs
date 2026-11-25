@@ -173,55 +173,177 @@ test('a system voice says it reports sentences when asked to', async t => {
   await run(50)
 })
 
-// An <audio> element whose position the test sets.
+// <audio> elements: each starts playing a moment after play(); the test ends
+// them.
 class FakeAudio {
   constructor() {
-    this.currentTime = 0
-    this.duration = Number.NaN
-    FakeAudio.last = this
+    this.paused = true
+    this.plays = 0
+    FakeAudio.all.push(this)
   }
 
   play() {
-    this.duration = 4
-    queueMicrotask(() => this.onplaying?.())
+    this.paused = false
+    this.plays += 1
+    queueMicrotask(() => { if (!this.paused) this.onplaying?.() })
     return Promise.resolve()
   }
 
   pause() {
-    this.onpause?.()
+    this.paused = true
   }
 }
 
-test('a cloud voice reports each sentence from where its audio is', async t => {
+// A cloud voice on fake audio, whose host answers each sentence when the
+// test says so: answer(text) or fail(text, code).
+function cloudSetup(t) {
+  FakeAudio.all = []
   globalThis.Audio = FakeAudio
   t.after(() => { delete globalThis.Audio })
-  const flush = () => new Promise(resolve => setImmediate(resolve))
-  const speech = createSpeech({ fetchAudio: async () => ({ blob: new Blob(['wav'], { type: 'audio/wav' }) }) })
+  const asked = []
+  const pending = new Map()
+  const speech = createSpeech({
+    fetchAudio: textValue => {
+      asked.push(textValue)
+      return new Promise((resolve, reject) => pending.set(textValue, { resolve, reject }))
+    },
+  })
   speech.configure({ engine: 'cloud' })
-  // Shares of the audio by how long each should take: 6, 12 and 4 characters.
-  const sentences = ['先看这个公式。', '它说明力与位移的方向相反。', '记住负号。']
+  const flush = async () => {
+    for (let round = 0; round < 5; round += 1) await new Promise(resolve => setImmediate(resolve))
+  }
+  const answer = async textValue => {
+    pending.get(textValue).resolve({ blob: new Blob([textValue], { type: 'audio/mpeg' }) })
+    await flush()
+  }
+  const fail = async (textValue, code) => {
+    pending.get(textValue).reject(Object.assign(new Error('failed'), { code }))
+    await flush()
+  }
+  return { speech, asked, answer, fail, flush, playing: () => FakeAudio.all.at(-1) }
+}
+
+test('a cloud voice says each sentence as its own audio and reports it as its audio starts', async t => {
+  const { speech, asked, answer, flush, playing } = cloudSetup(t)
+  const sentences = ['先看这个公式。', '它说明力与位移的方向相反。', '记住负号。', '下面算一道题。']
   const heard = []
   const spoken = speech.speak(sentences.join(''), { sentences, onSentence: (index, total) => heard.push([index, total]) })
   assert.equal(spoken.tracked, true)
-  spoken.poll()
-  assert.deepEqual(heard, [], 'not while the audio is being fetched')
   await flush()
-  assert.deepEqual(heard, [[0, 3]], 'the first sentence once the audio is heard')
-  const audio = FakeAudio.last
-  audio.currentTime = 1
-  spoken.poll()
-  assert.deepEqual(heard, [[0, 3]], 'each sentence once')
-  audio.currentTime = 2
-  spoken.poll()
-  assert.deepEqual(heard.at(-1), [1, 3])
-  audio.currentTime = 3.5
-  spoken.poll()
+  assert.deepEqual(asked, [sentences[0]], 'one request at a time, the first sentence first')
+  assert.deepEqual(heard, [], 'nothing is reported while its audio is being fetched')
+  await answer(sentences[0])
+  assert.deepEqual(heard, [[0, 4]], 'the first sentence once its audio is heard')
+  assert.deepEqual(asked, sentences.slice(0, 2), 'the next sentence is asked for once the one before it came')
+  await answer(sentences[1])
+  await answer(sentences[2])
+  assert.deepEqual(asked, sentences.slice(0, 3), 'two sentences ahead of the one being said, no more')
+  const first = playing()
+  first.onended()
+  await flush()
+  assert.deepEqual(heard.at(-1), [1, 4], 'the next sentence as soon as its audio starts')
+  assert.deepEqual(asked, sentences, 'and one more is asked for')
+  assert.notEqual(playing(), first)
+
+  // Paused and resumed, the sentence goes on where it was.
+  speech.pause()
+  assert.equal(playing().paused, true)
+  speech.resume()
+  assert.equal(playing().paused, false)
+  assert.equal(playing().plays, 2)
+
+  // Ended before the next audio came: the voice waits for it, and a pause in
+  // that wait holds it once it comes.
+  playing().onended()
+  await flush()
+  playing().onended()
+  await flush()
   assert.deepEqual(heard.map(([index]) => index), [0, 1, 2])
-  audio.onended()
+  speech.pause()
+  await answer(sentences[3])
+  assert.equal(playing().paused, true, 'audio that comes during a pause waits for the resume')
+  assert.deepEqual(heard.map(([index]) => index), [0, 1, 2])
+  speech.resume()
+  await flush()
+  assert.deepEqual(heard.map(([index]) => index), [0, 1, 2, 3])
+  playing().onended()
   assert.deepEqual(await spoken.done, { completed: true })
-  audio.currentTime = 0
-  spoken.poll()
-  assert.equal(heard.length, 3, 'nothing is reported after the end')
+  assert.equal(heard.length, 4, 'each sentence once')
   assert.equal(speech.speak('你好').tracked, false, 'without sentences to follow')
+  await flush()
+  assert.equal(asked.at(-1), '你好', 'which is said as one piece')
   speech.cancel()
+})
+
+test('a cloud sentence with nothing to say is shown for its time without a request', async t => {
+  const { speech, asked, answer, flush, playing } = cloudSetup(t)
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const sentences = ['看这里。', '……', '就是这样。']
+  const heard = []
+  const spoken = speech.speak(sentences.join(''), { sentences, onSentence: index => heard.push(index) })
+  await flush()
+  await answer(sentences[0])
+  assert.deepEqual(asked, [sentences[0], sentences[2]])
+  playing().onended()
+  await flush()
+  assert.deepEqual(heard, [0, 1])
+  t.mock.timers.tick(estimateSpeechMs('……') + 300)
+  await answer(sentences[2])
+  assert.deepEqual(heard, [0, 1, 2])
+  playing().onended()
+  assert.deepEqual(await spoken.done, { completed: true })
+})
+
+test('a later cloud sentence whose audio failed for a reason that may pass is asked for once more', async t => {
+  const { speech, asked, answer, fail, flush, playing } = cloudSetup(t)
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const sentences = ['第一句。', '第二句。', '第三句。']
+  const heard = []
+  const spoken = speech.speak(sentences.join(''), { sentences, onSentence: index => heard.push(index) })
+  await flush()
+  await answer(sentences[0])
+  await fail(sentences[1], 'aha-tutor/tts-rate-limit')
+  await answer(sentences[2])
+  playing().onended()
+  await flush()
+  assert.deepEqual(heard, [0], 'the next sentence is not reported while its audio is missing')
+  t.mock.timers.tick(1500)
+  await flush()
+  assert.deepEqual(asked, [sentences[0], sentences[1], sentences[2], sentences[1]], 'asked for again after a moment')
+  await answer(sentences[1])
+  assert.deepEqual(heard, [0, 1])
+  playing().onended()
+  await flush()
+  playing().onended()
+  assert.deepEqual(await spoken.done, { completed: true })
+
+  // Failing again, or failing for a lasting reason, ends the narration with
+  // its code; so does the first sentence failing.
+  const again = speech.speak(sentences.join('').replace(/句/gu, '段'), { sentences: sentences.map(text => text.replace('句', '段')), onSentence() {} })
+  await flush()
+  await answer('第一段。')
+  await fail('第二段。', 'aha-tutor/tts-server')
+  playing().onended()
+  await flush()
+  t.mock.timers.tick(1500)
+  await flush()
+  await fail('第二段。', 'aha-tutor/tts-server')
+  assert.deepEqual(await again.done, { completed: false, error: 'failed', code: 'aha-tutor/tts-server' })
+  const lasting = speech.speak('甲。乙。', { sentences: ['甲。', '乙。'], onSentence() {} })
+  await flush()
+  await answer('甲。')
+  await fail('乙。', 'aha-tutor/tts-auth')
+  playing().onended()
+  assert.deepEqual(await lasting.done, { completed: false, error: 'failed', code: 'aha-tutor/tts-auth' })
+  const firstFailed = speech.speak('丙。丁。', { sentences: ['丙。', '丁。'], onSentence() {} })
+  await flush()
+  await fail('丙。', 'aha-tutor/tts-rate-limit')
+  assert.deepEqual(await firstFailed.done, { completed: false, error: 'failed', code: 'aha-tutor/tts-rate-limit' })
+})
+
+test('a cloud voice fetches the first sentence of the narration to come', async t => {
+  const { speech, asked, flush } = cloudSetup(t)
+  speech.prefetch('……下一步。再说。', { sentences: ['……', '下一步。', '再说。'] })
+  await flush()
+  assert.deepEqual(asked, ['下一步。'])
 })

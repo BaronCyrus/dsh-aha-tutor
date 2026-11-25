@@ -313,9 +313,9 @@ function sentenceStarts(lengths, speechMs) {
 // The captions of a step: its sentences, as read aloud, in pages of at most
 // two lines. Each sentence starts where syncedStarts starts its ops, and its
 // pages share its time by how long each takes to say. lines(text) wraps a
-// sentence.
-export function captionCues(sentences, speechMs, lines) {
-  const lengths = sentences.map(sentence => estimateSpeechMs(sentence))
+// sentence. lengths: how long each sentence's own audio is, when known;
+// otherwise how long each should take to say.
+export function captionCues(sentences, speechMs, lines, lengths = sentences.map(sentence => estimateSpeechMs(sentence))) {
   const starts = sentenceStarts(lengths, speechMs)
   const total = sum(lengths) || 1
   const cues = []
@@ -372,14 +372,14 @@ function drawWatermark(ctx, label, palette) {
 }
 
 // A synced step's op start times (ms into the step): each op starts when its
-// sentence does, placed by how long each sentence takes to say and stretched
-// to the step's speech, or when the op before it is done. Null for unsynced
-// steps.
-export function syncedStarts(step, writes, speechMs) {
+// sentence does, placed by how long each sentence is (lengths, as for
+// captionCues) stretched to the step's speech, or when the op before it is
+// done. Null for unsynced steps.
+export function syncedStarts(step, writes, speechMs, lengths = null) {
   const sentences = captionSentences(step.say).map(spokenText)
   const owners = opSentences(step, sentences.length)
   if (!owners) return null
-  const starts = sentenceStarts(sentences.map(sentence => estimateSpeechMs(sentence)), speechMs)
+  const starts = sentenceStarts(lengths ?? sentences.map(sentence => estimateSpeechMs(sentence)), speechMs)
   let end = 0
   return owners.map((owner, index) => {
     const start = Math.max(end, starts[owner] ?? 0)
@@ -389,7 +389,8 @@ export function syncedStarts(step, writes, speechMs) {
 }
 
 // fetchAudio(text) → { blob } | { base64, mime } (cloud voice) or null to
-// export silently.
+// export silently. Each sentence is its own audio, so its caption and ops
+// start with it.
 // labels: { missing, animation }, what a picture that could not be drawn
 // says (FIGURE_LABELS).
 export async function exportVideo({ steps, title, fetchAudio, watermark, theme = 'light', font: fontChoice = 'hand', labels = FIGURE_LABELS, onProgress, signal }) {
@@ -408,23 +409,26 @@ export async function exportVideo({ steps, title, fetchAudio, watermark, theme =
   const ctx = canvas.getContext('2d')
   const { items, pages } = await layout(ctx, steps, palette, theme, { ...FIGURE_LABELS, ...labels })
 
+  // Each step's sentences as read aloud, and each one's audio (null for a
+  // sentence with nothing to say or whose audio failed: it is shown for as
+  // long as it should take to say).
+  const spoken = steps.map(step => captionSentences(step.say).map(spokenText))
   let audioCtx = null
-  const buffers = []
+  const buffers = spoken.map(sentences => sentences.map(() => null))
   if (fetchAudio) {
     audioCtx = new AudioContext()
-    for (const [index, step] of steps.entries()) {
-      signal?.throwIfAborted()
+    for (const [index, sentences] of spoken.entries()) {
       onProgress?.({ phase: 'audio', done: index, total: steps.length })
-      if (!step.say) {
-        buffers.push(null)
-        continue
-      }
-      try {
-        const audio = await fetchAudio(spokenText(step.say))
-        const bytes = audio.blob ? await audio.blob.arrayBuffer() : Uint8Array.from(atob(audio.base64), char => char.charCodeAt(0)).buffer
-        buffers.push(await audioCtx.decodeAudioData(bytes))
-      } catch {
-        buffers.push(null)
+      for (const [position, sentence] of sentences.entries()) {
+        signal?.throwIfAborted()
+        if (!/[\p{L}\p{N}]/u.test(sentence)) continue
+        try {
+          const audio = await fetchAudio(sentence)
+          const bytes = audio.blob ? await audio.blob.arrayBuffer() : Uint8Array.from(atob(audio.base64), char => char.charCodeAt(0)).buffer
+          buffers[index][position] = await audioCtx.decodeAudioData(bytes)
+        } catch {
+          // said silently
+        }
       }
     }
   }
@@ -433,16 +437,17 @@ export async function exportVideo({ steps, title, fetchAudio, watermark, theme =
   let cursor = 700
   ctx.font = captionFont()
   for (const [index, step] of steps.entries()) {
-    // Each sentence's ops get the time until the next sentence that writes,
-    // stretched to the real narration when there is one.
-    const sentences = captionSentences(step.say).map(spokenText)
-    const sentenceMs = sentences.map(sentence => estimateSpeechMs(sentence))
-    const speechMs = buffers[index] ? buffers[index].duration * 1000 : sum(sentenceMs)
+    // Each sentence lasts as long as its audio; each sentence's ops get the
+    // time until the next sentence that writes.
+    const sentences = spoken[index]
+    const sentenceMs = sentences.map((sentence, position) => (buffers[index][position] ? buffers[index][position].duration * 1000 : estimateSpeechMs(sentence)))
+    const speechMs = sum(sentenceMs)
     const timing = stepTiming(step, { speechMs, sentenceMs })
-    const starts = syncedStarts(step, timing.writeMs, speechMs)
+    const starts = syncedStarts(step, timing.writeMs, speechMs, sentenceMs)
     const durationMs = starts ? Math.max(timing.durationMs, starts.at(-1) + timing.writeMs.at(-1) + 350) : timing.durationMs
-    const captions = captionCues(sentences, speechMs, sentence => wrap(ctx, sentence, CAPTION_W))
-    timeline.push({ start: cursor, end: cursor + durationMs, writes: timing.writeMs, starts, captions })
+    const captions = captionCues(sentences, speechMs, sentence => wrap(ctx, sentence, CAPTION_W), sentenceMs)
+    const sentenceStartsMs = sentenceStarts(sentenceMs, speechMs)
+    timeline.push({ start: cursor, end: cursor + durationMs, writes: timing.writeMs, starts, captions, sentenceStarts: sentenceStartsMs })
     cursor += durationMs
   }
   const total = cursor + 1500
@@ -496,13 +501,13 @@ export async function exportVideo({ steps, title, fetchAudio, watermark, theme =
     await audioCtx.resume()
     const destination = audioCtx.createMediaStreamDestination()
     startAt = audioCtx.currentTime + 0.4
-    buffers.forEach((buffer, index) => {
+    buffers.forEach((sentences, index) => sentences.forEach((buffer, position) => {
       if (!buffer) return
       const source = audioCtx.createBufferSource()
       source.buffer = buffer
       source.connect(destination)
-      source.start(startAt + timeline[index].start / 1000)
-    })
+      source.start(startAt + (timeline[index].start + timeline[index].sentenceStarts[position]) / 1000)
+    }))
     for (const track of destination.stream.getAudioTracks()) stream.addTrack(track)
   }
   const mimeType = pickMime()

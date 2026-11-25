@@ -178,7 +178,7 @@ async function boundedFetch(fetchImpl, url, init, { text, signal, limits, maxByt
     }
     if (!response.ok) {
       response.body?.cancel().catch(() => undefined)
-      throw httpError(response.status)
+      throw httpError(response.status, response.headers?.get?.('retry-after'))
     }
     const length = Number(response.headers.get('content-length'))
     if (Number.isFinite(length) && length > maxBytes) throw new TtsError('too-large', 'TTS response is too large')
@@ -218,9 +218,15 @@ function parseJson(body, service) {
   }
 }
 
-function httpError(status) {
+function httpError(status, retryAfter) {
   if (status === 401 || status === 403) return new TtsError('auth', 'The TTS service rejected the key', status)
-  if (status === 429) return new TtsError('rate-limit', 'The TTS service is rate limiting requests', status)
+  if (status === 429) {
+    const error = new TtsError('rate-limit', 'The TTS service is rate limiting requests', status)
+    // Retry-After in seconds; a date is left to the default wait.
+    const seconds = Number(retryAfter)
+    if (retryAfter && Number.isFinite(seconds) && seconds >= 0) error.retryAfterMs = seconds * 1000
+    return error
+  }
   if (status >= 500) return new TtsError('server', 'The TTS service returned a server error', status)
   return new TtsError('request', `The TTS service refused the request (${status})`, status)
 }
@@ -413,7 +419,42 @@ const synthesizers = {
 // wait short.
 const CHUNK_UNITS = Object.freeze({ deepseek: 900, openai: 3800, volcengine: 900, minimax: 9000, azure: 6000, 'aliyun-tokenplan': 900 })
 
-export function createTts({ cacheDir, fetchImpl = globalThis.fetch, getSecret, limits = TTS_LIMITS }) {
+// A narration is asked for a sentence at a time, so a service that limits
+// requests is asked again after a wait (its Retry-After, kept within bounds),
+// at most twice.
+export const RATE_LIMIT_WAITS_MS = Object.freeze([1500, 4000])
+const MAX_RATE_LIMIT_WAIT_MS = 6000
+
+function pause(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason)
+      return
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener?.('abort', stop)
+      resolve()
+    }, ms)
+    const stop = () => {
+      clearTimeout(timer)
+      reject(signal.reason)
+    }
+    signal?.addEventListener?.('abort', stop, { once: true })
+  })
+}
+
+async function withRateLimitRetries(attempt, { signal, waits = RATE_LIMIT_WAITS_MS }) {
+  for (let tried = 0; ; tried += 1) {
+    try {
+      return await attempt()
+    } catch (error) {
+      if (error?.code !== 'rate-limit' || tried >= waits.length) throw error
+      await pause(Math.min(MAX_RATE_LIMIT_WAIT_MS, Math.max(waits[tried], error.retryAfterMs ?? 0)), signal)
+    }
+  }
+}
+
+export function createTts({ cacheDir, fetchImpl = globalThis.fetch, getSecret, limits = TTS_LIMITS, rateLimitWaits = RATE_LIMIT_WAITS_MS }) {
   if (typeof getSecret !== 'function') throw new TypeError('createTts needs getSecret')
   let pruning
 
@@ -443,7 +484,7 @@ export function createTts({ cacheDir, fetchImpl = globalThis.fetch, getSecret, l
     const parts = []
     for (const chunk of splitForTts(content, CHUNK_UNITS[provider])) {
       const send = (url, init, maxBytes) => boundedFetch(fetchImpl, url, init, { text: chunk, signal, limits, maxBytes })
-      parts.push(await synthesizers[provider]({ text: chunk, config: merged, secret, rate, send }))
+      parts.push(await withRateLimitRetries(() => synthesizers[provider]({ text: chunk, config: merged, secret, rate, send }), { signal, waits: rateLimitWaits }))
     }
     // The pieces join into one stream first: a WAV header covers the whole
     // narration, not each piece of it.

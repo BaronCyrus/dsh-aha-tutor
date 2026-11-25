@@ -152,6 +152,38 @@ test('TTS splits long text, calls each provider correctly and caches audio', asy
   }
 })
 
+test('a TTS service limiting requests is asked again after a wait, at most twice', async () => {
+  let answers = []
+  const calls = []
+  const fetchImpl = async () => {
+    calls.push(performance.now())
+    const next = answers.shift() ?? 200
+    return next === 200 ? new Response(Buffer.from('ID3'), { status: 200 }) : new Response('', { status: 429, headers: next.retryAfter === undefined ? {} : { 'retry-after': next.retryAfter } })
+  }
+  const tts = createTts({ cacheDir: null, fetchImpl, getSecret: async () => 'sk-test', rateLimitWaits: [20, 40] })
+  answers = [{}, {}]
+  assert.equal((await tts.synthesize({ provider: 'openai', text: '一' })).audio.toString(), 'ID3')
+  assert.equal(calls.length, 3, 'two waits, then the audio')
+  assert.ok(calls[2] - calls[1] >= 35, 'the second wait is the longer one')
+  calls.length = 0
+  answers = [{}, {}, {}]
+  await assert.rejects(tts.synthesize({ provider: 'openai', text: '二' }), error => error instanceof TtsError && error.code === 'rate-limit')
+  assert.equal(calls.length, 3, 'given up after two tries more')
+  calls.length = 0
+  answers = [{ retryAfter: '0.1' }]
+  await tts.synthesize({ provider: 'openai', text: '三' })
+  assert.ok(calls[1] - calls[0] >= 95, 'a longer Retry-After is waited for')
+  calls.length = 0
+  answers = [{ retryAfter: '60' }]
+  const cancel = new AbortController()
+  const asking = tts.synthesize({ provider: 'openai', text: '四', signal: cancel.signal })
+  setTimeout(() => cancel.abort(new Error('closed')), 30)
+  await assert.rejects(asking, /closed/, 'a request given up stops waiting')
+  assert.equal(calls.length, 1)
+  const refused = createTts({ cacheDir: null, fetchImpl: async () => new Response('', { status: 401 }), getSecret: async () => 'sk-test', rateLimitWaits: [20, 40] })
+  await assert.rejects(refused.synthesize({ provider: 'openai', text: '五' }), error => error.code === 'auth', 'other failures are not retried')
+})
+
 test('DeepSeek speaks PCM that is served and cached as one WAV file', async () => {
   // The settings form offers exactly the voices the service accepts.
   assert.deepEqual(PROVIDER_FIELDS.deepseek.find(field => field.key === 'voice').options.map(option => option.value), [...DEEPSEEK_VOICES])

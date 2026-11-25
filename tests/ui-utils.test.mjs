@@ -263,10 +263,11 @@ test('cloud voice plays the host\'s audio, reports a failed request and stops wh
     pause() { this.paused = true }
   }
   try {
+    let synthesized
     const speech = createSpeech({
       fetchAudio: async textValue => {
         if (textValue === '没有密钥') throw new Error('No key saved for this TTS provider')
-        if (textValue === '还在合成') return new Promise(() => undefined)
+        if (textValue === '还在合成') return new Promise(resolve => { synthesized = resolve })
         return { blob: new Blob(['mp3'], { type: 'audio/mpeg' }) }
       },
     })
@@ -284,7 +285,14 @@ test('cloud voice plays the host\'s audio, reports a failed request and stops wh
     assert.deepEqual(await first.done, { completed: false }, 'a new sentence cancels the one still loading')
     speech.cancel()
     assert.deepEqual(await second.done, { completed: false })
-    assert.equal(players.at(-1).paused, true)
+    synthesized({ blob: new Blob(['mp3'], { type: 'audio/mpeg' }) })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    assert.equal(players.length, 1, 'audio that comes after the cancel is never played')
+    const playing = speech.speak('你好')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    speech.cancel()
+    assert.equal(players.at(-1).paused, true, 'cancelling stops the audio being played')
+    assert.deepEqual(await playing.done, { completed: false })
   } finally {
     delete globalThis.Audio
   }
@@ -552,4 +560,16 @@ test('a video caption shows the sentence being spoken, two lines at a time', () 
   assert.deepEqual(cueAt(cues, 6000).lines, ['五六七八', '九十一二'])
   assert.deepEqual(cueAt(cues, 20_000).lines, ['三四五六'], 'the last line stays while the board is still being written')
   assert.deepEqual(captionCues([], 1000, lines), [])
+})
+
+test('an exported video with a cloud voice starts each caption and its ops with that sentence\'s own audio', () => {
+  const lines = value => [value]
+  // The second sentence is short on paper but long to say: its audio decides.
+  const sentences = ['套回刚才那道题。', '1 mol、298 K、1 L→10 L。', '算出结果。']
+  const audio = [1800, 4200, 1500]
+  const cues = captionCues(sentences, 7500, lines, audio)
+  assert.deepEqual(cues.map(cue => cue.start), [0, 1800, 6000])
+  const step = { say: sentences.join(''), ops: [{ t: 'p', text: 'a', at: 0 }, { t: 'p', text: 'b', at: 1 }, { t: 'p', text: 'c', at: 2 }] }
+  assert.deepEqual(syncedStarts(step, [100, 100, 100], 7500, audio), [0, 1800, 6000])
+  assert.notDeepEqual(syncedStarts(step, [100, 100, 100], 7500), [0, 1800, 6000], 'estimates alone would place them elsewhere')
 })

@@ -2,6 +2,19 @@
 
 All notable changes to this plugin are recorded here. Versions follow [SemVer](https://semver.org/); GitHub Release notes for each version live in `docs/releases/`.
 
+## 1.17.3 - 2026-11-24
+
+### Fixed
+
+- **Captions with a cloud voice**: a cloud voice spoke each step as one recording, and captions moved on by each sentence's estimated share of it. Sentences with numbers, units and formulas were estimated far too short, so captions and the board ran ahead of the voice, by almost three seconds in a learner's recording. Each sentence is now its own recording, and its caption and its part of the board start when its audio does.
+- **Sentence lengths**: numbers, symbols and abbreviations are now timed as they are read out (298 as 二百九十八, ≈ as 约等于, DNA letter by letter), with pauses at punctuation. Measured against two system voices, the estimate was 20% off on average; it is now about 6% off. It paces the board within each sentence, and the whole lesson when no voice is heard.
+- **Exported videos**: with a cloud voice, each sentence is also synthesized on its own, so its caption and ops start with its audio.
+- **A voice that stops partway**: the caption stayed on the last sentence heard until the step ended. It now follows the board's clock and never goes back to a sentence already heard.
+
+### Changed
+
+- **One speech request per sentence**: a cloud voice now sends one request per sentence instead of one per step. Within a step it sends one request at a time, up to two sentences ahead of the one being said, and it fetches the next step's first sentence in advance. Services that bill by characters cost the same, but a lesson played before this version is synthesized once more, sentence by sentence. If a sentence after the first fails for a reason that may pass, it is requested once more. A service that answers HTTP 429 is asked again twice after a short wait.
+
 ## 1.17.2 - 2026-11-23
 
 ### Fixed
